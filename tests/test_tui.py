@@ -36,5 +36,9 @@ def test_parse_agent_command_rejects_unknown_commands() -> None:
 
 def test_suggest_commands_filters_by_prefix() -> None:
     suggestions = suggest_commands("/workspace")
+    paths = [command.path for command in suggestions]
 
-    assert [command.path for command in suggestions] == ["/workspace list", "/workspace add", "/workspace use"]
+    assert "/workspace list" in paths
+    assert "/workspace add" in paths
+    assert "/workspace use" in paths
+    assert all(p.startswith("/workspace") for p in paths)

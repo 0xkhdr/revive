@@ -1,6 +1,4 @@
-"""ZeroBuffer to overwrite sensitive in-memory byte arrays.
-"""
-
+"""ZeroBuffer to overwrite sensitive in-memory byte arrays."""
 
 
 class ZeroBuffer:

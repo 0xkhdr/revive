@@ -1,5 +1,4 @@
-"""DoctorService for environment diagnostics, linting, and health checking.
-"""
+"""DoctorService for environment diagnostics, linting, and health checking."""
 
 import os
 from typing import Any
@@ -36,20 +35,24 @@ class DoctorService:
         checks_run += 1
         manifest = None
         if not os.path.exists(manifest_path):
-            issues.append({
-                "category": "manifest",
-                "severity": "critical",
-                "message": f"manifest.yaml not found at {manifest_path}. Repository must be initialized."
-            })
+            issues.append(
+                {
+                    "category": "manifest",
+                    "severity": "critical",
+                    "message": f"manifest.yaml not found at {manifest_path}. Repository must be initialized.",
+                }
+            )
         else:
             try:
                 manifest = ManifestLoader.load(manifest_path)
             except Exception as e:
-                issues.append({
-                    "category": "manifest",
-                    "severity": "critical",
-                    "message": f"Failed to load or validate manifest.yaml: {e}"
-                })
+                issues.append(
+                    {
+                        "category": "manifest",
+                        "severity": "critical",
+                        "message": f"Failed to load or validate manifest.yaml: {e}",
+                    }
+                )
 
         # 2. Lockfile Checks
         checks_run += 1
@@ -58,11 +61,13 @@ class DoctorService:
                 with open(lockfile_path, encoding="utf-8") as f:
                     Lockfile.model_validate_json(f.read())
             except Exception as e:
-                issues.append({
-                    "category": "lockfile",
-                    "severity": "warning",
-                    "message": f"manifest.lock is corrupt or invalid: {e}"
-                })
+                issues.append(
+                    {
+                        "category": "lockfile",
+                        "severity": "warning",
+                        "message": f"manifest.lock is corrupt or invalid: {e}",
+                    }
+                )
 
         # 3. Environment capabilities checks
         checks_run += 1
@@ -74,74 +79,84 @@ class DoctorService:
             if tool in ("age", "age-keygen") and not available:
                 # Pyrage might be available natively, so check that too
                 from rv.security.encryptor import AgeEncryptor
+
                 if not AgeEncryptor.is_pyrage_available():
-                    issues.append({
-                        "category": "system",
-                        "severity": "warning",
-                        "message": f"Neither pyrage python library nor '{tool}' CLI executable is available. Encryption/decryption will fail."
-                    })
+                    issues.append(
+                        {
+                            "category": "system",
+                            "severity": "warning",
+                            "message": f"Neither pyrage python library nor '{tool}' CLI executable is available. Encryption/decryption will fail.",
+                        }
+                    )
 
         # 4. Profile Specific Checks
         if manifest and profile_name:
             checks_run += 1
             if profile_name not in manifest.profiles:
-                issues.append({
-                    "category": "profile",
-                    "severity": "critical",
-                    "message": f"Profile '{profile_name}' does not exist in manifest"
-                })
+                issues.append(
+                    {
+                        "category": "profile",
+                        "severity": "critical",
+                        "message": f"Profile '{profile_name}' does not exist in manifest",
+                    }
+                )
             else:
                 try:
                     resolved = ProfileResolver.resolve(manifest, profile_name)
-                    
+
                     # Verify each asset source file exists in repo
                     for asset in resolved.assets.values():
                         abs_source = os.path.join(repo_dir, asset.source)
                         if not os.path.exists(abs_source) and not asset.encrypted:
-                            issues.append({
-                                "category": "asset_source",
-                                "severity": "error",
-                                "message": f"Source file missing for asset '{asset.id}': {abs_source}"
-                            })
+                            issues.append(
+                                {
+                                    "category": "asset_source",
+                                    "severity": "error",
+                                    "message": f"Source file missing for asset '{asset.id}': {abs_source}",
+                                }
+                            )
 
                         # Verify path loop checks
                         try:
                             abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
                             if PathHelper.detect_symlink_loop(abs_target):
-                                issues.append({
+                                issues.append(
+                                    {
+                                        "category": "asset_target",
+                                        "severity": "error",
+                                        "message": f"Target path '{abs_target}' for asset '{asset.id}' forms a cyclic symlink loop",
+                                    }
+                                )
+                        except Exception as e:
+                            issues.append(
+                                {
                                     "category": "asset_target",
                                     "severity": "error",
-                                    "message": f"Target path '{abs_target}' for asset '{asset.id}' forms a cyclic symlink loop"
-                                })
-                        except Exception as e:
-                            issues.append({
-                                "category": "asset_target",
-                                "severity": "error",
-                                "message": f"Failed path interpolation/verification for asset '{asset.id}': {e}"
-                            })
+                                    "message": f"Failed path interpolation/verification for asset '{asset.id}': {e}",
+                                }
+                            )
 
                     # Verify each secret source exists in repo
                     for secret in resolved.secrets.values():
                         abs_source = os.path.join(repo_dir, secret.source)
                         if not os.path.exists(abs_source):
-                            issues.append({
-                                "category": "secret_source",
-                                "severity": "error",
-                                "message": f"Source file missing for secret '{secret.id}': {abs_source}"
-                            })
+                            issues.append(
+                                {
+                                    "category": "secret_source",
+                                    "severity": "error",
+                                    "message": f"Source file missing for secret '{secret.id}': {abs_source}",
+                                }
+                            )
 
                 except Exception as e:
-                    issues.append({
-                        "category": "profile_resolution",
-                        "severity": "critical",
-                        "message": f"Failed to resolve profile '{profile_name}': {e}"
-                    })
+                    issues.append(
+                        {
+                            "category": "profile_resolution",
+                            "severity": "critical",
+                            "message": f"Failed to resolve profile '{profile_name}': {e}",
+                        }
+                    )
 
         healthy = not any(i["severity"] == "critical" for i in issues)
 
-        return {
-            "healthy": healthy,
-            "issues": issues,
-            "checks_run": checks_run,
-            "tools": tools_status
-        }
+        return {"healthy": healthy, "issues": issues, "checks_run": checks_run, "tools": tools_status}

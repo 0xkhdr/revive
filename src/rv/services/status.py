@@ -1,5 +1,4 @@
-"""StatusService to compute drift between manifest.lock, resolved profile, and local filesystem.
-"""
+"""StatusService to compute drift between manifest.lock, resolved profile, and local filesystem."""
 
 import difflib
 import hashlib
@@ -19,12 +18,7 @@ class StatusService:
     """Computes drift between expected repo state and actual system state."""
 
     @classmethod
-    def get_status(
-        cls,
-        repo_dir: str,
-        profile_name: str,
-        identity_path: str | None = None
-    ) -> dict[str, Any]:
+    def get_status(cls, repo_dir: str, profile_name: str, identity_path: str | None = None) -> dict[str, Any]:
         """Compares resolved profile assets with the current filesystem.
 
         Args:
@@ -68,19 +62,11 @@ class StatusService:
             if status_info["status"] != "in_sync":
                 drifted = True
 
-        return {
-            "drifted": drifted,
-            "profile": profile_name,
-            "assets": assets_status
-        }
+        return {"drifted": drifted, "profile": profile_name, "assets": assets_status}
 
     @classmethod
     def _check_asset_drift(
-        cls,
-        asset: Asset | Secret,
-        repo_dir: str,
-        lockfile: Lockfile,
-        identity_path: str | None = None
+        cls, asset: Asset | Secret, repo_dir: str, lockfile: Lockfile, identity_path: str | None = None
     ) -> dict[str, Any]:
         """Evaluates a single asset or secret for drift against current filesystem."""
         try:
@@ -90,7 +76,7 @@ class StatusService:
                 "type": asset.type,
                 "target": asset.target,
                 "status": "error",
-                "details": f"Failed path interpolation: {e}"
+                "details": f"Failed path interpolation: {e}",
             }
 
         abs_source = os.path.join(repo_dir, asset.source)
@@ -104,7 +90,7 @@ class StatusService:
                 "type": asset.type,
                 "target": abs_target,
                 "status": "missing",
-                "details": "Target does not exist on filesystem"
+                "details": "Target does not exist on filesystem",
             }
 
         # 2. Check type mismatch (e.g. symlink wanted, but standard file exists)
@@ -114,9 +100,9 @@ class StatusService:
                     "type": asset.type,
                     "target": abs_target,
                     "status": "type_mismatch",
-                    "details": "Expected a symlink, but found a regular file/directory"
+                    "details": "Expected a symlink, but found a regular file/directory",
                 }
-            
+
             # Check if symlink target points to correct source
             try:
                 link_target = os.readlink(abs_target)
@@ -125,14 +111,14 @@ class StatusService:
                         "type": asset.type,
                         "target": abs_target,
                         "status": "modified",
-                        "details": f"Symlink points to '{link_target}', expected '{abs_source}'"
+                        "details": f"Symlink points to '{link_target}', expected '{abs_source}'",
                     }
             except Exception as e:
                 return {
                     "type": asset.type,
                     "target": abs_target,
                     "status": "error",
-                    "details": f"Failed to read symlink: {e}"
+                    "details": f"Failed to read symlink: {e}",
                 }
         else:
             # Expected a standard file
@@ -141,7 +127,7 @@ class StatusService:
                     "type": asset.type,
                     "target": abs_target,
                     "status": "type_mismatch",
-                    "details": "Expected a file, but found a symlink"
+                    "details": "Expected a file, but found a symlink",
                 }
 
             # Check permissions
@@ -149,13 +135,13 @@ class StatusService:
             expected_perms = asset.permissions
             if not expected_perms:
                 expected_perms = "0600" if asset.type == AssetType.SECRET else "0644"
-            
+
             if oct(stat_mode) != oct(int(expected_perms, 8)):
                 return {
                     "type": asset.type,
                     "target": abs_target,
                     "status": "permissions_drifted",
-                    "details": f"Permissions mismatch: actual {oct(stat_mode)}, expected {expected_perms}"
+                    "details": f"Permissions mismatch: actual {oct(stat_mode)}, expected {expected_perms}",
                 }
 
             # Check content drift
@@ -165,7 +151,9 @@ class StatusService:
                     content_changed = cls._check_encrypted_drift(abs_source, abs_target, lock_entry, identity_path)
                 else:
                     # Regular copy
-                    content_changed = (RestoreService.calculate_sha256(abs_source) != RestoreService.calculate_sha256(abs_target))
+                    content_changed = RestoreService.calculate_sha256(abs_source) != RestoreService.calculate_sha256(
+                        abs_target
+                    )
             elif asset.type == AssetType.TEMPLATE:
                 # Compare rendered template
                 if not isinstance(asset, Asset):
@@ -181,23 +169,19 @@ class StatusService:
                     "type": asset.type,
                     "target": abs_target,
                     "status": "modified",
-                    "details": "File content has drifted from repository source"
+                    "details": "File content has drifted from repository source",
                 }
 
         return {
             "type": asset.type,
             "target": abs_target,
             "status": "in_sync",
-            "details": "Asset is in sync with repository state"
+            "details": "Asset is in sync with repository state",
         }
 
     @classmethod
     def _check_encrypted_drift(
-        cls,
-        abs_source: str,
-        abs_target: str,
-        lock_entry: Any | None,
-        identity_path: str | None
+        cls, abs_source: str, abs_target: str, lock_entry: Any | None, identity_path: str | None
     ) -> bool:
         """Determines if decrypted/encrypted file content has drifted."""
         if identity_path and os.path.exists(identity_path):
@@ -224,6 +208,7 @@ class StatusService:
     def _check_template_drift(cls, asset: Asset, abs_source: str, abs_target: str) -> bool:
         """Determines if a rendered template has drifted from actual system file."""
         import jinja2
+
         try:
             with open(abs_source, encoding="utf-8") as f:
                 template_content = f.read()
@@ -236,7 +221,7 @@ class StatusService:
             rendered = template.render(context)
 
             target_sha = RestoreService.calculate_sha256(abs_target)
-            
+
             # Temporary hash calculation
             rendered_sha = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
             return rendered_sha != target_sha
@@ -244,13 +229,7 @@ class StatusService:
             return True
 
     @classmethod
-    def get_diff(
-        cls,
-        repo_dir: str,
-        profile_name: str,
-        asset_id: str,
-        identity_path: str | None = None
-    ) -> str | None:
+    def get_diff(cls, repo_dir: str, profile_name: str, asset_id: str, identity_path: str | None = None) -> str | None:
         """Calculates a diff representation between expected source and system file.
 
         Args:
@@ -303,6 +282,7 @@ class StatusService:
                     return None
         elif asset.type == AssetType.TEMPLATE:
             import jinja2
+
             try:
                 with open(abs_source, encoding="utf-8") as f:
                     template_content = f.read()
@@ -339,7 +319,7 @@ class StatusService:
             actual_text.splitlines(),
             fromfile=f"repo://{asset.source}",
             tofile=abs_target,
-            lineterm=""
+            lineterm="",
         )
 
         return "\n".join(diff_lines)

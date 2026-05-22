@@ -1,5 +1,4 @@
-"""Platform detection utilities for system capabilities and OS profiles.
-"""
+"""Platform detection utilities for system capabilities and OS profiles."""
 
 import os
 import shutil

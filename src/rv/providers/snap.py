@@ -1,5 +1,4 @@
-"""Snap package provider orchestration.
-"""
+"""Snap package provider orchestration."""
 
 import subprocess
 
@@ -19,11 +18,7 @@ class SnapProvider(BaseProvider):
         """Checks if a snap package is installed via snap list."""
         try:
             # snap list <pkg> returns 0 if installed, 1 if not.
-            res = subprocess.run(
-                ["snap", "list", pkg],
-                capture_output=True,
-                check=False
-            )
+            res = subprocess.run(["snap", "list", pkg], capture_output=True, check=False)
             return res.returncode == 0
         except Exception:
             return False

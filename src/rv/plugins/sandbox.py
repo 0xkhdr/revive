@@ -1,5 +1,4 @@
-"""Sandbox execution runner. Executes plugins in isolated subprocesses.
-"""
+"""Sandbox execution runner. Executes plugins in isolated subprocesses."""
 
 import base64
 import json
@@ -48,7 +47,7 @@ class SandboxRunner:
             plugin.entrypoint_path,
             perms_b64,
             ctx_b64,
-            context.hook_type
+            context.hook_type,
         ]
 
         # Prepare isolated environment
@@ -60,13 +59,7 @@ class SandboxRunner:
             env["no_proxy"] = "*"
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                env=env,
-                timeout=timeout,
-                check=False
-            )
+            result = subprocess.run(cmd, capture_output=True, env=env, timeout=timeout, check=False)
 
             stdout_str = result.stdout.decode("utf-8", errors="replace").strip()
             stderr_str = result.stderr.decode("utf-8", errors="replace").strip()
@@ -85,13 +78,7 @@ class SandboxRunner:
             except Exception:
                 pass
 
-            return {
-                "status": "success",
-                "message": "Plugin completed successfully",
-                "stdout": stdout_str
-            }
+            return {"status": "success", "message": "Plugin completed successfully", "stdout": stdout_str}
 
         except subprocess.TimeoutExpired as e:
-            raise TimeoutError(
-                f"Plugin '{plugin.manifest.name}' timed out after {timeout} seconds."
-            ) from e
+            raise TimeoutError(f"Plugin '{plugin.manifest.name}' timed out after {timeout} seconds.") from e

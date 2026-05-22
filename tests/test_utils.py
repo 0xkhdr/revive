@@ -1,5 +1,4 @@
-"""Test suite for platform, path, and env interpolation utilities.
-"""
+"""Test suite for platform, path, and env interpolation utilities."""
 
 import os
 import tempfile
@@ -66,7 +65,7 @@ def test_path_helper_symlink_loop_detection() -> None:
         target_file = os.path.join(tmpdir, "target.txt")
         with open(target_file, "w") as f:
             f.write("hello")
-        
+
         safe_link = os.path.join(tmpdir, "safe_link")
         os.symlink(target_file, safe_link)
 

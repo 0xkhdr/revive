@@ -1,5 +1,4 @@
-"""Watchdog daemon for revive. Monitors repo for changes and triggers restore.
-"""
+"""Watchdog daemon for revive. Monitors repo for changes and triggers restore."""
 
 import os
 import threading
@@ -20,11 +19,7 @@ class RepoChangeHandler(FileSystemEventHandler):
     """Handles filesystem events in the revive repository."""
 
     def __init__(
-        self,
-        repo_dir: str,
-        profile_name: str,
-        identity_path: str | None = None,
-        debounce_seconds: float = 5.0
+        self, repo_dir: str, profile_name: str, identity_path: str | None = None, debounce_seconds: float = 5.0
     ):
         self.repo_dir = os.path.abspath(repo_dir)
         self.profile_name = profile_name
@@ -85,13 +80,11 @@ class RepoChangeHandler(FileSystemEventHandler):
                 identity_path=self.identity_path,
                 interactive=False,  # Headless auto-apply must not prompt for conflicts
                 dry_run=False,
-                no_plugins=False
+                no_plugins=False,
             )
             logger.info("Auto-restore completed successfully.")
         except LockAcquisitionError:
-            logger.warning(
-                "Another revive process currently holds the lock. Skipping this auto-restore trigger."
-            )
+            logger.warning("Another revive process currently holds the lock. Skipping this auto-restore trigger.")
         except Exception as e:
             logger.error(f"Auto-restore failed during execution: {e}", exc_info=True)
 
@@ -105,11 +98,7 @@ class WatchdogDaemon:
     """Watchdog daemon coordinating filesystem observation."""
 
     def __init__(
-        self,
-        repo_dir: str,
-        profile_name: str,
-        identity_path: str | None = None,
-        debounce_seconds: float = 5.0
+        self, repo_dir: str, profile_name: str, identity_path: str | None = None, debounce_seconds: float = 5.0
     ):
         self.repo_dir = repo_dir
         self.profile_name = profile_name
@@ -125,7 +114,7 @@ class WatchdogDaemon:
             repo_dir=self.repo_dir,
             profile_name=self.profile_name,
             identity_path=self.identity_path,
-            debounce_seconds=self.debounce_seconds
+            debounce_seconds=self.debounce_seconds,
         )
         self._observer = Observer()
         self._observer.schedule(self._handler, self.repo_dir, recursive=True)
@@ -140,4 +129,3 @@ class WatchdogDaemon:
         if self._handler:
             self._handler.stop()
         logger.info("Watchdog daemon stopped.")
-

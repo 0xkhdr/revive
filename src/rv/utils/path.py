@@ -1,5 +1,4 @@
-"""Path canonicalization, cross-device, and symlink loop detection utilities.
-"""
+"""Path canonicalization, cross-device, and symlink loop detection utilities."""
 
 import os
 

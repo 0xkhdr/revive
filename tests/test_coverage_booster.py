@@ -1,5 +1,4 @@
-"""Coverage booster test suite for revive core components.
-"""
+"""Coverage booster test suite for revive core components."""
 
 import os
 import shutil
@@ -50,10 +49,10 @@ def test_path_helper_detect_symlink_loop_relative() -> None:
     try:
         sym1 = os.path.join(temp_dir, "sym1")
         sym2 = os.path.join(temp_dir, "sym2")
-        
+
         os.symlink("sym2", sym1)
         os.symlink("sym1", sym2)
-        
+
         assert PathHelper.detect_symlink_loop(sym1) is True
     finally:
         shutil.rmtree(temp_dir)
@@ -83,8 +82,10 @@ def test_atomic_write_error_unlink_fails() -> None:
     temp_dir = tempfile.mkdtemp()
     try:
         target = os.path.join(temp_dir, "test.txt")
-        with patch("os.fsync", side_effect=IOError("Sync failed")), \
-             patch("os.unlink", side_effect=OSError("Unlink failed")):
+        with (
+            patch("os.fsync", side_effect=IOError("Sync failed")),
+            patch("os.unlink", side_effect=OSError("Unlink failed")),
+        ):
             with pytest.raises(RuntimeError, match="Atomic write to .* failed"):
                 AtomicWrite.write(target, "content")
     finally:
@@ -133,12 +134,7 @@ def mock_exists_source_only(path: str) -> bool:
 
 def test_asset_handler_unsupported_type() -> None:
     """Tests AssetHandler raises ValueError for unsupported asset types."""
-    asset = Asset(
-        id="bad_type",
-        type=AssetType.COPY,
-        source="src",
-        target="tgt"
-    )
+    asset = Asset(id="bad_type", type=AssetType.COPY, source="src", target="tgt")
     asset.type = "unsupported_type"  # type: ignore
     tx_context = MagicMock()
     with patch("os.path.exists", side_effect=mock_exists_source_only):
@@ -148,28 +144,19 @@ def test_asset_handler_unsupported_type() -> None:
 
 def test_asset_handler_symlink_loop() -> None:
     """Tests AssetHandler raises AssetHandlerError when a symlink loop is detected."""
-    asset = Asset(
-        id="loop_link",
-        type=AssetType.SYMLINK,
-        source="src",
-        target="tgt"
-    )
+    asset = Asset(id="loop_link", type=AssetType.SYMLINK, source="src", target="tgt")
     tx_context = MagicMock()
-    with patch("os.path.exists", side_effect=mock_exists_source_only), \
-         patch("rv.utils.path.PathHelper.detect_symlink_loop", return_value=True):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_source_only),
+        patch("rv.utils.path.PathHelper.detect_symlink_loop", return_value=True),
+    ):
         with pytest.raises(AssetHandlerError, match="Symlink loop detected for source"):
             AssetHandler.handle(asset, "/tmp", tx_context)
 
 
 def test_asset_handler_copy_encrypted_missing_identity() -> None:
     """Tests AssetHandler raises AssetHandlerError when identity_path is missing for encrypted copy."""
-    asset = Asset(
-        id="enc_copy",
-        type=AssetType.COPY,
-        source="src.age",
-        target="tgt",
-        encrypted=True
-    )
+    asset = Asset(id="enc_copy", type=AssetType.COPY, source="src.age", target="tgt", encrypted=True)
     tx_context = MagicMock()
     with pytest.raises(AssetHandlerError, match="Identity key required to decrypt encrypted asset"):
         AssetHandler.handle(asset, "/tmp", tx_context, identity_path=None)
@@ -177,31 +164,24 @@ def test_asset_handler_copy_encrypted_missing_identity() -> None:
 
 def test_asset_handler_copy_decryption_fails() -> None:
     """Tests AssetHandler raises AssetHandlerError when AgeEncryptor decryption fails."""
-    asset = Asset(
-        id="enc_copy",
-        type=AssetType.COPY,
-        source="src.age",
-        target="tgt",
-        encrypted=True
-    )
+    asset = Asset(id="enc_copy", type=AssetType.COPY, source="src.age", target="tgt", encrypted=True)
     tx_context = MagicMock()
-    with patch("os.path.exists", side_effect=mock_exists_source_only), \
-         patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("Decryption failed")):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_source_only),
+        patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("Decryption failed")),
+    ):
         with pytest.raises(AssetHandlerError, match="Failed to decrypt asset enc_copy"):
             AssetHandler.handle(asset, "/tmp", tx_context, identity_path="/tmp/id")
 
 
 def test_asset_handler_template_read_fails() -> None:
     """Tests AssetHandler template reading failing."""
-    asset = Asset(
-        id="tpl",
-        type=AssetType.TEMPLATE,
-        source="src.j2",
-        target="tgt"
-    )
+    asset = Asset(id="tpl", type=AssetType.TEMPLATE, source="src.j2", target="tgt")
     tx_context = MagicMock()
-    with patch("os.path.exists", side_effect=mock_exists_source_only), \
-         patch("builtins.open", side_effect=IOError("Read failed")):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_source_only),
+        patch("builtins.open", side_effect=IOError("Read failed")),
+    ):
         with pytest.raises(AssetHandlerError, match="Failed to read template source"):
             AssetHandler.handle(asset, "/tmp", tx_context)
 
@@ -215,29 +195,24 @@ def mock_open_content(content: str):
 
 def test_asset_handler_template_render_fails() -> None:
     """Tests AssetHandler template rendering failing."""
-    asset = Asset(
-        id="tpl",
-        type=AssetType.TEMPLATE,
-        source="src.j2",
-        target="tgt"
-    )
+    asset = Asset(id="tpl", type=AssetType.TEMPLATE, source="src.j2", target="tgt")
     tx_context = MagicMock()
-    with patch("os.path.exists", side_effect=mock_exists_source_only), \
-         patch("builtins.open", mock_open_content("Hello {{ MISSING_VAR }}")):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_source_only),
+        patch("builtins.open", mock_open_content("Hello {{ MISSING_VAR }}")),
+    ):
         with pytest.raises(AssetHandlerError, match="Template rendering failed for tpl"):
             AssetHandler.handle(asset, "/tmp", tx_context)
 
 
 def test_asset_handler_secret_decryption_fails() -> None:
     """Tests AssetHandler secret decryption failure path."""
-    secret = Secret(
-        id="sec",
-        source="sec.age",
-        target="tgt"
-    )
+    secret = Secret(id="sec", source="sec.age", target="tgt")
     tx_context = MagicMock()
-    with patch("os.path.exists", side_effect=mock_exists_source_only), \
-         patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("Decryption failed")):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_source_only),
+        patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("Decryption failed")),
+    ):
         with pytest.raises(AssetHandlerError, match="Failed to decrypt secret sec"):
             AssetHandler.handle(secret, "/tmp", tx_context, identity_path="/tmp/id")
 
@@ -255,7 +230,7 @@ def test_restore_service_machine_overrides(temp_repo: str) -> None:
     hostname = "my-test-host"
     override_rel = f"machine/{hostname}.yaml"
     override_abs = os.path.join(temp_repo, override_rel)
-    
+
     manifest_data = {
         "version": 2,
         "assets": [
@@ -263,21 +238,15 @@ def test_restore_service_machine_overrides(temp_repo: str) -> None:
                 "id": "bashrc_copy",
                 "type": "copy",
                 "source": "assets/bashrc_src",
-                "target": os.path.join(temp_repo, "system_bashrc")
+                "target": os.path.join(temp_repo, "system_bashrc"),
             }
         ],
-        "profiles": {
-            "base": {
-                "assets": ["bashrc_copy"]
-            }
-        },
-        "machine_overrides": {
-            "enabled": True,
-            "path": "machine/{hostname}.yaml"
-        }
+        "profiles": {"base": {"assets": ["bashrc_copy"]}},
+        "machine_overrides": {"enabled": True, "path": "machine/{hostname}.yaml"},
     }
     with open(os.path.join(temp_repo, "manifest.yaml"), "w", encoding="utf-8") as f:
         import yaml
+
         yaml.safe_dump(manifest_data, f)
 
     with open(os.path.join(temp_repo, "assets", "bashrc_src"), "w", encoding="utf-8") as f:
@@ -290,24 +259,22 @@ def test_restore_service_machine_overrides(temp_repo: str) -> None:
                 "id": "bashrc_copy",
                 "type": "copy",
                 "source": "assets/bashrc_src",
-                "target": os.path.join(temp_repo, "system_bashrc_overridden")
+                "target": os.path.join(temp_repo, "system_bashrc_overridden"),
             }
         ],
-        "packages": {
-            "brew": ["git"],
-            "docker": {"images": ["alpine"]}
-        }
+        "packages": {"brew": ["git"], "docker": {"images": ["alpine"]}},
     }
     with open(override_abs, "w", encoding="utf-8") as f:
         yaml.safe_dump(override_data, f)
 
-    with patch("socket.gethostname", return_value=hostname), \
-         patch("rv.providers.brew.BrewProvider.install") as mock_brew, \
-         patch("rv.providers.docker.DockerProvider.install") as mock_docker:
-        
+    with (
+        patch("socket.gethostname", return_value=hostname),
+        patch("rv.providers.brew.BrewProvider.install") as mock_brew,
+        patch("rv.providers.docker.DockerProvider.install") as mock_docker,
+    ):
         tx_id = RestoreService.restore(temp_repo, "base", interactive=False)
         assert tx_id is not None
-        
+
         assert os.path.exists(os.path.join(temp_repo, "system_bashrc_overridden"))
         assert not os.path.exists(os.path.join(temp_repo, "system_bashrc"))
 
@@ -316,26 +283,20 @@ def test_restore_service_rollback_on_package_failure(temp_repo: str) -> None:
     """Tests that RestoreService triggers tx_context.rollback() and raises RuntimeError when package installation fails."""
     manifest_data = {
         "version": 2,
-        "packages": {
-            "brew": ["git"]
-        },
+        "packages": {"brew": ["git"]},
         "assets": [
             {
                 "id": "bashrc_copy",
                 "type": "copy",
                 "source": "assets/bashrc_src",
-                "target": os.path.join(temp_repo, "system_bashrc")
+                "target": os.path.join(temp_repo, "system_bashrc"),
             }
         ],
-        "profiles": {
-            "base": {
-                "assets": ["bashrc_copy"],
-                "packages": ["brew"]
-            }
-        }
+        "profiles": {"base": {"assets": ["bashrc_copy"], "packages": ["brew"]}},
     }
     with open(os.path.join(temp_repo, "manifest.yaml"), "w", encoding="utf-8") as f:
         import yaml
+
         yaml.safe_dump(manifest_data, f)
 
     with open(os.path.join(temp_repo, "assets", "bashrc_src"), "w", encoding="utf-8") as f:

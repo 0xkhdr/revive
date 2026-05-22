@@ -1,2 +1,1 @@
-"""Typer CLI interface components for Revive (rv).
-"""
+"""Typer CLI interface components for Revive (rv)."""

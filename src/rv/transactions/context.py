@@ -29,7 +29,7 @@ class TransactionContext:
         self.timestamp = time.time()
         self.status = "pending"
         self.entries: list[RollbackEntry] = []
-        
+
         # Paths for journal and backups
         self.journal_dir = os.path.expanduser("~/.config/rv/journals")
         self.backup_dir = os.path.expanduser(f"~/.config/rv/backups/{self.tx_id}")
@@ -47,12 +47,9 @@ class TransactionContext:
             source_data: Source path or content data.
             kwargs: Extra parameters (e.g., permissions, owner).
         """
-        self.planned_operations.append({
-            "op_type": op_type,
-            "target": os.path.abspath(target),
-            "source_data": source_data,
-            "kwargs": kwargs
-        })
+        self.planned_operations.append(
+            {"op_type": op_type, "target": os.path.abspath(target), "source_data": source_data, "kwargs": kwargs}
+        )
 
     def validate(self) -> None:
         """Step 2: Validate all targets and permissions before any write.
@@ -66,7 +63,7 @@ class TransactionContext:
 
             target = op["target"]
             parent = os.path.dirname(target)
-            
+
             # Check if parent directory exists or can be created
             if not os.path.exists(parent):
                 try:
@@ -94,7 +91,7 @@ class TransactionContext:
         for idx, op in enumerate(self.planned_operations):
             target = op["target"]
             op_type = op["op_type"]
-            
+
             # Determine rollback entry parameters
             src_backup = None
             checksum = None
@@ -106,7 +103,7 @@ class TransactionContext:
                     if os.path.isfile(target) and not os.path.islink(target):
                         with open(target, "rb") as f:
                             checksum = hashlib.sha256(f.read()).hexdigest()
-                    
+
                     # Store permissions
                     permissions = oct(os.stat(target).st_mode & 0o7777)
                 except Exception:
@@ -135,11 +132,7 @@ class TransactionContext:
                 rollback_op = "delete"
 
             entry = RollbackEntry(
-                op=rollback_op,
-                src_backup=src_backup,
-                target=target,
-                checksum=checksum,
-                permissions=permissions
+                op=rollback_op, src_backup=src_backup, target=target, checksum=checksum, permissions=permissions
             )
             self.entries.append(entry)
 
@@ -171,7 +164,7 @@ class TransactionContext:
                             content = f.read()
                     else:
                         content = source_data or b""
-                    
+
                     AtomicWrite.write(target, content)
 
                 elif op_type == "symlink":
@@ -296,7 +289,7 @@ class TransactionContext:
                                 content = f.read()
                                 if content.startswith("SYMLINK:"):
                                     is_symlink = True
-                                    link_target = content[len("SYMLINK:"):]
+                                    link_target = content[len("SYMLINK:") :]
                         except Exception:
                             pass
 
@@ -319,10 +312,7 @@ class TransactionContext:
         """Serializes current transaction journal state to the journal directory."""
         try:
             journal = TransactionJournal(
-                tx_id=self.tx_id,
-                timestamp=self.timestamp,
-                status=self.status,
-                entries=self.entries
+                tx_id=self.tx_id, timestamp=self.timestamp, status=self.status, entries=self.entries
             )
             AtomicWrite.write(self.journal_path, journal.model_dump_json(indent=2))
         except Exception:

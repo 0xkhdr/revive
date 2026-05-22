@@ -37,16 +37,15 @@ graph TD
 Revive leverages **Age** (a simple, modern, and highly secure encryption tool) to secure your secrets in the Git repository. Before scaffolding, you must generate a secure keypair.
 
 ### 1. Generate an Age Keypair
-To ensure your secrets are protected, create a secure directory and generate a keypair using `age-keygen`:
+To ensure your secrets are protected, create a secure directory and generate a keypair natively using `rv`:
 
 ```bash
 # Create a secure local keys directory
 mkdir -p ~/.config/rv/keys
 chmod 700 ~/.config/rv/keys
 
-# Generate the identity (private key)
-age-keygen -o ~/.config/rv/keys/identity.txt
-chmod 600 ~/.config/rv/keys/identity.txt
+# Generate the identity (private key) natively
+python3 -m rv secret keygen -o ~/.config/rv/keys/identity.txt
 ```
 
 > [!IMPORTANT]
@@ -356,30 +355,32 @@ git clone git@github.com:yourusername/my-revive-backup.git
 cd my-revive-backup
 ```
 
-### 4. Install the `rv` CLI Tool
-Install the `revive-cli` package into a user-local python space or compile it locally.
+### 4. Install and Bootstrap the `rv` CLI Tool
+Install the `revive-cli` and bootstrap its global system wrapper script.
 
-#### Option A: Editable Python Environment Installation (Recommended)
-Set up a dedicated virtual environment for system tools or run a user-pip install:
+#### Option A: Local Virtual Environment with Global Shell Wrapper (Recommended)
+Set up a dedicated virtual environment, install the tool, and register the global wrapper:
 
 ```bash
+# Set up virtual environment and install revive-cli
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+.venv/bin/pip install -e .
+
+# Bootstrap the global wrapper to ~/.local/bin/rv (no virtualenv activation required!)
+.venv/bin/python -m rv self-install
 ```
 
 #### Option B: Standalone PyInstaller Binary Compilation
-If you prefer a single standalone portable executable:
+If you prefer a standalone compiled binary:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install .[dev]
 pyinstaller --onefile --name rv src/rv/__main__.py
 
-# Add the compiled binary to your local user binary path
+# Place the compiled binary in your local user path
 mkdir -p ~/.local/bin
 cp dist/rv ~/.local/bin/
-export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ---

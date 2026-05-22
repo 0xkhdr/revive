@@ -1,5 +1,4 @@
-"""Flatpak package provider orchestration.
-"""
+"""Flatpak package provider orchestration."""
 
 import subprocess
 
@@ -19,11 +18,7 @@ class FlatpakProvider(BaseProvider):
         """Checks if a flatpak ref is already installed via flatpak info."""
         try:
             # flatpak info <ref> returns 0 if installed, 1 if not.
-            res = subprocess.run(
-                ["flatpak", "info", ref],
-                capture_output=True,
-                check=False
-            )
+            res = subprocess.run(["flatpak", "info", ref], capture_output=True, check=False)
             return res.returncode == 0
         except Exception:
             return False

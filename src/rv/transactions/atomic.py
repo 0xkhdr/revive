@@ -1,5 +1,4 @@
-"""Atomic write helpers using temporary files and directory renames.
-"""
+"""Atomic write helpers using temporary files and directory renames."""
 
 import os
 import tempfile
@@ -22,7 +21,7 @@ class AtomicWrite:
 
         # Create temporary file in the SAME directory to avoid cross-device renames failing
         fd, temp_path = tempfile.mkstemp(dir=parent_dir, prefix=".rv_atomic_tmp_")
-        
+
         try:
             mode = "wb" if isinstance(content, bytes) else "w"
             encoding = None if isinstance(content, bytes) else "utf-8"

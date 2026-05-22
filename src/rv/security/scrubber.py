@@ -1,5 +1,4 @@
-"""SecretScrubber to filter and redact sensitive data from logs and traces.
-"""
+"""SecretScrubber to filter and redact sensitive data from logs and traces."""
 
 import logging
 import re
@@ -12,7 +11,10 @@ class SecretScrubber:
     _static_patterns: list[re.Pattern[str]] = [
         re.compile(r"AGE-SECRET-KEY-1[a-zA-Z0-9]+", re.IGNORECASE),
         re.compile(r"(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256)\s+[a-zA-Z0-9+/=]+", re.IGNORECASE),
-        re.compile(r"-----BEGIN\s+(?:RSA|OPENSSH|PRIVATE)\s+KEY-----[^-]+-----END\s+(?:RSA|OPENSSH|PRIVATE)\s+KEY-----", re.DOTALL),
+        re.compile(
+            r"-----BEGIN\s+(?:RSA|OPENSSH|PRIVATE)\s+KEY-----[^-]+-----END\s+(?:RSA|OPENSSH|PRIVATE)\s+KEY-----",
+            re.DOTALL,
+        ),
     ]
 
     _dynamic_secrets: set[str] = set()

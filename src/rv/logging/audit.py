@@ -59,12 +59,13 @@ class AuditLogger:
         if not headless:
             try:
                 from rich.logging import RichHandler
+
                 console_handler = RichHandler(
                     show_path=False,
                     omit_repeated_times=True,
                     markup=True,
                     rich_tracebacks=True,
-                    tracebacks_show_locals=False
+                    tracebacks_show_locals=False,
                 )
                 console_handler.setFormatter(ScrubbingFormatter("[rv] %(message)s"))
                 root_logger.addHandler(console_handler)

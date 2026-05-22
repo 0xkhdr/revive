@@ -1,5 +1,4 @@
-"""Comprehensive test suite for the revive plugin system and sandboxed hook execution.
-"""
+"""Comprehensive test suite for the revive plugin system and sandboxed hook execution."""
 
 import os
 import shutil
@@ -34,13 +33,9 @@ def test_plugin_loader_parse_manifest(temp_workspace: str) -> None:
         "name": "my-test-plugin",
         "version": "1.2.3",
         "entrypoint": "main.py",
-        "permissions": {
-            "network": True,
-            "shell": False,
-            "allowed_paths": ["/tmp/allowed"]
-        },
+        "permissions": {"network": True, "shell": False, "allowed_paths": ["/tmp/allowed"]},
         "hooks": ["pre-restore", "post-restore"],
-        "timeout": 45
+        "timeout": 45,
     }
 
     yaml_path = os.path.join(plugin_dir, "plugin.yaml")
@@ -66,10 +61,7 @@ def test_plugin_loader_invalid_manifest(temp_workspace: str) -> None:
     os.makedirs(plugin_dir, exist_ok=True)
 
     # Missing entrypoint
-    manifest_data = {
-        "name": "bad-plugin",
-        "version": "1.0.0"
-    }
+    manifest_data = {"name": "bad-plugin", "version": "1.0.0"}
 
     yaml_path = os.path.join(plugin_dir, "plugin.yaml")
     with open(yaml_path, "w", encoding="utf-8") as f:
@@ -88,11 +80,7 @@ def test_plugin_loader_discover_priority(temp_workspace: str) -> None:
     p1_dir = os.path.join(repo_plugins, "plugin-a")
     os.makedirs(p1_dir, exist_ok=True)
     with open(os.path.join(p1_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
-        yaml.safe_dump({
-            "name": "plugin-a",
-            "version": "1.0.0-repo",
-            "entrypoint": "main.py"
-        }, f)
+        yaml.safe_dump({"name": "plugin-a", "version": "1.0.0-repo", "entrypoint": "main.py"}, f)
 
     # 2. Discover plugins
     plugins = PluginLoader.discover_plugins(temp_workspace)
@@ -110,14 +98,9 @@ def test_sandbox_runner_network_block(temp_workspace: str) -> None:
     os.makedirs(plugin_dir, exist_ok=True)
 
     with open(os.path.join(plugin_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
-        yaml.safe_dump({
-            "name": "net-plugin",
-            "version": "1.0.0",
-            "entrypoint": "main.py",
-            "permissions": {
-                "network": False
-            }
-        }, f)
+        yaml.safe_dump(
+            {"name": "net-plugin", "version": "1.0.0", "entrypoint": "main.py", "permissions": {"network": False}}, f
+        )
 
     with open(os.path.join(plugin_dir, "main.py"), "w", encoding="utf-8") as f:
         f.write("""import socket
@@ -135,11 +118,7 @@ except PermissionError as e:
     assert plugin is not None
 
     context = ReviveContext(
-        repo_dir=temp_workspace,
-        profile_name="base",
-        dry_run=False,
-        targets=[],
-        hook_type="pre-restore"
+        repo_dir=temp_workspace, profile_name="base", dry_run=False, targets=[], hook_type="pre-restore"
     )
 
     res = SandboxRunner.run_plugin(plugin, context)
@@ -153,14 +132,9 @@ def test_sandbox_runner_shell_block(temp_workspace: str) -> None:
     os.makedirs(plugin_dir, exist_ok=True)
 
     with open(os.path.join(plugin_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
-        yaml.safe_dump({
-            "name": "shell-plugin",
-            "version": "1.0.0",
-            "entrypoint": "main.py",
-            "permissions": {
-                "shell": False
-            }
-        }, f)
+        yaml.safe_dump(
+            {"name": "shell-plugin", "version": "1.0.0", "entrypoint": "main.py", "permissions": {"shell": False}}, f
+        )
 
     with open(os.path.join(plugin_dir, "main.py"), "w", encoding="utf-8") as f:
         f.write("""import subprocess
@@ -183,11 +157,7 @@ except PermissionError as e:
     assert plugin is not None
 
     context = ReviveContext(
-        repo_dir=temp_workspace,
-        profile_name="base",
-        dry_run=False,
-        targets=[],
-        hook_type="pre-restore"
+        repo_dir=temp_workspace, profile_name="base", dry_run=False, targets=[], hook_type="pre-restore"
     )
 
     res = SandboxRunner.run_plugin(plugin, context)
@@ -203,14 +173,17 @@ def test_sandbox_runner_filesystem_block(temp_workspace: str) -> None:
     forbidden_file = "/etc/hosts"
 
     with open(os.path.join(plugin_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
-        yaml.safe_dump({
-            "name": "fs-plugin",
-            "version": "1.0.0",
-            "entrypoint": "main.py",
-            "permissions": {
-                "allowed_paths": []  # Do not explicitly whitelist anything outside default CWD/repo
-            }
-        }, f)
+        yaml.safe_dump(
+            {
+                "name": "fs-plugin",
+                "version": "1.0.0",
+                "entrypoint": "main.py",
+                "permissions": {
+                    "allowed_paths": []  # Do not explicitly whitelist anything outside default CWD/repo
+                },
+            },
+            f,
+        )
 
     with open(os.path.join(plugin_dir, "main.py"), "w", encoding="utf-8") as f:
         f.write(f"""import json
@@ -233,12 +206,12 @@ except PermissionError as e:
         profile_name="base",
         dry_run=False,
         targets=[],
-        hook_type="pre-restore"
+        hook_type="pre-restore",
     )
 
     res = SandboxRunner.run_plugin(plugin, context)
     assert res["status"] == "success"
-    assert "Filesystem access to" in res["message" ]
+    assert "Filesystem access to" in res["message"]
 
 
 def test_sandbox_runner_timeout(temp_workspace: str) -> None:
@@ -247,12 +220,15 @@ def test_sandbox_runner_timeout(temp_workspace: str) -> None:
     os.makedirs(plugin_dir, exist_ok=True)
 
     with open(os.path.join(plugin_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
-        yaml.safe_dump({
-            "name": "loop-plugin",
-            "version": "1.0.0",
-            "entrypoint": "main.py",
-            "timeout": 1  # 1 second timeout
-        }, f)
+        yaml.safe_dump(
+            {
+                "name": "loop-plugin",
+                "version": "1.0.0",
+                "entrypoint": "main.py",
+                "timeout": 1,  # 1 second timeout
+            },
+            f,
+        )
 
     with open(os.path.join(plugin_dir, "main.py"), "w", encoding="utf-8") as f:
         f.write("""import time
@@ -264,11 +240,7 @@ while True:
     assert plugin is not None
 
     context = ReviveContext(
-        repo_dir=temp_workspace,
-        profile_name="base",
-        dry_run=False,
-        targets=[],
-        hook_type="pre-restore"
+        repo_dir=temp_workspace, profile_name="base", dry_run=False, targets=[], hook_type="pre-restore"
     )
 
     with pytest.raises(TimeoutError, match="timed out after 1 seconds"):
@@ -285,14 +257,10 @@ def test_restore_service_plugin_execution_abort(temp_workspace: str) -> None:
                 "id": "file_a",
                 "type": "copy",
                 "source": "assets/file_a",
-                "target": os.path.join(temp_workspace, "system_a")
+                "target": os.path.join(temp_workspace, "system_a"),
             }
         ],
-        "profiles": {
-            "base": {
-                "assets": ["file_a"]
-            }
-        }
+        "profiles": {"base": {"assets": ["file_a"]}},
     }
 
     with open(os.path.join(temp_workspace, "manifest.yaml"), "w") as f:
@@ -309,12 +277,7 @@ def test_restore_service_plugin_execution_abort(temp_workspace: str) -> None:
     os.makedirs(hook_dir, exist_ok=True)
 
     with open(os.path.join(hook_dir, "plugin.yaml"), "w") as f:
-        yaml.safe_dump({
-            "name": "bad-hook",
-            "version": "1.0.0",
-            "entrypoint": "main.py",
-            "hooks": ["pre-restore"]
-        }, f)
+        yaml.safe_dump({"name": "bad-hook", "version": "1.0.0", "entrypoint": "main.py", "hooks": ["pre-restore"]}, f)
 
     with open(os.path.join(hook_dir, "main.py"), "w") as f:
         f.write("""import sys
@@ -323,11 +286,7 @@ sys.exit(1) # Fail immediately
 
     # Try restore, should raise RuntimeError and not write system_a
     with pytest.raises(RuntimeError, match="Plugin 'bad-hook' execution failed"):
-        RestoreService.restore(
-            repo_dir=temp_workspace,
-            profile_name="base",
-            interactive=False
-        )
+        RestoreService.restore(repo_dir=temp_workspace, profile_name="base", interactive=False)
 
     assert not os.path.exists(os.path.join(temp_workspace, "system_a"))
 
@@ -341,14 +300,10 @@ def test_restore_service_no_plugins_escape_hatch(temp_workspace: str) -> None:
                 "id": "file_a",
                 "type": "copy",
                 "source": "assets/file_a",
-                "target": os.path.join(temp_workspace, "system_a")
+                "target": os.path.join(temp_workspace, "system_a"),
             }
         ],
-        "profiles": {
-            "base": {
-                "assets": ["file_a"]
-            }
-        }
+        "profiles": {"base": {"assets": ["file_a"]}},
     }
 
     with open(os.path.join(temp_workspace, "manifest.yaml"), "w") as f:
@@ -365,12 +320,7 @@ def test_restore_service_no_plugins_escape_hatch(temp_workspace: str) -> None:
     os.makedirs(hook_dir, exist_ok=True)
 
     with open(os.path.join(hook_dir, "plugin.yaml"), "w") as f:
-        yaml.safe_dump({
-            "name": "bad-hook",
-            "version": "1.0.0",
-            "entrypoint": "main.py",
-            "hooks": ["pre-restore"]
-        }, f)
+        yaml.safe_dump({"name": "bad-hook", "version": "1.0.0", "entrypoint": "main.py", "hooks": ["pre-restore"]}, f)
 
     with open(os.path.join(hook_dir, "main.py"), "w") as f:
         f.write("""import sys
@@ -378,12 +328,7 @@ sys.exit(1)
 """)
 
     # Running with no_plugins=True should completely ignore bad-hook and succeed!
-    tx_id = RestoreService.restore(
-        repo_dir=temp_workspace,
-        profile_name="base",
-        interactive=False,
-        no_plugins=True
-    )
+    tx_id = RestoreService.restore(repo_dir=temp_workspace, profile_name="base", interactive=False, no_plugins=True)
 
     assert tx_id is not None
     assert os.path.exists(os.path.join(temp_workspace, "system_a"))
@@ -393,11 +338,7 @@ def test_builtin_plugins_mcp_config(temp_workspace: str) -> None:
     """Tests that the built-in mcp-config plugin correctly copies config."""
     # Create mock context
     context = ReviveContext(
-        repo_dir=temp_workspace,
-        profile_name="base",
-        dry_run=False,
-        targets=[],
-        hook_type="post-restore"
+        repo_dir=temp_workspace, profile_name="base", dry_run=False, targets=[], hook_type="post-restore"
     )
 
     # 1. MCP config missing in repo -> exits successfully with skip msg
@@ -413,24 +354,27 @@ def test_builtin_plugins_mcp_config(temp_workspace: str) -> None:
     with open(os.path.join(temp_workspace, "mcp-config.json"), "w") as f:
         json_data = {"mcpServers": {"test": {"command": "echo"}}}
         import json
+
         json.dump(json_data, f)
 
     # Mock user directory and platform
     target_path = os.path.join(temp_workspace, "mcp-target")
-    with patch("os.path.expanduser", return_value=temp_workspace), \
-         patch.dict(os.environ, {"HOME": temp_workspace}), \
-         patch("sys.platform", "linux"):
+    with (
+        patch("os.path.expanduser", return_value=temp_workspace),
+        patch.dict(os.environ, {"HOME": temp_workspace}),
+        patch("sys.platform", "linux"),
+    ):
         # We modify the plugin's allowed paths temporarily to contain our temp_workspace
         # so the sandbox doesn't block writing there
         mcp_plugin.manifest.permissions.allowed_paths = [temp_workspace]
-        
+
         # We mock target file creation path to point inside our temp directory
         target_dir = os.path.join(temp_workspace, ".config", "Claude")
         os.makedirs(target_dir, exist_ok=True)
-        
+
         res = SandboxRunner.run_plugin(mcp_plugin, context)
         assert res["status"] == "success"
-        
+
         copied_file = os.path.join(target_dir, "claude_desktop_config.json")
         assert os.path.exists(copied_file)
         with open(copied_file) as f:
@@ -441,11 +385,7 @@ def test_builtin_plugins_mcp_config(temp_workspace: str) -> None:
 def test_builtin_plugins_claude_prompts(temp_workspace: str) -> None:
     """Tests that the built-in claude-prompts plugin correctly copies prompts."""
     context = ReviveContext(
-        repo_dir=temp_workspace,
-        profile_name="base",
-        dry_run=False,
-        targets=[],
-        hook_type="post-restore"
+        repo_dir=temp_workspace, profile_name="base", dry_run=False, targets=[], hook_type="post-restore"
     )
 
     plugins = PluginLoader.discover_plugins(temp_workspace)
@@ -462,11 +402,13 @@ def test_builtin_plugins_claude_prompts(temp_workspace: str) -> None:
     with open(os.path.join(prompts_dir, "sys.prompt"), "w") as f:
         f.write("system prompt")
 
-    with patch("os.path.expanduser", return_value=temp_workspace), \
-         patch.dict(os.environ, {"HOME": temp_workspace}), \
-         patch("sys.platform", "linux"):
+    with (
+        patch("os.path.expanduser", return_value=temp_workspace),
+        patch.dict(os.environ, {"HOME": temp_workspace}),
+        patch("sys.platform", "linux"),
+    ):
         prompts_plugin.manifest.permissions.allowed_paths = [temp_workspace]
-        
+
         target_dir = os.path.join(temp_workspace, ".config", "ClaudeCode")
         os.makedirs(target_dir, exist_ok=True)
 
@@ -478,11 +420,7 @@ def test_builtin_plugins_claude_prompts(temp_workspace: str) -> None:
 def test_builtin_plugins_python_skills(temp_workspace: str) -> None:
     """Tests that the built-in python-skills plugin correctly copies skills."""
     context = ReviveContext(
-        repo_dir=temp_workspace,
-        profile_name="base",
-        dry_run=False,
-        targets=[],
-        hook_type="post-restore"
+        repo_dir=temp_workspace, profile_name="base", dry_run=False, targets=[], hook_type="post-restore"
     )
 
     plugins = PluginLoader.discover_plugins(temp_workspace)
@@ -499,10 +437,9 @@ def test_builtin_plugins_python_skills(temp_workspace: str) -> None:
     with open(os.path.join(skills_dir, "skill_a.py"), "w") as f:
         f.write("class SkillA:")
 
-    with patch("os.path.expanduser", return_value=temp_workspace), \
-         patch.dict(os.environ, {"HOME": temp_workspace}):
+    with patch("os.path.expanduser", return_value=temp_workspace), patch.dict(os.environ, {"HOME": temp_workspace}):
         skills_plugin.manifest.permissions.allowed_paths = [temp_workspace]
-        
+
         target_dir = os.path.join(temp_workspace, ".config", "rv", "skills")
         os.makedirs(os.path.dirname(target_dir), exist_ok=True)
 

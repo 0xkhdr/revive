@@ -1,5 +1,4 @@
-"""Environment variable interpolator with strict checks and defaults.
-"""
+"""Environment variable interpolator with strict checks and defaults."""
 
 import os
 import re

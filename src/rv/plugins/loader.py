@@ -1,5 +1,4 @@
-"""Plugin manifest models and discovery loader.
-"""
+"""Plugin manifest models and discovery loader."""
 
 import os
 
@@ -9,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class PluginPermissions(BaseModel):
     """Permissions requested by the plugin."""
+
     network: bool = Field(default=False, description="Allow network socket connections")
     shell: bool = Field(default=False, description="Allow subprocess execution")
     allowed_paths: list[str] = Field(default_factory=list, description="Allowed directories for filesystem access")
@@ -16,6 +16,7 @@ class PluginPermissions(BaseModel):
 
 class PluginManifest(BaseModel):
     """Plugin specification declared in plugin.yaml."""
+
     name: str = Field(..., description="Unique identifier for the plugin")
     version: str = Field(..., description="Plugin version string")
     entrypoint: str = Field(..., description="Path to the entry point script relative to plugin.yaml")
@@ -24,9 +25,9 @@ class PluginManifest(BaseModel):
     timeout: int = Field(default=30, description="Execution timeout in seconds")
 
 
-
 class Plugin:
     """Represents a discovered and loaded plugin."""
+
     def __init__(self, directory: str, manifest: PluginManifest):
         self.directory = os.path.abspath(directory)
         self.manifest = manifest
@@ -65,7 +66,7 @@ class PluginLoader:
         search_dirs = [
             os.path.join(repo_dir, "plugins"),
             os.path.expanduser("~/.config/rv/plugins"),
-            os.path.join(os.path.dirname(__file__), "builtin")
+            os.path.join(os.path.dirname(__file__), "builtin"),
         ]
 
         for s_dir in search_dirs:

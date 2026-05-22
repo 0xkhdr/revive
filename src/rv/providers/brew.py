@@ -1,5 +1,4 @@
-"""Brew package provider orchestration.
-"""
+"""Brew package provider orchestration."""
 
 from rv.logging.audit import AuditLogger
 from rv.providers.base import BaseProvider, ProviderError

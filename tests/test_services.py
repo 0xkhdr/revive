@@ -1,5 +1,4 @@
-"""Test suite for ManifestLoader, ProfileResolver, RestoreService, StatusService, and DoctorService.
-"""
+"""Test suite for ManifestLoader, ProfileResolver, RestoreService, StatusService, and DoctorService."""
 
 import os
 import shutil
@@ -62,29 +61,17 @@ def test_profile_resolver_inheritance() -> None:
         assets=[
             Asset(id="zshrc", type=AssetType.SYMLINK, source="assets/zshrc", target="~/.zshrc"),
             Asset(id="bashrc", type=AssetType.COPY, source="assets/bashrc", target="~/.bashrc"),
-            Asset(id="tmux_conf", type=AssetType.COPY, source="assets/tmux.conf", target="~/.tmux.conf")
+            Asset(id="tmux_conf", type=AssetType.COPY, source="assets/tmux.conf", target="~/.tmux.conf"),
         ],
-        secrets=[
-            Secret(id="ssh_key", source="secrets/id_ed25519.age", target="~/.ssh/id_ed25519", permissions="0600")
-        ],
+        secrets=[Secret(id="ssh_key", source="secrets/id_ed25519.age", target="~/.ssh/id_ed25519", permissions="0600")],
         profiles={
-            "base": Profile(
-                assets=["zshrc"],
-                secrets=["ssh_key"],
-                packages=["brew"]
-            ),
-            "work": Profile(
-                extends=["base"],
-                assets=["bashrc"],
-                packages=["apt"]
-            ),
+            "base": Profile(assets=["zshrc"], secrets=["ssh_key"], packages=["brew"]),
+            "work": Profile(extends=["base"], assets=["bashrc"], packages=["apt"]),
             "custom": Profile(
                 extends=["work"],
-                assets=[
-                    Asset(id="zshrc", type=AssetType.COPY, source="assets/zshrc_custom", target="~/.zshrc")
-                ]
-            )
-        }
+                assets=[Asset(id="zshrc", type=AssetType.COPY, source="assets/zshrc_custom", target="~/.zshrc")],
+            ),
+        },
     )
 
     # 1. Resolve base profile
@@ -109,12 +96,7 @@ def test_profile_resolver_inheritance() -> None:
 
 def test_profile_resolver_cyclic_detection() -> None:
     manifest = Manifest(
-        version=2,
-        profiles={
-            "A": Profile(extends=["B"]),
-            "B": Profile(extends=["C"]),
-            "C": Profile(extends=["A"])
-        }
+        version=2, profiles={"A": Profile(extends=["B"]), "B": Profile(extends=["C"]), "C": Profile(extends=["A"])}
     )
 
     with pytest.raises(ValueError, match="Cyclic profile inheritance detected: A -> B -> C -> A"):
@@ -122,12 +104,7 @@ def test_profile_resolver_cyclic_detection() -> None:
 
 
 def test_profile_resolver_missing_references() -> None:
-    manifest = Manifest(
-        version=2,
-        profiles={
-            "base": Profile(assets=["missing_asset_id"])
-        }
-    )
+    manifest = Manifest(version=2, profiles={"base": Profile(assets=["missing_asset_id"])})
 
     with pytest.raises(ValueError, match="Asset ID 'missing_asset_id' referenced.*does not exist"):
         ProfileResolver.resolve(manifest, "base")
@@ -150,7 +127,7 @@ def test_asset_handler_conflict_strategies(temp_repo: str) -> None:
             type=AssetType.COPY,
             source="assets/source.txt",
             target=target_file,
-            conflict_strategy=ConflictStrategy.SKIP
+            conflict_strategy=ConflictStrategy.SKIP,
         )
         tx_context = MagicMock()
         planned = AssetHandler.handle(asset_skip, temp_repo, tx_context)
@@ -163,7 +140,7 @@ def test_asset_handler_conflict_strategies(temp_repo: str) -> None:
             type=AssetType.COPY,
             source="assets/source.txt",
             target=target_file,
-            conflict_strategy=ConflictStrategy.ABORT
+            conflict_strategy=ConflictStrategy.ABORT,
         )
         with pytest.raises(AssetHandlerError, match="[Cc]onflict strategy is set to 'abort'"):
             AssetHandler.handle(asset_abort, temp_repo, tx_context)
@@ -174,7 +151,7 @@ def test_asset_handler_conflict_strategies(temp_repo: str) -> None:
             type=AssetType.COPY,
             source="assets/source.txt",
             target=target_file,
-            conflict_strategy=ConflictStrategy.PROMPT
+            conflict_strategy=ConflictStrategy.PROMPT,
         )
         with pytest.raises(AssetHandlerError, match="running in non-interactive environment"):
             AssetHandler.handle(asset_prompt, temp_repo, tx_context, interactive=False)
@@ -184,7 +161,7 @@ def test_asset_handler_template(temp_repo: str) -> None:
     with tempfile.TemporaryDirectory() as system_dir:
         target_file = os.path.join(system_dir, "config.conf")
         source_template = os.path.join(temp_repo, "assets", "config.j2")
-        
+
         with open(source_template, "w") as f:
             f.write("db_host = {{ DB_HOST }}\nuser = {{ USERNAME }}")
 
@@ -193,12 +170,12 @@ def test_asset_handler_template(temp_repo: str) -> None:
             type=AssetType.TEMPLATE,
             source="assets/config.j2",
             target=target_file,
-            template_vars={"DB_HOST": "127.0.0.1", "USERNAME": "test_user"}
+            template_vars={"DB_HOST": "127.0.0.1", "USERNAME": "test_user"},
         )
 
         tx_context = MagicMock()
         AssetHandler.handle(asset, temp_repo, tx_context)
-        
+
         # Verify it plans a copy operation with rendered content
         called_args = tx_context.plan_operation.call_args_list
         assert len(called_args) == 1
@@ -220,25 +197,22 @@ def test_restore_service_end_to_end(temp_repo: str) -> None:
                 "source": "assets/bashrc_src",
                 "target": os.path.join(temp_repo, "system_bashrc"),
                 "permissions": "0644",
-                "conflict_strategy": "overwrite"
+                "conflict_strategy": "overwrite",
             },
             {
                 "id": "bashrc_link",
                 "type": "symlink",
                 "source": "assets/bashrc_src",
                 "target": os.path.join(temp_repo, "system_bashrc_link"),
-                "conflict_strategy": "overwrite"
-            }
+                "conflict_strategy": "overwrite",
+            },
         ],
-        "profiles": {
-            "base": {
-                "assets": ["bashrc_copy", "bashrc_link"]
-            }
-        }
+        "profiles": {"base": {"assets": ["bashrc_copy", "bashrc_link"]}},
     }
-    
+
     with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
         import yaml
+
         yaml.safe_dump(manifest_data, f)
 
     # Create source file
@@ -246,19 +220,14 @@ def test_restore_service_end_to_end(temp_repo: str) -> None:
         f.write("# system config file\nexport TEST_VAR=1")
 
     # Run restore
-    tx_id = RestoreService.restore(
-        repo_dir=temp_repo,
-        profile_name="base",
-        interactive=False,
-        dry_run=False
-    )
-    
+    tx_id = RestoreService.restore(repo_dir=temp_repo, profile_name="base", interactive=False, dry_run=False)
+
     assert tx_id is not None
-    
+
     # 2. Verify targets are placed correctly
     copy_target = os.path.join(temp_repo, "system_bashrc")
     link_target = os.path.join(temp_repo, "system_bashrc_link")
-    
+
     assert os.path.exists(copy_target)
     assert os.path.islink(link_target)
     assert os.readlink(link_target) == os.path.join(temp_repo, "assets", "bashrc_src")
@@ -266,7 +235,7 @@ def test_restore_service_end_to_end(temp_repo: str) -> None:
     # 3. Verify manifest.lock is written and matches
     lockfile_path = os.path.join(temp_repo, "manifest.lock")
     assert os.path.exists(lockfile_path)
-    
+
     with open(lockfile_path, "r") as f:
         lockfile_data = Lockfile.model_validate_json(f.read())
         assert "bashrc_copy" in lockfile_data.entries
@@ -284,29 +253,21 @@ def test_restore_service_dry_run(temp_repo: str) -> None:
                 "type": "copy",
                 "source": "assets/dry_src",
                 "target": os.path.join(temp_repo, "system_dry"),
-                "permissions": "0644"
+                "permissions": "0644",
             }
         ],
-        "profiles": {
-            "base": {
-                "assets": ["dry_copy"]
-            }
-        }
+        "profiles": {"base": {"assets": ["dry_copy"]}},
     }
     with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
         import yaml
+
         yaml.safe_dump(manifest_data, f)
 
     with open(os.path.join(temp_repo, "assets", "dry_src"), "w") as f:
         f.write("dry test content")
 
     # Run restore with dry_run=True
-    RestoreService.restore(
-        repo_dir=temp_repo,
-        profile_name="base",
-        interactive=False,
-        dry_run=True
-    )
+    RestoreService.restore(repo_dir=temp_repo, profile_name="base", interactive=False, dry_run=True)
 
     # Check target does NOT exist
     assert not os.path.exists(os.path.join(temp_repo, "system_dry"))
@@ -322,17 +283,14 @@ def test_status_and_diff_services(temp_repo: str) -> None:
                 "type": "copy",
                 "source": "assets/bashrc_src",
                 "target": target_path,
-                "permissions": "0644"
+                "permissions": "0644",
             }
         ],
-        "profiles": {
-            "base": {
-                "assets": ["bashrc_copy"]
-            }
-        }
+        "profiles": {"base": {"assets": ["bashrc_copy"]}},
     }
     with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
         import yaml
+
         yaml.safe_dump(manifest_data, f)
 
     # Create source
@@ -387,17 +345,14 @@ def test_doctor_service(temp_repo: str) -> None:
                 "type": "copy",
                 "source": "assets/bashrc_src",
                 "target": os.path.join(temp_repo, "system_bashrc"),
-                "permissions": "0644"
+                "permissions": "0644",
             }
         ],
-        "profiles": {
-            "base": {
-                "assets": ["bashrc_copy"]
-            }
-        }
+        "profiles": {"base": {"assets": ["bashrc_copy"]}},
     }
     with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
         import yaml
+
         yaml.safe_dump(manifest_data, f)
 
     # Source exists

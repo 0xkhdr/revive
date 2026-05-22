@@ -1,5 +1,4 @@
-"""Entrypoint module for running Revive CLI via python -m rv.
-"""
+"""Entrypoint module for running Revive CLI via python -m rv."""
 
 from rv.cli.main import app
 

@@ -1,5 +1,4 @@
-"""Apt package provider orchestration for Debian/Ubuntu systems.
-"""
+"""Apt package provider orchestration for Debian/Ubuntu systems."""
 
 import subprocess
 
@@ -18,6 +17,7 @@ class AptProvider(BaseProvider):
     def is_available(self) -> bool:
         """Checks if both apt-get and dpkg are available on the system."""
         import shutil
+
         return shutil.which("apt-get") is not None and shutil.which("dpkg") is not None
 
     def _get_missing_packages(self, packages: list[str]) -> list[str]:
@@ -26,12 +26,7 @@ class AptProvider(BaseProvider):
         for pkg in packages:
             try:
                 # dpkg -s <pkg> returns 0 if installed, 1 if not.
-                result = subprocess.run(
-                    ["dpkg", "-s", pkg],
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
+                result = subprocess.run(["dpkg", "-s", pkg], capture_output=True, text=True, check=False)
                 if result.returncode != 0 or "Status: install ok installed" not in result.stdout:
                     missing.append(pkg)
             except Exception as e:

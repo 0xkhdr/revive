@@ -1,5 +1,4 @@
-"""Asset handlers for copy, symlink, template, and secret orchestration.
-"""
+"""Asset handlers for copy, symlink, template, and secret orchestration."""
 
 import os
 import sys
@@ -17,6 +16,7 @@ from rv.utils.path import PathHelper
 
 class AssetHandlerError(Exception):
     """Exception raised for errors in asset handling."""
+
     pass
 
 
@@ -62,7 +62,7 @@ class AssetHandler:
         if os.path.exists(abs_target) or os.path.islink(abs_target):
             # Check strategy
             strategy = getattr(asset, "conflict_strategy", ConflictStrategy.PROMPT)
-            
+
             if strategy == ConflictStrategy.SKIP:
                 # Skip asset
                 return False
@@ -72,10 +72,7 @@ class AssetHandler:
                 is_terminal_interactive = cls.is_interactive() if interactive is None else interactive
                 if is_terminal_interactive:
                     # Prompt the user
-                    confirm = typer.confirm(
-                        f"Target '{abs_target}' already exists. Overwrite?",
-                        default=False
-                    )
+                    confirm = typer.confirm(f"Target '{abs_target}' already exists. Overwrite?", default=False)
                     if not confirm:
                         return False
                 else:
@@ -101,7 +98,9 @@ class AssetHandler:
         return True
 
     @classmethod
-    def _handle_symlink(cls, asset: Asset | Secret, abs_source: str, abs_target: str, tx_context: TransactionContext) -> None:
+    def _handle_symlink(
+        cls, asset: Asset | Secret, abs_source: str, abs_target: str, tx_context: TransactionContext
+    ) -> None:
         """Registers a symlink creation operation."""
         # Detect cyclic symlink loop
         # Temporarily mock link if we can to detect loops
@@ -116,11 +115,7 @@ class AssetHandler:
         # Symlink target points to the source file path
         # In a unidirectional model, we want a symlink target that points to the absolute path of the source file
         tx_context.plan_operation(
-            "symlink",
-            abs_target,
-            source_data=abs_source,
-            permissions=asset.permissions,
-            owner=asset.owner
+            "symlink", abs_target, source_data=abs_source, permissions=asset.permissions, owner=asset.owner
         )
 
     @classmethod
@@ -139,7 +134,7 @@ class AssetHandler:
         if asset.encrypted:
             if not identity_path:
                 raise AssetHandlerError(f"Identity key required to decrypt encrypted asset: {asset.id}")
-            
+
             # Decrypt via AgeEncryptor
             with SecureTempFile.file() as tmp_decrypted:
                 try:
@@ -155,22 +150,20 @@ class AssetHandler:
                     abs_target,
                     source_data=bytes(decrypted_bytes),
                     permissions=asset.permissions,
-                    owner=asset.owner
+                    owner=asset.owner,
                 )
                 # Zero out decrypted memory
                 ZeroBuffer.zero(decrypted_bytes)
         else:
             # Standard copy
             tx_context.plan_operation(
-                "copy",
-                abs_target,
-                source_data=abs_source,
-                permissions=asset.permissions,
-                owner=asset.owner
+                "copy", abs_target, source_data=abs_source, permissions=asset.permissions, owner=asset.owner
             )
 
     @classmethod
-    def _handle_template(cls, asset: Asset | Secret, abs_source: str, abs_target: str, tx_context: TransactionContext) -> None:
+    def _handle_template(
+        cls, asset: Asset | Secret, abs_source: str, abs_target: str, tx_context: TransactionContext
+    ) -> None:
         """Registers a template rendering operation."""
         if os.path.exists(abs_target) or os.path.islink(abs_target):
             tx_context.plan_operation("delete", abs_target)
@@ -196,11 +189,7 @@ class AssetHandler:
 
         # Plan copy with rendered content
         tx_context.plan_operation(
-            "copy",
-            abs_target,
-            source_data=rendered.encode("utf-8"),
-            permissions=asset.permissions,
-            owner=asset.owner
+            "copy", abs_target, source_data=rendered.encode("utf-8"), permissions=asset.permissions, owner=asset.owner
         )
 
     @classmethod
@@ -233,11 +222,7 @@ class AssetHandler:
 
             # Plan copy with decrypted bytes
             tx_context.plan_operation(
-                "copy",
-                abs_target,
-                source_data=bytes(decrypted_bytes),
-                permissions=permissions,
-                owner=asset.owner
+                "copy", abs_target, source_data=bytes(decrypted_bytes), permissions=permissions, owner=asset.owner
             )
             # Zero out decrypted memory
             ZeroBuffer.zero(decrypted_bytes)

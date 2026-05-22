@@ -1,5 +1,4 @@
-"""Main Typer CLI application for Revive (rv).
-"""
+"""Main Typer CLI application for Revive (rv)."""
 
 import os
 
@@ -16,9 +15,7 @@ from rv.services.restore import RestoreService
 from rv.services.status import StatusService
 
 app = typer.Typer(
-    name="rv",
-    help="Revive (rv) — Production-grade environment lifecycle manager CLI.",
-    add_completion=False
+    name="rv", help="Revive (rv) — Production-grade environment lifecycle manager CLI.", add_completion=False
 )
 secret_app = typer.Typer(name="secret", help="Cryptographic secret management commands.")
 app.add_typer(secret_app)
@@ -34,7 +31,7 @@ def _get_repo_dir() -> str:
 @app.callback()
 def main(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose debug logging."),
-    headless: bool = typer.Option(False, "--headless", help="CI/headless mode: raw stream logs, no Rich styling.")
+    headless: bool = typer.Option(False, "--headless", help="CI/headless mode: raw stream logs, no Rich styling."),
 ) -> None:
     """Configure structured logging and terminal settings."""
     AuditLogger.setup(verbose=verbose, headless=headless)
@@ -91,49 +88,45 @@ profiles:
     # Example zshrc asset
     example_zshrc_path = os.path.join(repo_dir, "assets", "example_zshrc")
     with open(example_zshrc_path, "w", encoding="utf-8") as f:
-        f.write("# Example zshrc managed by Revive\nexport PATH=\"$HOME/.bin:$PATH\"\n")
+        f.write('# Example zshrc managed by Revive\nexport PATH="$HOME/.bin:$PATH"\n')
 
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(manifest_template)
 
-    console.print(Panel(
-        "[bold green]Success![/] Revive environment scaffolded successfully.\n\n"
-        "[bold white]Directories created:[/]\n"
-        "  - [cyan]assets/[/] (file and symlink assets)\n"
-        "  - [cyan]secrets/[/] (encrypted secrets)\n"
-        "  - [cyan]machine/[/] (host-specific overrides)\n\n"
-        "[bold white]Files created:[/]\n"
-        "  - [cyan]manifest.yaml[/] (your global config manifest)\n"
-        "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n\n"
-        "Ready to manage! Try running [bold yellow]rv status --profile base[/]",
-        title="Revive Initialized",
-        border_style="green"
-    ))
+    console.print(
+        Panel(
+            "[bold green]Success![/] Revive environment scaffolded successfully.\n\n"
+            "[bold white]Directories created:[/]\n"
+            "  - [cyan]assets/[/] (file and symlink assets)\n"
+            "  - [cyan]secrets/[/] (encrypted secrets)\n"
+            "  - [cyan]machine/[/] (host-specific overrides)\n\n"
+            "[bold white]Files created:[/]\n"
+            "  - [cyan]manifest.yaml[/] (your global config manifest)\n"
+            "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n\n"
+            "Ready to manage! Try running [bold yellow]rv status --profile base[/]",
+            title="Revive Initialized",
+            border_style="green",
+        )
+    )
 
 
 @app.command("restore")
 def restore(
     profile: str = typer.Argument(..., help="Name of the deployment profile to restore."),
     identity: str | None = typer.Option(
-        None, "--identity", "-i",
-        help="Path to age identity file for decrypting secrets."
+        None, "--identity", "-i", help="Path to age identity file for decrypting secrets."
     ),
     dry_run: bool = typer.Option(
-        False, "--dry-run",
-        help="Plan and validate operations without mutating the filesystem."
+        False, "--dry-run", help="Plan and validate operations without mutating the filesystem."
     ),
     interactive: bool = typer.Option(
-        True, "--interactive/--non-interactive",
-        help="Toggle interactive prompting for file conflicts."
+        True, "--interactive/--non-interactive", help="Toggle interactive prompting for file conflicts."
     ),
-    no_plugins: bool = typer.Option(
-        False, "--no-plugins",
-        help="Skip executing any plugin hooks during restore."
-    )
+    no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip executing any plugin hooks during restore."),
 ) -> None:
     """Synchronize the local environment state to match the repository profile (repo -> system)."""
     repo_dir = _get_repo_dir()
-    
+
     try:
         RestoreService.restore(
             repo_dir=repo_dir,
@@ -141,7 +134,7 @@ def restore(
             identity_path=identity,
             interactive=interactive,
             dry_run=dry_run,
-            no_plugins=no_plugins
+            no_plugins=no_plugins,
         )
     except Exception as e:
         console.print(f"[bold red]Transaction Failed:[/] {e}")
@@ -151,7 +144,7 @@ def restore(
 @app.command("status")
 def status(
     profile: str = typer.Option(..., "--profile", "-p", help="Profile to evaluate sync status for."),
-    identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to check secret drift.")
+    identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to check secret drift."),
 ) -> None:
     """Compare system state against repository profile and calculate drift."""
     repo_dir = _get_repo_dir()
@@ -175,7 +168,7 @@ def status(
         "modified": "[red]Modified[/]",
         "permissions_drifted": "[yellow]Permissions Mismatch[/]",
         "type_mismatch": "[bold red]Type Mismatch[/]",
-        "error": "[bold red]Error[/]"
+        "error": "[bold red]Error[/]",
     }
 
     for asset_id, info in report["assets"].items():
@@ -186,7 +179,7 @@ def status(
             info["type"].value if hasattr(info["type"], "value") else str(info["type"]),
             info["target"],
             status_styled,
-            info["details"]
+            info["details"],
         )
 
     console.print(table)
@@ -201,7 +194,7 @@ def status(
 @app.command("diff")
 def diff(
     profile: str = typer.Option(..., "--profile", "-p", help="Profile name to check drift for."),
-    identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to diff encrypted secrets.")
+    identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to diff encrypted secrets."),
 ) -> None:
     """Print colored diffs of all modified file assets on the filesystem."""
     repo_dir = _get_repo_dir()
@@ -219,11 +212,13 @@ def diff(
             diff_text = StatusService.get_diff(repo_dir, profile, asset_id, identity)
             if diff_text:
                 has_diffs = True
-                console.print(Panel(
-                    Syntax(diff_text, "diff", theme="monokai", background_color="default"),
-                    title=f"Drift Diff: {asset_id} -> {info['target']}",
-                    border_style="yellow"
-                ))
+                console.print(
+                    Panel(
+                        Syntax(diff_text, "diff", theme="monokai", background_color="default"),
+                        title=f"Drift Diff: {asset_id} -> {info['target']}",
+                        border_style="yellow",
+                    )
+                )
 
     if not has_diffs:
         console.print("[green]No file content modifications detected.[/]")
@@ -231,26 +226,31 @@ def diff(
 
 @app.command("doctor")
 def doctor(
-    profile: str | None = typer.Option(None, "--profile", "-p", help="Optionally run doctor checks specific to a profile."),
-    json_format: bool = typer.Option(False, "--json", help="Output diagnostic report in structured JSON format.")
+    profile: str | None = typer.Option(
+        None, "--profile", "-p", help="Optionally run doctor checks specific to a profile."
+    ),
+    json_format: bool = typer.Option(False, "--json", help="Output diagnostic report in structured JSON format."),
 ) -> None:
     """Evaluate repository sanity, permission safety, and system capabilities."""
     repo_dir = _get_repo_dir()
-    
+
     report = DoctorService.check_health(repo_dir, profile)
 
     if json_format:
         import json
+
         console.print_json(json.dumps(report))
         raise typer.Exit(code=0 if report["healthy"] else 1)
 
-    console.print(Panel(
-        f"[bold white]Sanity Check summary:[/] "
-        f"{'[bold green]HEALTHY[/]' if report['healthy'] else '[bold red]ISSUES FOUND[/]'}\n"
-        f"Checks run: {report['checks_run']}",
-        title="Revive System Doctor",
-        border_style="green" if report["healthy"] else "red"
-    ))
+    console.print(
+        Panel(
+            f"[bold white]Sanity Check summary:[/] "
+            f"{'[bold green]HEALTHY[/]' if report['healthy'] else '[bold red]ISSUES FOUND[/]'}\n"
+            f"Checks run: {report['checks_run']}",
+            title="Revive System Doctor",
+            border_style="green" if report["healthy"] else "red",
+        )
+    )
 
     # Print tools
     tools_table = Table(title="System Tool Integration")
@@ -277,7 +277,9 @@ def doctor(
 def secret_encrypt(
     file_path: str = typer.Argument(..., help="Path to the plaintext file to encrypt."),
     output_path: str = typer.Option(..., "--output", "-o", help="Path to write the encrypted age file."),
-    recipient: list[str] = typer.Option(..., "--recipient", "-r", help="Age public key recipient (can specify multiple).")
+    recipient: list[str] = typer.Option(
+        ..., "--recipient", "-r", help="Age public key recipient (can specify multiple)."
+    ),
 ) -> None:
     """Encrypt a plaintext secret using age public keys."""
     try:
@@ -292,7 +294,7 @@ def secret_encrypt(
 def secret_decrypt(
     file_path: str = typer.Argument(..., help="Path to the encrypted .age secret file."),
     output_path: str = typer.Option(..., "--output", "-o", help="Path to write the decrypted plaintext file."),
-    identity: str = typer.Option(..., "--identity", "-i", help="Path to the age identity private key file.")
+    identity: str = typer.Option(..., "--identity", "-i", help="Path to the age identity private key file."),
 ) -> None:
     """Decrypt an age-encrypted secret file using an identity private key."""
     try:
@@ -307,11 +309,13 @@ def secret_decrypt(
 def secret_rotate(
     file_path: str = typer.Argument(..., help="Path to the encrypted secret file to rotate."),
     identity: str = typer.Option(..., "--identity", "-i", help="Path to the current age identity file."),
-    new_recipient: list[str] = typer.Option(..., "--new-recipient", "-nr", help="New age public key recipient (multiple allowed).")
+    new_recipient: list[str] = typer.Option(
+        ..., "--new-recipient", "-nr", help="New age public key recipient (multiple allowed)."
+    ),
 ) -> None:
     """Decrypt a secret using existing key, and re-encrypt with a new list of recipients."""
     from rv.security.tempfile import SecureTempFile
-    
+
     with SecureTempFile.file() as tmp_plain:
         try:
             # Decrypt existing
@@ -324,11 +328,47 @@ def secret_rotate(
             raise typer.Exit(code=1)
 
 
+@secret_app.command("keygen")
+def secret_keygen(
+    output: str | None = typer.Option(None, "--output", "-o", help="Path to write the generated private age key file."),
+) -> None:
+    """Generate a new age keypair for encrypting/decrypting secrets."""
+    try:
+        public_key, private_key = AgeEncryptor.generate_keypair()
+
+        if output:
+            parent_dir = os.path.dirname(output)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+
+            # Write key file with public key comment
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(f"# public key: {public_key}\n")
+                f.write(f"{private_key}\n")
+
+            # Set secure file permissions (0600)
+            os.chmod(output, 0o600)
+
+            console.print("[bold green]Success:[/] Generated a new age keypair.")
+            console.print(f"Private identity key saved to: [cyan]{output}[/]")
+            console.print(f"Public recipient key: [bold yellow]{public_key}[/]")
+        else:
+            console.print(f"Private identity key:\n[bold cyan]{private_key}[/]\n")
+            console.print(f"Public recipient key:\n[bold yellow]{public_key}[/]")
+    except Exception as e:
+        console.print(f"[bold red]Key generation failed:[/] {e}")
+        raise typer.Exit(code=1)
+
+
 @app.command("watch")
 def watch(
     profile: str = typer.Option(..., "--profile", "-p", help="Profile to monitor and auto-apply changes for."),
-    identity: str | None = typer.Option(None, "--identity", "-i", help="Path to age identity file for decrypting secrets."),
-    debounce: float = typer.Option(5.0, "--debounce", "-d", help="Debounce delay in seconds before triggering auto-apply.")
+    identity: str | None = typer.Option(
+        None, "--identity", "-i", help="Path to age identity file for decrypting secrets."
+    ),
+    debounce: float = typer.Option(
+        5.0, "--debounce", "-d", help="Debounce delay in seconds before triggering auto-apply."
+    ),
 ) -> None:
     """Watch directory for changes and automatically run restore on update."""
     import time
@@ -336,12 +376,7 @@ def watch(
     from rv.watchers.daemon import WatchdogDaemon
 
     repo_dir = _get_repo_dir()
-    daemon = WatchdogDaemon(
-        repo_dir=repo_dir,
-        profile_name=profile,
-        identity_path=identity,
-        debounce_seconds=debounce
-    )
+    daemon = WatchdogDaemon(repo_dir=repo_dir, profile_name=profile, identity_path=identity, debounce_seconds=debounce)
     try:
         daemon.start()
         # Keep main thread alive while watcher runs
@@ -355,7 +390,9 @@ def watch(
 
 @app.command("recover")
 def recover(
-    auto: bool = typer.Option(False, "--auto", help="In headless/CI environments, auto-rollback the latest incomplete journal and exit.")
+    auto: bool = typer.Option(
+        False, "--auto", help="In headless/CI environments, auto-rollback the latest incomplete journal and exit."
+    ),
 ) -> None:
     """Scan journals to abort/rollback or discard incomplete transactions."""
     from rv.services.recovery import RecoveryService
@@ -381,10 +418,7 @@ def recover(
             console.print(f"  [cyan]Status:[/] {journal.status}")
 
             while True:
-                action = typer.prompt(
-                    "Action? ([r]ollback, [d]iscard, [s]kip)",
-                    default="s"
-                ).strip().lower()
+                action = typer.prompt("Action? ([r]ollback, [d]iscard, [s]kip)", default="s").strip().lower()
 
                 if action in ("r", "rollback"):
                     try:
@@ -408,3 +442,67 @@ def recover(
         console.print(f"[bold red]Recovery failed:[/] {e}")
         raise typer.Exit(code=1)
 
+
+@app.command("self-install")
+def self_install(
+    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite existing installation wrapper."),
+) -> None:
+    """Install the rv tool wrapper globally to ~/.local/bin/rv for easy access.
+
+    This creates an executable wrapper script that points to the current Python
+    virtual environment or package installation, ensuring you can run 'rv' from anywhere.
+    """
+    import sys
+
+    home = os.path.expanduser("~")
+    local_bin = os.path.join(home, ".local", "bin")
+    target_path = os.path.join(local_bin, "rv")
+
+    # Ensure local_bin exists
+    os.makedirs(local_bin, exist_ok=True)
+
+    if os.path.exists(target_path) and not force:
+        console.print(
+            f"[bold yellow]Warning:[/] An installation wrapper already exists at '{target_path}'. "
+            "Use '--force' or '-f' to overwrite it."
+        )
+        raise typer.Exit(code=0)
+
+    # Get path to python interpreter in the active environment
+    python_bin = sys.executable
+
+    # Construct shell wrapper contents
+    wrapper_content = f"""#!/bin/sh
+# Revive CLI Autogenerated Wrapper
+exec "{python_bin}" -m rv "$@"
+"""
+
+    try:
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(wrapper_content)
+
+        # Make the target file executable (0755)
+        os.chmod(target_path, 0o755)  # noqa: S103
+
+        console.print(
+            Panel(
+                "[bold green]Successfully installed Revive CLI wrapper globally![/]\n\n"
+                f"Wrapper created at: [cyan]{target_path}[/]\n"
+                f"Points to environment: [magenta]{python_bin}[/]\n\n"
+                "You can now run [bold yellow]rv[/] from anywhere in your shell!",
+                title="Installation Successful",
+                border_style="green",
+            )
+        )
+
+        # Check if local_bin is in PATH
+        paths = os.environ.get("PATH", "").split(os.pathsep)
+        if local_bin not in paths and os.path.abspath(local_bin) not in [os.path.abspath(p) for p in paths]:
+            console.print(
+                "\n[bold yellow]Note:[/] '~/.local/bin' is not currently in your system PATH variable.\n"
+                "To run 'rv' globally, please add it to your shell config file (e.g., ~/.bashrc or ~/.zshrc):\n"
+                '  [bold cyan]export PATH="$HOME/.local/bin:$PATH"[/]'
+            )
+    except Exception as e:
+        console.print(f"[bold red]Self-installation failed:[/] {e}")
+        raise typer.Exit(code=1)

@@ -1,5 +1,4 @@
-"""PermissionEnforcer to securely validate and enforce file permissions.
-"""
+"""PermissionEnforcer to securely validate and enforce file permissions."""
 
 import os
 
@@ -39,6 +38,7 @@ class PermissionEnforcer:
         if owner:
             try:
                 import pwd
+
                 pw = pwd.getpwnam(owner)
                 uid = pw.pw_uid
                 gid = pw.pw_gid

@@ -1,5 +1,4 @@
-"""Claude Prompts first-party plugin. Deploys custom prompts to ClaudeCode.
-"""
+"""Claude Prompts first-party plugin. Deploys custom prompts to ClaudeCode."""
 
 import json
 import os

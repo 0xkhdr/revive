@@ -1,5 +1,4 @@
-"""Sandbox execution wrapper. Runs inside the sandboxed subprocess.
-"""
+"""Sandbox execution wrapper. Runs inside the sandboxed subprocess."""
 
 import base64
 import builtins
@@ -70,6 +69,7 @@ def main() -> None:
 
     # 1. Enforce shell execution restriction
     if not permissions.get("shell"):
+
         def sandboxed_popen(*args: Any, **kwargs: Any) -> Any:
             raise PermissionError("Process/shell execution is not allowed by plugin permissions")
 
@@ -104,6 +104,7 @@ def main() -> None:
 
     # 2. Enforce network access restriction
     if not permissions.get("network"):
+
         def sandboxed_socket(*args: Any, **kwargs: Any) -> Any:
             raise PermissionError("Network access is not allowed by plugin permissions")
 
@@ -133,8 +134,16 @@ def main() -> None:
         return wrapper
 
     for func_name in [
-        "remove", "unlink", "rename", "mkdir", "rmdir", "makedirs",
-        "removedirs", "listdir", "scandir", "stat"
+        "remove",
+        "unlink",
+        "rename",
+        "mkdir",
+        "rmdir",
+        "makedirs",
+        "removedirs",
+        "listdir",
+        "scandir",
+        "stat",
     ]:
         if hasattr(os, func_name):
             setattr(os, func_name, make_sandboxed_os_func(getattr(os, func_name)))

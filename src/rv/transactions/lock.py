@@ -1,5 +1,4 @@
-"""ProcessLock for flock-based multi-process serialization on Unix environments.
-"""
+"""ProcessLock for flock-based multi-process serialization on Unix environments."""
 
 import fcntl
 import os
@@ -8,6 +7,7 @@ from typing import IO, Any
 
 class LockAcquisitionError(Exception):
     """Raised when the process cannot acquire the revive process lock."""
+
     pass
 
 
@@ -34,7 +34,7 @@ class ProcessLock:
         try:
             # Open the file for reading/writing (creates if not exists)
             self._lock_file = open(self.lock_path, "w")
-            
+
             # Formulate lock flags
             flags = fcntl.LOCK_EX
             if not self.blocking:
@@ -42,7 +42,7 @@ class ProcessLock:
 
             # Apply lock
             fcntl.flock(self._lock_file.fileno(), flags)
-            
+
             # Write current PID into the lockfile for auditability
             self._lock_file.write(str(os.getpid()))
             self._lock_file.flush()
@@ -51,8 +51,7 @@ class ProcessLock:
                 self._lock_file.close()
                 self._lock_file = None
             raise LockAcquisitionError(
-                f"Another revive process currently holds the lock at {self.lock_path}. "
-                "Concurrency constraint violated."
+                f"Another revive process currently holds the lock at {self.lock_path}. Concurrency constraint violated."
             ) from e
         except Exception as e:
             if self._lock_file:
@@ -62,12 +61,7 @@ class ProcessLock:
 
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: Any
-    ) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any) -> None:
         if self._lock_file:
             try:
                 # Release flock explicitly and close

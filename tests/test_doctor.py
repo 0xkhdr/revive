@@ -1,5 +1,4 @@
-"""Test suite for DoctorService diagnostics and health checking.
-"""
+"""Test suite for DoctorService diagnostics and health checking."""
 
 import os
 import shutil
@@ -56,8 +55,10 @@ def test_doctor_check_health_no_encryption_tools() -> None:
         with open(manifest_path, "w", encoding="utf-8") as f:
             f.write("version: 2\nassets: []\nprofiles: {}\n")
 
-        with patch("rv.utils.platform.Platform.has_tool", return_value=False), \
-             patch("rv.security.encryptor.AgeEncryptor.is_pyrage_available", return_value=False):
+        with (
+            patch("rv.utils.platform.Platform.has_tool", return_value=False),
+            patch("rv.security.encryptor.AgeEncryptor.is_pyrage_available", return_value=False),
+        ):
             report = DoctorService.check_health(temp_dir)
             assert any("Neither pyrage python library nor" in issue["message"] for issue in report["issues"])
     finally:
@@ -70,7 +71,7 @@ def test_doctor_check_health_nonexistent_profile() -> None:
     try:
         manifest_path = os.path.join(temp_dir, "manifest.yaml")
         with open(manifest_path, "w", encoding="utf-8") as f:
-            f.write("version: 2\nassets: []\nprofiles: {\"base\": {\"extends\": []}}\n")
+            f.write('version: 2\nassets: []\nprofiles: {"base": {"extends": []}}\n')
 
         report = DoctorService.check_health(temp_dir, profile_name="nonexistent_profile")
         assert report["healthy"] is False
@@ -164,7 +165,10 @@ def test_doctor_check_health_failed_interpolation() -> None:
             del os.environ["MISSING_VAR_DOCTOR"]
 
         report = DoctorService.check_health(temp_dir, profile_name="base")
-        assert any("Failed path interpolation/verification for asset 'bad_asset'" in issue["message"] for issue in report["issues"])
+        assert any(
+            "Failed path interpolation/verification for asset 'bad_asset'" in issue["message"]
+            for issue in report["issues"]
+        )
     finally:
         shutil.rmtree(temp_dir)
 

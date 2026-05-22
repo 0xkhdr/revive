@@ -1,5 +1,4 @@
-"""Docker package provider orchestration.
-"""
+"""Docker package provider orchestration."""
 
 import subprocess
 
@@ -19,11 +18,7 @@ class DockerProvider(BaseProvider):
         """Checks if a docker image is available locally via docker image inspect."""
         try:
             # docker image inspect <image> returns 0 if present, 1 if not.
-            res = subprocess.run(
-                ["docker", "image", "inspect", image],
-                capture_output=True,
-                check=False
-            )
+            res = subprocess.run(["docker", "image", "inspect", image], capture_output=True, check=False)
             return res.returncode == 0
         except Exception:
             return False

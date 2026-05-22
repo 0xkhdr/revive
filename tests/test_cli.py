@@ -1,5 +1,4 @@
-"""Test suite for the Typer CLI commands in rv.cli.main.
-"""
+"""Test suite for the Typer CLI commands in rv.cli.main."""
 
 import os
 import tempfile
@@ -48,17 +47,12 @@ def test_cli_restore(temp_repo: str) -> None:
                 identity_path=None,
                 interactive=True,
                 dry_run=False,
-                no_plugins=False
+                no_plugins=False,
             )
 
         # 2. Success case with options
         with patch("rv.services.restore.RestoreService.restore") as mock_restore:
-            result = runner.invoke(app, [
-                "restore", "work",
-                "--identity", "id_file",
-                "--dry-run",
-                "--non-interactive"
-            ])
+            result = runner.invoke(app, ["restore", "work", "--identity", "id_file", "--dry-run", "--non-interactive"])
             assert result.exit_code == 0
             mock_restore.assert_called_once_with(
                 repo_dir=temp_repo,
@@ -66,7 +60,7 @@ def test_cli_restore(temp_repo: str) -> None:
                 identity_path="id_file",
                 interactive=False,
                 dry_run=True,
-                no_plugins=False
+                no_plugins=False,
             )
 
         # 3. Success case with no-plugins option
@@ -79,7 +73,7 @@ def test_cli_restore(temp_repo: str) -> None:
                 identity_path=None,
                 interactive=True,
                 dry_run=False,
-                no_plugins=True
+                no_plugins=True,
             )
 
         # 4. Failure case
@@ -100,9 +94,9 @@ def test_cli_status(temp_repo: str) -> None:
                     "type": AssetType.SYMLINK,
                     "target": "/home/user/.zshrc",
                     "status": "in_sync",
-                    "details": "Matches manifest"
+                    "details": "Matches manifest",
                 }
-            }
+            },
         }
         with patch("rv.services.status.StatusService.get_status", return_value=report_sync) as mock_status:
             result = runner.invoke(app, ["status", "-p", "base"])
@@ -119,9 +113,9 @@ def test_cli_status(temp_repo: str) -> None:
                     "type": AssetType.SYMLINK,
                     "target": "/home/user/.zshrc",
                     "status": "modified",
-                    "details": "Content has changed"
+                    "details": "Content has changed",
                 }
-            }
+            },
         }
         with patch("rv.services.status.StatusService.get_status", return_value=report_drifted) as mock_status:
             result = runner.invoke(app, ["status", "-p", "base"])
@@ -148,9 +142,9 @@ def test_cli_diff(temp_repo: str) -> None:
                     "type": AssetType.SYMLINK,
                     "target": "/home/user/.zshrc",
                     "status": "in_sync",
-                    "details": "Matches manifest"
+                    "details": "Matches manifest",
                 }
-            }
+            },
         }
         with patch("rv.services.status.StatusService.get_status", return_value=report_sync):
             result = runner.invoke(app, ["diff", "-p", "base"])
@@ -165,9 +159,9 @@ def test_cli_diff(temp_repo: str) -> None:
                     "type": AssetType.SYMLINK,
                     "target": "/home/user/.zshrc",
                     "status": "modified",
-                    "details": "Content has changed"
+                    "details": "Content has changed",
                 }
-            }
+            },
         }
         with patch("rv.services.status.StatusService.get_status", return_value=report_drifted):
             with patch("rv.services.status.StatusService.get_diff", return_value="- old\n+ new") as mock_diff:
@@ -188,12 +182,7 @@ def test_cli_doctor(temp_repo: str) -> None:
     """Tests 'rv doctor' command."""
     with patch("os.getcwd", return_value=temp_repo):
         # 1. Healthy case
-        report_healthy = {
-            "healthy": True,
-            "checks_run": 5,
-            "tools": {"age": True, "git": True},
-            "issues": []
-        }
+        report_healthy = {"healthy": True, "checks_run": 5, "tools": {"age": True, "git": True}, "issues": []}
         with patch("rv.services.doctor.DoctorService.check_health", return_value=report_healthy):
             result = runner.invoke(app, ["doctor"])
             assert result.exit_code == 0
@@ -211,7 +200,7 @@ def test_cli_doctor(temp_repo: str) -> None:
             "healthy": False,
             "checks_run": 5,
             "tools": {"age": False, "git": True},
-            "issues": [{"severity": "critical", "category": "Sanity", "message": "Missing age tool"}]
+            "issues": [{"severity": "critical", "category": "Sanity", "message": "Missing age tool"}],
         }
         with patch("rv.services.doctor.DoctorService.check_health", return_value=report_unhealthy):
             result = runner.invoke(app, ["doctor"])
@@ -224,54 +213,36 @@ def test_cli_secret_commands() -> None:
     """Tests the cryptographic secret management commands under 'rv secret'."""
     # 1. encrypt
     with patch("rv.security.encryptor.AgeEncryptor.encrypt_file") as mock_encrypt:
-        result = runner.invoke(app, [
-            "secret", "encrypt", "plain.txt",
-            "-o", "cipher.age",
-            "-r", "age1pubkey"
-        ])
+        result = runner.invoke(app, ["secret", "encrypt", "plain.txt", "-o", "cipher.age", "-r", "age1pubkey"])
         assert result.exit_code == 0
         assert "Successfully encrypted secret" in result.stdout
         mock_encrypt.assert_called_once_with("plain.txt", "cipher.age", ["age1pubkey"])
 
     # 2. encrypt error
     with patch("rv.security.encryptor.AgeEncryptor.encrypt_file", side_effect=Exception("Encrypt fail")):
-        result = runner.invoke(app, [
-            "secret", "encrypt", "plain.txt",
-            "-o", "cipher.age",
-            "-r", "age1pubkey"
-        ])
+        result = runner.invoke(app, ["secret", "encrypt", "plain.txt", "-o", "cipher.age", "-r", "age1pubkey"])
         assert result.exit_code == 1
         assert "Encryption failed:" in result.stdout
 
     # 3. decrypt
     with patch("rv.security.encryptor.AgeEncryptor.decrypt_file") as mock_decrypt:
-        result = runner.invoke(app, [
-            "secret", "decrypt", "cipher.age",
-            "-o", "plain.txt",
-            "-i", "identity.txt"
-        ])
+        result = runner.invoke(app, ["secret", "decrypt", "cipher.age", "-o", "plain.txt", "-i", "identity.txt"])
         assert result.exit_code == 0
         assert "Successfully decrypted secret" in result.stdout
         mock_decrypt.assert_called_once_with("cipher.age", "plain.txt", "identity.txt")
 
     # 4. decrypt error
     with patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=Exception("Decrypt fail")):
-        result = runner.invoke(app, [
-            "secret", "decrypt", "cipher.age",
-            "-o", "plain.txt",
-            "-i", "identity.txt"
-        ])
+        result = runner.invoke(app, ["secret", "decrypt", "cipher.age", "-o", "plain.txt", "-i", "identity.txt"])
         assert result.exit_code == 1
         assert "Decryption failed:" in result.stdout
 
     # 5. rotate
-    with patch("rv.security.encryptor.AgeEncryptor.decrypt_file") as mock_decrypt, \
-         patch("rv.security.encryptor.AgeEncryptor.encrypt_file") as mock_encrypt:
-        result = runner.invoke(app, [
-            "secret", "rotate", "cipher.age",
-            "-i", "identity.txt",
-            "-nr", "age1newpub"
-        ])
+    with (
+        patch("rv.security.encryptor.AgeEncryptor.decrypt_file") as mock_decrypt,
+        patch("rv.security.encryptor.AgeEncryptor.encrypt_file") as mock_encrypt,
+    ):
+        result = runner.invoke(app, ["secret", "rotate", "cipher.age", "-i", "identity.txt", "-nr", "age1newpub"])
         assert result.exit_code == 0
         assert "rotated to new recipients" in result.stdout
         mock_decrypt.assert_called_once()
@@ -279,19 +250,93 @@ def test_cli_secret_commands() -> None:
 
     # 6. rotate failure
     with patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=Exception("Rotate decrypt fail")):
-        result = runner.invoke(app, [
-            "secret", "rotate", "cipher.age",
-            "-i", "identity.txt",
-            "-nr", "age1newpub"
-        ])
+        result = runner.invoke(app, ["secret", "rotate", "cipher.age", "-i", "identity.txt", "-nr", "age1newpub"])
         assert result.exit_code == 1
         assert "Rotation failed:" in result.stdout
 
 
 def test_cli_verbose_headless(temp_repo: str) -> None:
     """Tests --verbose and --headless setup flag callbacks."""
-    with patch("rv.logging.audit.AuditLogger.setup") as mock_setup, \
-         patch("os.getcwd", return_value=temp_repo):
+    with patch("rv.logging.audit.AuditLogger.setup") as mock_setup, patch("os.getcwd", return_value=temp_repo):
         result = runner.invoke(app, ["--verbose", "--headless", "init"])
         assert result.exit_code == 0
         mock_setup.assert_called_once_with(verbose=True, headless=True)
+
+
+def test_cli_secret_keygen(temp_repo: str) -> None:
+    """Tests 'rv secret keygen' command."""
+    # 1. Successful key generation in stdout
+    with patch(
+        "rv.security.encryptor.AgeEncryptor.generate_keypair", return_value=("age1pubkey", "AGE-SECRET-KEY-1PRIVKEY")
+    ):
+        result = runner.invoke(app, ["secret", "keygen"])
+        assert result.exit_code == 0
+        assert "AGE-SECRET-KEY-1PRIVKEY" in result.stdout
+        assert "age1pubkey" in result.stdout
+
+    # 2. Successful key generation with file output
+    out_key_path = os.path.join(temp_repo, "keys", "my_identity.key")
+    with (
+        patch(
+            "rv.security.encryptor.AgeEncryptor.generate_keypair",
+            return_value=("age1pubkey", "AGE-SECRET-KEY-1PRIVKEY"),
+        ),
+        patch("os.chmod") as mock_chmod,
+    ):
+        result = runner.invoke(app, ["secret", "keygen", "-o", out_key_path])
+        assert result.exit_code == 0
+        assert "Private identity key saved to:" in result.stdout
+        assert "age1pubkey" in result.stdout
+        assert os.path.exists(out_key_path)
+        with open(out_key_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            assert "# public key: age1pubkey" in content
+            assert "AGE-SECRET-KEY-1PRIVKEY" in content
+        mock_chmod.assert_called_once_with(out_key_path, 0o600)
+
+    # 3. Handle key generation exception
+    with patch("rv.security.encryptor.AgeEncryptor.generate_keypair", side_effect=RuntimeError("No keygen available")):
+        result = runner.invoke(app, ["secret", "keygen"])
+        assert result.exit_code == 1
+        assert "Key generation failed:" in result.stdout
+
+
+def test_cli_self_install(temp_repo: str) -> None:
+    """Tests 'rv self-install' command."""
+    custom_home = os.path.join(temp_repo, "user_home")
+    os.makedirs(custom_home, exist_ok=True)
+    target_bin_dir = os.path.join(custom_home, ".local", "bin")
+    target_file = os.path.join(target_bin_dir, "rv")
+
+    # 1. Success case (wrapper generated)
+    with patch("os.path.expanduser", return_value=custom_home), patch("os.chmod") as mock_chmod:
+        result = runner.invoke(app, ["self-install"])
+        assert result.exit_code == 0
+        assert "Successfully installed Revive CLI wrapper globally!" in result.stdout
+        assert os.path.exists(target_file)
+        with open(target_file, "r", encoding="utf-8") as f:
+            content = f.read()
+            assert "# Revive CLI Autogenerated Wrapper" in content
+            assert "exec" in content
+        mock_chmod.assert_called_once_with(target_file, 0o755)
+
+    # 2. Overwrite check without force flag
+    with patch("os.path.expanduser", return_value=custom_home):
+        result = runner.invoke(app, ["self-install"])
+        assert result.exit_code == 0
+        assert "Warning: An installation wrapper already exists" in result.stdout
+
+    # 3. Overwrite check with force flag
+    with patch("os.path.expanduser", return_value=custom_home), patch("os.chmod"):
+        result = runner.invoke(app, ["self-install", "--force"])
+        assert result.exit_code == 0
+        assert "Successfully installed Revive CLI wrapper globally!" in result.stdout
+
+    # 4. Error case
+    with (
+        patch("os.path.expanduser", return_value=custom_home),
+        patch("os.chmod", side_effect=OSError("Permission denied")),
+    ):
+        result = runner.invoke(app, ["self-install", "--force"])
+        assert result.exit_code == 1
+        assert "Self-installation failed:" in result.stdout

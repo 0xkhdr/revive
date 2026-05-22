@@ -1,5 +1,4 @@
-"""Test suite for security features including permissions, temp files, scrubbers, and zero buffers.
-"""
+"""Test suite for security features including permissions, temp files, scrubbers, and zero buffers."""
 
 import logging
 import os
@@ -37,7 +36,7 @@ def test_secure_temp_file() -> None:
 
         with open(path, "wb") as f:
             f.write(b"super_secret_payload")
-    
+
     # After context exit, the file must be deleted
     assert os.path.exists(path) is False
 
@@ -53,7 +52,7 @@ def test_secure_temp_file() -> None:
         nested_file = os.path.join(tmp_dir, "nested.txt")
         with open(nested_file, "w") as f:
             f.write("sensitive data")
-    
+
     # After context exit, directory and nested files must be deleted
     assert os.path.exists(dirpath) is False
 
@@ -78,9 +77,10 @@ def test_secret_scrubber() -> None:
     logger = logging.getLogger("test_scrub")
     logger.propagate = False
     logger.setLevel(logging.INFO)
-    
+
     # Standard string IO stream to capture logs
     import io
+
     log_capture = io.StringIO()
     handler = logging.StreamHandler(log_capture)
     handler.setFormatter(ScrubbingFormatter("%(message)s"))
@@ -88,7 +88,7 @@ def test_secret_scrubber() -> None:
 
     SecretScrubber.register_secret("my_ultra_secret_db_pass")
     logger.info("Connecting with password: my_ultra_secret_db_pass")
-    
+
     log_contents = log_capture.getvalue()
     assert "my_ultra_secret_db_pass" not in log_contents
     assert "[REDACTED]" in log_contents
@@ -139,6 +139,7 @@ def test_age_encryptor_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Platform, "has_tool", lambda name: True)
 
     import subprocess
+
     class MockCompletedProcess:
         stdout = "# public key: age1mock\nAGE-SECRET-KEY-1mock"
         stderr = ""
@@ -146,6 +147,7 @@ def test_age_encryptor_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Mock subprocess.run to verify it gets called with correct args
     called_cmds = []
+
     def mock_run(cmd, *args, **kwargs):
         called_cmds.append(cmd)
         return MockCompletedProcess()
@@ -168,7 +170,11 @@ def test_age_encryptor_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
         assert "age1recipient1" in called_cmds[-1]
 
     # 3. Test decrypt file via CLI path
-    with tempfile.NamedTemporaryFile() as enc, tempfile.NamedTemporaryFile() as plain, tempfile.NamedTemporaryFile() as identity:
+    with (
+        tempfile.NamedTemporaryFile() as enc,
+        tempfile.NamedTemporaryFile() as plain,
+        tempfile.NamedTemporaryFile() as identity,
+    ):
         AgeEncryptor.decrypt_file(enc.name, plain.name, identity.name)
         assert "age" in called_cmds[-1]
         assert "-d" in called_cmds[-1]
@@ -184,7 +190,7 @@ def test_age_encryptor_keypair() -> None:
 def test_age_encryptor_roundtrip() -> None:
     # Perform a real native pyrage or fallback roundtrip encrypt/decrypt!
     pub, priv = AgeEncryptor.generate_keypair()
-    
+
     with tempfile.TemporaryDirectory() as tmpdir:
         plain_path = os.path.join(tmpdir, "plain.txt")
         enc_path = os.path.join(tmpdir, "enc.age")
@@ -194,7 +200,7 @@ def test_age_encryptor_roundtrip() -> None:
         # Write plaintext and identity files
         with open(plain_path, "wb") as f:
             f.write(b"this is highly confidential system data")
-        
+
         with open(identity_path, "w") as f:
             f.write(priv)
 
@@ -222,24 +228,29 @@ def test_age_encryptor_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     # 3. pyrage encrypt exception falling back to age CLI (and age CLI is missing)
     monkeypatch.setattr(AgeEncryptor, "is_pyrage_available", lambda: True)
     import sys
+
     old_pyrage = sys.modules.get("pyrage")
-    
+
     class MockPyrage:
         class x25519:
             class Recipient:
                 @staticmethod
                 def from_str(s: str) -> str:
                     return s
+
             class Identity:
                 @staticmethod
                 def generate() -> "MockIdentity":
                     raise RuntimeError("pyrage generate error")
+
                 @staticmethod
                 def from_str(s: str) -> str:
                     raise RuntimeError("pyrage identity load error")
+
         @staticmethod
         def encrypt(data, recipients):
             raise RuntimeError("pyrage encrypt error")
+
         @staticmethod
         def decrypt(data, identity):
             raise RuntimeError("pyrage decrypt error")
@@ -258,8 +269,10 @@ def test_age_encryptor_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     # 5. CLI fallback failures (CalledProcessError)
     monkeypatch.setattr(Platform, "has_tool", lambda name: True)
     import subprocess
+
     def mock_run_error(*args, **kwargs):
         raise subprocess.CalledProcessError(1, "age", stderr="mocked age cli error")
+
     monkeypatch.setattr(subprocess, "run", mock_run_error)
 
     with tempfile.NamedTemporaryFile() as plain_file:
@@ -287,5 +300,3 @@ def test_age_encryptor_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         sys.modules["pyrage"] = old_pyrage
     elif "pyrage" in sys.modules:
         del sys.modules["pyrage"]
-
-

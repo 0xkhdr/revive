@@ -1,5 +1,4 @@
-"""RestoreService implementing the 14-step deterministic apply order.
-"""
+"""RestoreService implementing the 14-step deterministic apply order."""
 
 import hashlib
 import logging
@@ -73,10 +72,7 @@ class ResolvedProfile:
             "snap": [],
         }
         self.docker_images: list[str] = []
-        self.node_config: dict[str, str | None] = {
-            "version_file": None,
-            "version": None
-        }
+        self.node_config: dict[str, str | None] = {"version_file": None, "version": None}
 
 
 class ProfileResolver:
@@ -102,11 +98,7 @@ class ProfileResolver:
 
     @classmethod
     def _resolve_recursive(
-        cls,
-        manifest: Manifest,
-        profile_name: str,
-        resolved: ResolvedProfile,
-        visited: list[str]
+        cls, manifest: Manifest, profile_name: str, resolved: ResolvedProfile, visited: list[str]
     ) -> None:
         """Recursively resolves the extends chain."""
         if profile_name in visited:
@@ -127,11 +119,13 @@ class ProfileResolver:
         for item in profile.assets:
             if isinstance(item, str):
                 if item not in global_assets:
-                    raise ValueError(f"Asset ID '{item}' referenced in profile '{profile_name}' does not exist in the global pool")
+                    raise ValueError(
+                        f"Asset ID '{item}' referenced in profile '{profile_name}' does not exist in the global pool"
+                    )
                 asset = global_assets[item]
             else:
                 asset = item
-            
+
             # Last-write-wins merge
             resolved.assets[asset.id] = asset
 
@@ -140,11 +134,13 @@ class ProfileResolver:
         for s_item in profile.secrets:
             if isinstance(s_item, str):
                 if s_item not in global_secrets:
-                    raise ValueError(f"Secret ID '{s_item}' referenced in profile '{profile_name}' does not exist in the global pool")
+                    raise ValueError(
+                        f"Secret ID '{s_item}' referenced in profile '{profile_name}' does not exist in the global pool"
+                    )
                 secret = global_secrets[s_item]
             else:
                 secret = s_item
-            
+
             # Last-write-wins merge
             resolved.secrets[secret.id] = secret
 
@@ -189,7 +185,7 @@ class RestoreService:
         identity_path: str | None = None,
         interactive: bool = False,
         dry_run: bool = False,
-        no_plugins: bool = False
+        no_plugins: bool = False,
     ) -> str:
         """Runs the entire restore lifecycle under flock process protection.
 
@@ -209,7 +205,7 @@ class RestoreService:
 
         # Step 0: Acquire process lock (flock-based serialization)
         lock_path = os.path.expanduser("~/.config/rv/rv.lock")
-        
+
         logger.info(f"Acquiring revive process lock at {lock_path}...")
         with ProcessLock(lock_path, blocking=False):
             # Step 1: Manifest Validation
@@ -226,7 +222,7 @@ class RestoreService:
                 hostname = socket.gethostname()
                 override_rel_path = manifest.machine_overrides.path.format(hostname=hostname)
                 override_path = os.path.join(repo_dir, override_rel_path)
-                
+
                 if os.path.exists(override_path):
                     logger.info(f"Applying machine overrides from {override_path}...")
                     try:
@@ -277,18 +273,12 @@ class RestoreService:
             # Step 4 & 5: Dependency Validation & Secret Decryption (within planning/handling)
             logger.info("Step 4/14 & 5/14: Validating dependencies and handling decryption...")
             tx_context = TransactionContext()
-            
+
             # Process assets and secrets into the transaction plan
             skipped_assets = []
             for asset in resolved.assets.values():
                 try:
-                    success = AssetHandler.handle(
-                        asset,
-                        repo_dir,
-                        tx_context,
-                        identity_path,
-                        interactive
-                    )
+                    success = AssetHandler.handle(asset, repo_dir, tx_context, identity_path, interactive)
                     if not success:
                         skipped_assets.append(asset.id)
                 except Exception as e:
@@ -296,13 +286,7 @@ class RestoreService:
 
             for secret in resolved.secrets.values():
                 try:
-                    success = AssetHandler.handle(
-                        secret,
-                        repo_dir,
-                        tx_context,
-                        identity_path,
-                        interactive
-                    )
+                    success = AssetHandler.handle(secret, repo_dir, tx_context, identity_path, interactive)
                     if not success:
                         skipped_assets.append(secret.id)
                 except Exception as e:
@@ -318,7 +302,7 @@ class RestoreService:
                 hook_type="pre-restore",
                 tx_context=tx_context,
                 dry_run=dry_run,
-                no_plugins=no_plugins
+                no_plugins=no_plugins,
             )
 
             # Dry-run early exit before mutation
@@ -353,7 +337,7 @@ class RestoreService:
                         repo_dir=repo_dir,
                         version=resolved.node_config["version"],
                         version_file=resolved.node_config["version_file"],
-                        dry_run=dry_run
+                        dry_run=dry_run,
                     )
 
                 # Step 11: Plugin Hooks
@@ -364,7 +348,7 @@ class RestoreService:
                     hook_type="post-restore",
                     tx_context=tx_context,
                     dry_run=dry_run,
-                    no_plugins=no_plugins
+                    no_plugins=no_plugins,
                 )
 
                 # Step 12: Post-Apply Verification
@@ -378,7 +362,7 @@ class RestoreService:
             # Step 13: Update manifest.lock SHA-256 map
             logger.info("Step 13/14: Updating manifest.lock sync states...")
             lockfile_path = os.path.join(repo_dir, "manifest.lock")
-            
+
             # Load existing lockfile if it exists
             lockfile = Lockfile()
             if os.path.exists(lockfile_path):
@@ -396,21 +380,18 @@ class RestoreService:
                     continue
                 abs_source = os.path.join(repo_dir, asset.source)
                 abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
-                
+
                 # Checksum of source file (for encrypted copy/templates, we take the source blob)
                 source_sha = cls.calculate_sha256(abs_source)
-                
+
                 if os.path.exists(abs_target):
                     mtime = os.stat(abs_target).st_mtime
                     permissions = asset.permissions or oct(os.stat(abs_target).st_mode & 0o7777)
                     if not permissions.startswith("0"):
                         permissions = "0" + permissions[2:] if permissions.startswith("o") else permissions
-                    
+
                     lockfile.entries[asset.id] = LockfileEntry(
-                        sha256_of_source=source_sha,
-                        target_path=abs_target,
-                        permissions=permissions,
-                        mtime=mtime
+                        sha256_of_source=source_sha, target_path=abs_target, permissions=permissions, mtime=mtime
                     )
 
             # Update entries for resolved secrets
@@ -419,19 +400,16 @@ class RestoreService:
                     continue
                 abs_source = os.path.join(repo_dir, secret.source)
                 abs_target = PathHelper.canonicalize(Interpolator.interpolate(secret.target))
-                
+
                 # Checksum of source encrypted blob in repo
                 source_sha = cls.calculate_sha256(abs_source)
-                
+
                 if os.path.exists(abs_target):
                     mtime = os.stat(abs_target).st_mtime
                     permissions = secret.permissions or "0600"
-                    
+
                     lockfile.entries[secret.id] = LockfileEntry(
-                        sha256_of_source=source_sha,
-                        target_path=abs_target,
-                        permissions=permissions,
-                        mtime=mtime
+                        sha256_of_source=source_sha, target_path=abs_target, permissions=permissions, mtime=mtime
                     )
 
             # Write lockfile atomically
@@ -440,18 +418,18 @@ class RestoreService:
             # Step 14: Structured Audit Log Commit
             logger.info("Step 14/14: Committing transaction and writing audit logs...")
             tx_context.commit()
-            
+
             AuditLogger.log_audit(
                 f"Sync restore of profile '{profile_name}' completed successfully.",
                 level=logging.INFO,
                 tx_id=tx_context.tx_id,
                 profile=profile_name,
-                op="restore"
+                op="restore",
             )
 
             # Finalize cleanup
             tx_context.cleanup()
-            
+
             logger.info(f"Restore transaction {tx_context.tx_id} committed successfully!")
             return tx_context.tx_id
 
@@ -463,7 +441,7 @@ class RestoreService:
         hook_type: str,
         tx_context: TransactionContext,
         dry_run: bool = False,
-        no_plugins: bool = False
+        no_plugins: bool = False,
     ) -> None:
         """Discovers and executes sandboxed hooks for the specified hook stage."""
         if no_plugins:
@@ -490,11 +468,7 @@ class RestoreService:
         targets = [os.path.abspath(op["target"]) for op in tx_context.planned_operations]
 
         context = ReviveContext(
-            repo_dir=repo_dir,
-            profile_name=profile_name,
-            dry_run=dry_run,
-            targets=targets,
-            hook_type=hook_type
+            repo_dir=repo_dir, profile_name=profile_name, dry_run=dry_run, targets=targets, hook_type=hook_type
         )
 
         for plugin in matching_plugins:

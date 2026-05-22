@@ -1,5 +1,4 @@
-"""SecureTempFile context manager for highly restricted temporary storage.
-"""
+"""SecureTempFile context manager for highly restricted temporary storage."""
 
 import os
 import shutil

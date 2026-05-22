@@ -1,5 +1,4 @@
-"""Test suite for structured JSON lines auditing and log formatting.
-"""
+"""Test suite for structured JSON lines auditing and log formatting."""
 
 import json
 import logging
@@ -18,7 +17,7 @@ def test_json_audit_formatter() -> None:
         lineno=10,
         msg="Transaction completed successfully",
         args=(),
-        exc_info=None
+        exc_info=None,
     )
     # Inject extra attributes
     setattr(record, "tx_id", "12345-abcde")
@@ -39,10 +38,10 @@ def test_audit_logger_setup_and_log(tmpdir: Any) -> None:
     # Set home or override location if needed, but AuditLogger writes to ~/.local/share/rv
     # We can just verify setup completes and logs a line
     AuditLogger.setup(verbose=True, headless=True)
-    
+
     # Audit logger should not raise any exceptions
     AuditLogger.log_audit("Verification completed", tx_id="test-tx-99", asset_id="gitconfig")
-    
+
     audit_file = os.path.expanduser("~/.local/share/rv/audit.log")
     assert os.path.exists(audit_file)
 

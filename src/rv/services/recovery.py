@@ -1,5 +1,4 @@
-"""Disaster recovery service for Revive (rv).
-"""
+"""Disaster recovery service for Revive (rv)."""
 
 import glob
 import os

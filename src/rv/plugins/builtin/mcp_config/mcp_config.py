@@ -1,5 +1,4 @@
-"""MCP Config first-party plugin. Deploys MCP config to target IDE directory.
-"""
+"""MCP Config first-party plugin. Deploys MCP config to target IDE directory."""
 
 import json
 import os

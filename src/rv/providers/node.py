@@ -1,5 +1,4 @@
-"""Node/Npm environment package provider orchestration.
-"""
+"""Node/Npm environment package provider orchestration."""
 
 import os
 import shutil
@@ -22,12 +21,7 @@ class NodeProvider(BaseProvider):
         if not shutil.which("node"):
             return None
         try:
-            res = subprocess.run(
-                ["node", "-v"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            res = subprocess.run(["node", "-v"], capture_output=True, text=True, check=True)
             val = res.stdout.strip()
             if val.startswith("v"):
                 val = val[1:]
@@ -58,13 +52,7 @@ class NodeProvider(BaseProvider):
                 target = target[1:]
         return target
 
-    def install_node(
-        self,
-        repo_dir: str,
-        version: str | None,
-        version_file: str | None,
-        dry_run: bool = False
-    ) -> None:
+    def install_node(self, repo_dir: str, version: str | None, version_file: str | None, dry_run: bool = False) -> None:
         """Verifies Node.js version and attempts to install it via fnm/nvm if mismatch occurs."""
         target_version = self._resolve_target_version(repo_dir, version, version_file)
         if not target_version:

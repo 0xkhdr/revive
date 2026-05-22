@@ -1,5 +1,4 @@
-"""Base package provider interface and utility methods.
-"""
+"""Base package provider interface and utility methods."""
 
 import subprocess
 import time
@@ -12,6 +11,7 @@ logger = AuditLogger.get_logger("rv.providers.base")
 
 class ProviderError(Exception):
     """Raised when package orchestration fails."""
+
     pass
 
 
@@ -28,14 +28,11 @@ class BaseProvider:
             True if available, False otherwise.
         """
         import shutil
+
         return shutil.which(self.name) is not None
 
     def execute_with_retry(
-        self,
-        cmd: list[str],
-        retries: int = 3,
-        backoff_factor: float = 2.0,
-        **kwargs: Any
+        self, cmd: list[str], retries: int = 3, backoff_factor: float = 2.0, **kwargs: Any
     ) -> subprocess.CompletedProcess[str]:
         """Executes a command with exponential backoff on failure.
 
@@ -53,29 +50,19 @@ class BaseProvider:
         for attempt in range(1, retries + 1):
             try:
                 logger.debug(f"Executing cmd (attempt {attempt}/{retries}): {' '.join(cmd)}")
-                result = subprocess.run(
-                    cmd,
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                    **kwargs
-                )
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True, **kwargs)
                 return result
             except (subprocess.CalledProcessError, FileNotFoundError, PermissionError) as e:
                 last_error = e
                 # Check if it was a CalledProcessError to get stderr
                 stderr = e.stderr if isinstance(e, subprocess.CalledProcessError) else str(e)
-                logger.warning(
-                    f"Command failed (attempt {attempt}/{retries}) for provider '{self.name}': {stderr}"
-                )
+                logger.warning(f"Command failed (attempt {attempt}/{retries}) for provider '{self.name}': {stderr}")
                 if attempt < retries:
                     logger.info(f"Retrying in {current_delay}s...")
                     time.sleep(current_delay)
                     current_delay *= backoff_factor
 
-        raise ProviderError(
-            f"Failed to execute command after {retries} attempts: {last_error}"
-        ) from last_error
+        raise ProviderError(f"Failed to execute command after {retries} attempts: {last_error}") from last_error
 
     def install(self, packages: list[str], dry_run: bool = False) -> None:
         """Installs the given packages using the native tool.

@@ -1,5 +1,4 @@
-"""Python Skills first-party plugin. Deploys skills definitions to ~/.config/rv/skills.
-"""
+"""Python Skills first-party plugin. Deploys skills definitions to ~/.config/rv/skills."""
 
 import json
 import os

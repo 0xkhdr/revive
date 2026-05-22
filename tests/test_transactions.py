@@ -1,5 +1,4 @@
-"""Test suite for atomic writes, flock-based process locking, and TransactionContext with rollback.
-"""
+"""Test suite for atomic writes, flock-based process locking, and TransactionContext with rollback."""
 
 import os
 import tempfile
@@ -26,10 +25,10 @@ def test_atomic_write() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         target = os.path.join(tmpdir, "subdir", "target.txt")
         content = "atomic data content"
-        
+
         # Write
         AtomicWrite.write(target, content)
-        
+
         assert os.path.exists(target)
         with open(target, "r") as f:
             assert f.read() == content
@@ -42,7 +41,7 @@ def test_transaction_context_success() -> None:
 
         # Initialize transaction
         tx = TransactionContext()
-        
+
         # 1. Plan
         tx.plan_operation("copy", target_file, source_data=b"hello world", permissions="0644")
         tx.plan_operation("symlink", target_link, source_data=target_file)
@@ -87,27 +86,24 @@ def test_transaction_context_rollback() -> None:
         new_file = os.path.join(tmpdir, "new_file.txt")
 
         tx = TransactionContext()
-        
+
         # Plan a successful overwrite and a failure operation
         tx.plan_operation("copy", pre_existing, source_data=b"overwritten content", permissions="0600")
         tx.plan_operation("copy", new_file, source_data=b"new file content", permissions="0644")
         # Plan a third operation that will intentionally fail (e.g. invalid operation type or missing parameters)
-        tx.planned_operations.append({
-            "op_type": "invalid_op",
-            "target": os.path.join(tmpdir, "fail.txt"),
-            "source_data": None,
-            "kwargs": {}
-        })
+        tx.planned_operations.append(
+            {"op_type": "invalid_op", "target": os.path.join(tmpdir, "fail.txt"), "source_data": None, "kwargs": {}}
+        )
 
         tx.snapshot()
-        
+
         # Executing should fail and trigger automatic rollback
         with pytest.raises(Exception):
             tx.execute()
 
         # State should be restored
         assert tx.status == "rolled_back"
-        
+
         # 1. pre_existing.txt should have original content and original permissions restored
         assert os.path.exists(pre_existing)
         with open(pre_existing, "r") as f:

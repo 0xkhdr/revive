@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class AssetType(StrEnum):
     """Supported asset orchestration types."""
+
     SYMLINK = "symlink"
     COPY = "copy"
     TEMPLATE = "template"
@@ -19,6 +20,7 @@ class AssetType(StrEnum):
 
 class ConflictStrategy(StrEnum):
     """Strategies to resolve file conflicts during restore."""
+
     PROMPT = "prompt"
     OVERWRITE = "overwrite"
     SKIP = "skip"
@@ -27,6 +29,7 @@ class ConflictStrategy(StrEnum):
 
 class Asset(BaseModel):
     """Asset definition representing a symlink, copied file, or template."""
+
     id: str = Field(..., description="Unique identifier for the asset")
     type: AssetType = Field(AssetType.SYMLINK, description="Orchestration type")
     source: str = Field(..., description="Source path relative to the manifest.yaml")
@@ -49,9 +52,12 @@ class Asset(BaseModel):
     def validate_source_path(cls, v: str) -> str:
         """Prevent path traversal in source path."""
         import os
+
         normalized = os.path.normpath(v)
         if normalized.startswith("..") or os.path.isabs(normalized):
-            raise ValueError(f"Source path '{v}' must be relative to the repository and not contain path traversal ('..')")
+            raise ValueError(
+                f"Source path '{v}' must be relative to the repository and not contain path traversal ('..')"
+            )
         return v
 
     @field_validator("permissions")
@@ -71,6 +77,7 @@ class Asset(BaseModel):
 
 class Secret(BaseModel):
     """Secret definition decrypted via age before placement."""
+
     id: str = Field(..., description="Unique identifier for the secret")
     type: AssetType = Field(AssetType.SECRET, description="Orchestration type (fixed to secret)")
     source: str = Field(..., description="Encrypted source file path (typically ends in .age)")
@@ -94,9 +101,12 @@ class Secret(BaseModel):
     def validate_source_path(cls, v: str) -> str:
         """Prevent path traversal in source path."""
         import os
+
         normalized = os.path.normpath(v)
         if normalized.startswith("..") or os.path.isabs(normalized):
-            raise ValueError(f"Secret source path '{v}' must be relative to the repository and not contain path traversal")
+            raise ValueError(
+                f"Secret source path '{v}' must be relative to the repository and not contain path traversal"
+            )
         return v
 
     @field_validator("permissions")
@@ -118,17 +128,20 @@ class Secret(BaseModel):
 
 class DockerConfig(BaseModel):
     """Docker environment provisioning."""
+
     images: list[str] = Field(default_factory=list)
 
 
 class NodeConfig(BaseModel):
     """Node/Nvm environment provisioning."""
+
     version_file: str | None = Field(default=None, description="Path to .nvmrc or similar version file")
     version: str | None = Field(default=None, description="Explicit target Node.js version")
 
 
 class Packages(BaseModel):
     """System and language level packages."""
+
     brew: list[str] = Field(default_factory=list)
     apt: list[str] = Field(default_factory=list)
     flatpak: list[str] = Field(default_factory=list)
@@ -139,6 +152,7 @@ class Packages(BaseModel):
 
 class Profile(BaseModel):
     """Profile configuration linking assets, secrets, and packages."""
+
     extends: list[str] = Field(default_factory=list, description="Base profiles extended by this profile")
     assets: list[str | Asset] = Field(default_factory=list, description="Assets to restore (by ID or inline)")
     secrets: list[str | Secret] = Field(default_factory=list, description="Secrets to restore (by ID or inline)")
@@ -147,12 +161,16 @@ class Profile(BaseModel):
 
 class MachineOverridesConfig(BaseModel):
     """Machine override configuration."""
+
     enabled: bool = Field(default=True, description="Enable machine overrides")
-    path: str = Field(default="machine/{hostname}.yaml", description="Path pattern for host-specific override manifests")
+    path: str = Field(
+        default="machine/{hostname}.yaml", description="Path pattern for host-specific override manifests"
+    )
 
 
 class Manifest(BaseModel):
     """Root configuration manifest representing the complete repository state."""
+
     version: int = Field(2, description="Manifest schema version")
     assets: list[Asset] = Field(default_factory=list, description="Global pool of assets")
     secrets: list[Secret] = Field(default_factory=list, description="Global pool of secrets")

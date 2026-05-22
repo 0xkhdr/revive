@@ -18,6 +18,7 @@ class AgeEncryptor:
         """Checks if the native pyrage python extension is installed and importable."""
         try:
             import pyrage
+
             return True
         except ImportError:
             return False
@@ -37,13 +38,14 @@ class AgeEncryptor:
         if cls.is_pyrage_available():
             try:
                 import pyrage
+
                 # Read plaintext
                 with open(in_path, "rb") as f:
                     plaintext = f.read()
 
                 # Parse recipients
                 parsed_recipients = [pyrage.x25519.Recipient.from_str(r) for r in recipients]
-                
+
                 # Encrypt
                 encrypted_data = pyrage.encrypt(plaintext, parsed_recipients)
 
@@ -74,10 +76,11 @@ class AgeEncryptor:
         if cls.is_pyrage_available():
             try:
                 import pyrage
+
                 # Read private key identity
                 with open(identity_path) as f:
                     identity_str = f.read().strip()
-                
+
                 identity = pyrage.x25519.Identity.from_str(identity_str)
 
                 # Read encrypted data
@@ -108,6 +111,7 @@ class AgeEncryptor:
         if cls.is_pyrage_available():
             try:
                 import pyrage
+
                 identity = pyrage.x25519.Identity.generate()
                 return str(identity.to_public()), str(identity)
             except Exception:
@@ -116,12 +120,7 @@ class AgeEncryptor:
         # Fallback to age-keygen CLI
         if Platform.has_tool("age-keygen"):
             try:
-                result = subprocess.run(
-                    ["age-keygen"],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
+                result = subprocess.run(["age-keygen"], capture_output=True, text=True, check=True)
                 output = result.stdout
                 # age-keygen outputs:
                 # # public key: age1...

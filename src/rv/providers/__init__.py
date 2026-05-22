@@ -1,5 +1,4 @@
-"""Package Providers module exposing orchestrators for brew, apt, flatpak, snap, docker, and node.
-"""
+"""Package Providers module exposing orchestrators for brew, apt, flatpak, snap, docker, and node."""
 
 from rv.providers.apt import AptProvider
 from rv.providers.base import BaseProvider, ProviderError

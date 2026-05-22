@@ -3,12 +3,12 @@
 These schemas track system state mutations for auditability and rollback safety.
 """
 
-
 from pydantic import BaseModel, Field
 
 
 class RollbackEntry(BaseModel):
     """A single filesystem operation recorded for potential rollback."""
+
     op: str = Field(..., description="Operation type: create, modify, delete, symlink, chmod")
     src_backup: str | None = Field(None, description="Path to the backup file of the pre-existing state")
     target: str = Field(..., description="Target system path that was mutated")
@@ -18,6 +18,7 @@ class RollbackEntry(BaseModel):
 
 class TransactionJournal(BaseModel):
     """A log of all operations performed in a single transaction."""
+
     tx_id: str = Field(..., description="Unique transaction ID")
     timestamp: float = Field(..., description="Timestamp of transaction initiation")
     status: str = Field("pending", description="Status: pending, committed, aborted, rolled_back")
@@ -26,6 +27,7 @@ class TransactionJournal(BaseModel):
 
 class LockfileEntry(BaseModel):
     """Verification entry for a successfully managed asset or secret."""
+
     sha256_of_source: str = Field(..., description="SHA-256 checksum of the source asset in the repository")
     target_path: str = Field(..., description="Resolved system target path")
     permissions: str = Field(..., description="Enforced octal file permission string")
@@ -34,4 +36,5 @@ class LockfileEntry(BaseModel):
 
 class Lockfile(BaseModel):
     """Manifest lockfile structure maintaining deterministic state synchronization records."""
+
     entries: dict[str, LockfileEntry] = Field(default_factory=dict, description="Sync state keyed by asset/secret ID")

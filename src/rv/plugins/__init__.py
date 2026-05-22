@@ -1,2 +1,1 @@
-"""Plugin loading and execution module for revive.
-"""
+"""Plugin loading and execution module for revive."""

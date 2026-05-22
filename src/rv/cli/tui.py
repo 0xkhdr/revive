@@ -492,9 +492,9 @@ class ReviveApp(App):
         elif parsed.path == "/asset import-secret":
             await self.run_asset_import(parsed, is_secret=True)
         elif parsed.path == "/asset export":
-            self.run_asset_export(parsed)
+            await self.run_asset_export(parsed)
         elif parsed.path == "/secret keygen":
-            self.run_keygen()
+            await self.run_keygen()
         elif parsed.path == "/workspace list":
             self.run_workspace_list()
         elif parsed.path == "/workspace add":
@@ -606,7 +606,8 @@ class ReviveApp(App):
             self.log_status(f"[bold red]agent[/] Doctor diagnostic failed: {e}")
             self.suggest_next_steps("unknown")
 
-    def run_keygen(self) -> None:
+    @work
+    async def run_keygen(self) -> None:
         try:
             self.log_status("[bold magenta]agent[/] Generating new cryptographic identity...")
             pub, priv = AgeEncryptor.generate_keypair()
@@ -685,6 +686,7 @@ class ReviveApp(App):
             self.log_status(f" - [bold]{secret.id}[/] secret {secret.source} -> {secret.target}")
         self.suggest_next_steps("asset")
 
+    @work
     async def run_asset_import(self, parsed: ParsedCommand, is_secret: bool) -> None:
         path = parsed.args[0] if parsed.args else None
         if not path:
@@ -770,7 +772,8 @@ class ReviveApp(App):
         self.log_status(f"[bold green]agent[/] Imported {item_kind} [bold]{item_id}[/] into profile [bold]{profile}[/].")
         self.suggest_next_steps("asset")
 
-    def run_asset_export(self, parsed: ParsedCommand) -> None:
+    @work
+    async def run_asset_export(self, parsed: ParsedCommand) -> None:
         if not parsed.args:
             self.log_status("[yellow]agent[/] Usage: /asset export <id> [output] [--identity path]")
             self.suggest_next_steps("asset")

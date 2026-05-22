@@ -32,13 +32,17 @@ graph TD
 
 ## Phase 0: Bootstrap the `rv` CLI Tool (Current Machine)
 
-Before managing configurations, bootstrap the global `rv` command wrapper on your current machine to run standard commands globally:
+Before managing configurations, install the global `rv` command wrapper on your current machine:
 
 ```bash
 # From within your local revive repository on your current machine:
-python3 -m venv .venv
-.venv/bin/pip install -e .
-.venv/bin/python -m rv self-install
+./scripts/install.sh
+```
+
+If the Linux machine is missing Python, pip, venv support, Age, or Git, use the best-effort dependency bootstrap:
+
+```bash
+./scripts/install.sh --system-deps
 ```
 
 > [!NOTE]
@@ -330,25 +334,15 @@ flowchart LR
 ```
 
 ### 1. Install Initial System Dependencies
-Open the Terminal on Elementary OS and run the following bootstrap command to prepare the environment:
+Open the Terminal on Elementary OS and install the base tools needed to clone the repository and run the installer:
 
 ```bash
-sudo apt update && sudo apt install -y \
-  git \
-  python3-pip \
-  python3-venv \
-  python3-setuptools \
-  age \
-  flatpak \
-  snapd
+sudo apt update
+sudo apt install -y git python3-pip python3-venv python3-setuptools age flatpak snapd
 ```
 
 > [!NOTE]
-> Make sure snapd and flatpak are configured properly on your Elementary OS:
-> ```bash
-> # Enable snap classic support
-> sudo ln -s /var/lib/snapd/snap /snap
-> ```
+> Make sure snapd and flatpak are configured properly on your Elementary OS. For snap classic support, `/snap` may need to point to `/var/lib/snapd/snap`.
 
 ### 2. Copy the Age Identity Key Safely
 Transfer your `identity.txt` private key generated during Phase 1 to the new machine. Keep it secured:
@@ -371,18 +365,21 @@ cd my-revive-backup
 ```
 
 ### 4. Install and Bootstrap the `rv` CLI Tool
-Install the `revive-cli` and bootstrap its global system wrapper script.
+Install `revive-cli` and bootstrap its global wrapper script.
 
-#### Option A: Local Virtual Environment with Global Shell Wrapper (Recommended)
-Set up a dedicated virtual environment, install the tool, and register the global wrapper:
+#### Option A: One-Line Linux Install (Recommended)
+From the cloned repository:
 
 ```bash
-# Set up virtual environment and install revive-cli
-python3 -m venv .venv
-.venv/bin/pip install -e .
+./scripts/install.sh
+```
 
-# Bootstrap the global wrapper to ~/.local/bin/rv (no virtualenv activation required!)
-.venv/bin/python -m rv self-install
+The installer creates a dedicated virtual environment under `~/.local/share/rv/venv` and writes `~/.local/bin/rv`, so no shell activation is required.
+
+If the machine is missing common Linux prerequisites, the cloned installer can also perform a best-effort package-manager bootstrap:
+
+```bash
+./scripts/install.sh --system-deps
 ```
 
 #### Option B: Standalone PyInstaller Binary Compilation
@@ -396,6 +393,13 @@ pyinstaller --onefile --name rv src/rv/__main__.py
 # Place the compiled binary in your local user path
 mkdir -p ~/.local/bin
 cp dist/rv ~/.local/bin/
+```
+
+#### Uninstall
+Remove the user-local package and wrapper with one command:
+
+```bash
+./scripts/uninstall.sh
 ```
 
 ---

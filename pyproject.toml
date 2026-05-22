@@ -22,6 +22,7 @@ dependencies = [
     "pyrage>=1.0.0",
     "watchdog>=3.0.0",
     "jinja2>=3.0.0",
+    "PyYAML>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -38,8 +39,14 @@ dev = [
 [project.scripts]
 rv = "rv.cli.main:app"
 
+[tool.setuptools]
+package-dir = { "" = "src" }
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+rv = ["plugins/builtin/*/plugin.yaml"]
 
 [tool.ruff]
 line-length = 120

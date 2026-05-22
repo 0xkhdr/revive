@@ -21,10 +21,43 @@ Revive features a rigorous transactional execution lifecycle (Plan, Validate, Sn
 
 ### Installation
 
-Install the package in editable mode from the repository root:
+Install `rv` on Linux from the repository root with one command:
 
 ```bash
-pip install -e .
+./scripts/install.sh
+```
+
+This creates an isolated user install at `~/.local/share/rv`, installs the package into its own virtual environment, and writes the global wrapper to `~/.local/bin/rv`.
+
+If the machine is missing common prerequisites, run the same installer with best-effort system dependency bootstrapping:
+
+```bash
+./scripts/install.sh --system-deps
+```
+
+To reinstall over an existing local wrapper:
+
+```bash
+./scripts/install.sh --force
+```
+
+Uninstall `rv` with one command:
+
+```bash
+./scripts/uninstall.sh
+```
+
+If `~/.local/bin` is not on your shell path, add it to your shell profile:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+For local development, install the package in editable mode from the repository root:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e .
 ```
 
 Or build and run the single-binary standalone executable using PyInstaller:

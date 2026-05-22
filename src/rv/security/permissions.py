@@ -2,7 +2,6 @@
 """
 
 import os
-import pwd
 
 
 class PermissionEnforcer:
@@ -39,10 +38,13 @@ class PermissionEnforcer:
         # Enforce chown if requested and possible
         if owner:
             try:
+                import pwd
                 pw = pwd.getpwnam(owner)
                 uid = pw.pw_uid
                 gid = pw.pw_gid
                 os.chown(path, uid, gid)
+            except ImportError:
+                raise PermissionError("Owner configuration (chown) is only supported on UNIX/POSIX platforms")
             except KeyError:
                 raise ValueError(f"User '{owner}' does not exist on this system")
             except Exception as e:

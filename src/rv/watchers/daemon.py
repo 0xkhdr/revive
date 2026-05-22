@@ -78,17 +78,16 @@ class RepoChangeHandler(FileSystemEventHandler):
     def _execute_restore(self) -> None:
         """Tries to execute the restore process. Skips if the process lock is currently held."""
         try:
-            with ProcessLock(blocking=False):
-                logger.info(f"Auto-applying changes in '{self.repo_dir}' for profile '{self.profile_name}'...")
-                RestoreService.restore(
-                    repo_dir=self.repo_dir,
-                    profile_name=self.profile_name,
-                    identity_path=self.identity_path,
-                    interactive=False,  # Headless auto-apply must not prompt for conflicts
-                    dry_run=False,
-                    no_plugins=False
-                )
-                logger.info("Auto-restore completed successfully.")
+            logger.info(f"Auto-applying changes in '{self.repo_dir}' for profile '{self.profile_name}'...")
+            RestoreService.restore(
+                repo_dir=self.repo_dir,
+                profile_name=self.profile_name,
+                identity_path=self.identity_path,
+                interactive=False,  # Headless auto-apply must not prompt for conflicts
+                dry_run=False,
+                no_plugins=False
+            )
+            logger.info("Auto-restore completed successfully.")
         except LockAcquisitionError:
             logger.warning(
                 "Another revive process currently holds the lock. Skipping this auto-restore trigger."

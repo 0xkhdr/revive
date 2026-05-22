@@ -85,10 +85,8 @@ def test_repo_change_handler_debounce_triggers_restore() -> None:
 
 def test_repo_change_handler_lock_collision() -> None:
     """RepoChangeHandler skips restore execution if another process holds the lock."""
-    with patch("rv.services.restore.RestoreService.restore") as mock_restore, \
-         patch("rv.watchers.daemon.ProcessLock") as mock_lock:
-        
-        mock_lock.return_value.__enter__.side_effect = LockAcquisitionError("Lock busy")
+    with patch("rv.services.restore.RestoreService.restore") as mock_restore:
+        mock_restore.side_effect = LockAcquisitionError("Lock busy")
         
         handler = RepoChangeHandler(
             repo_dir="/tmp/fake_repo",
@@ -96,9 +94,9 @@ def test_repo_change_handler_lock_collision() -> None:
             debounce_seconds=0.01
         )
         try:
-            # Manually trigger restore execution
+            # Manually trigger restore execution which catches LockAcquisitionError
             handler._execute_restore()
-            mock_restore.assert_not_called()
+            mock_restore.assert_called_once()
         finally:
             handler.stop()
 

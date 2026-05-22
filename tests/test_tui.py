@@ -42,3 +42,71 @@ def test_suggest_commands_filters_by_prefix() -> None:
     assert "/workspace add" in paths
     assert "/workspace use" in paths
     assert all(p.startswith("/workspace") for p in paths)
+
+
+def test_parse_agent_command_supports_multiple_assets() -> None:
+    parsed = parse_agent_command('/asset import @file1.txt @file2.txt --profile main')
+    assert parsed.path == "/asset import"
+    assert parsed.args == ("@file1.txt", "@file2.txt")
+    assert parsed.flags == {"profile": "main"}
+
+
+def test_get_path_completions(tmp_path) -> None:
+    from rv.cli.tui import get_path_completions
+    
+    # Create some temp files and directories
+    d = tmp_path / "sub"
+    d.mkdir()
+    (d / "file1.txt").touch()
+    (d / "file2.txt").touch()
+    (d / "nested").mkdir()
+    
+    # Test search with relative directory prefix
+    matches = get_path_completions(str(d) + "/f")
+    assert matches == [str(d) + "/file1.txt", str(d) + "/file2.txt"]
+    
+    # Test search with @ prefix
+    matches = get_path_completions("@" + str(d) + "/f")
+    assert matches == ["@" + str(d) + "/file1.txt", "@" + str(d) + "/file2.txt"]
+
+
+def test_tui_command_history_navigation() -> None:
+    from unittest.mock import MagicMock
+    from rv.cli.tui import ReviveApp
+    
+    app = ReviveApp()
+    app._history = ["first_command", "second_command"]
+    app._history_cursor = -1
+    
+    mock_input = MagicMock()
+    mock_input.value = "current_typed_text"
+    
+    app.query_one = MagicMock(return_value=mock_input)
+    
+    # Pressing Up should store current typed text and show the last command
+    app._history_up()
+    assert app._saved_input == "current_typed_text"
+    assert app._history_cursor == 1
+    assert mock_input.value == "second_command"
+    
+    # Pressing Up again should show the first command
+    app._history_up()
+    assert app._history_cursor == 0
+    assert mock_input.value == "first_command"
+    
+    # Pressing Up at the top should do nothing
+    app._history_up()
+    assert app._history_cursor == 0
+    assert mock_input.value == "first_command"
+    
+    # Pressing Down should show the second command
+    app._history_down()
+    assert app._history_cursor == 1
+    assert mock_input.value == "second_command"
+    
+    # Pressing Down at the last command should restore the saved typed text
+    app._history_down()
+    assert app._history_cursor == -1
+    assert mock_input.value == "current_typed_text"
+
+

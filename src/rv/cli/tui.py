@@ -256,6 +256,51 @@ CONTEXT_SUGGESTIONS: dict[str, list[str]] = {
 }
 
 
+def get_path_completions(path_prefix: str) -> list[str]:
+    """Scan the local filesystem for matching directories and files."""
+    has_at = path_prefix.startswith("@")
+    clean_prefix = path_prefix[1:] if has_at else path_prefix
+    
+    # Expand user home directory
+    try:
+        expanded = os.path.expanduser(clean_prefix)
+    except Exception:
+        expanded = clean_prefix
+    
+    # Get the directory and the base name prefix
+    if clean_prefix.endswith("/") or (os.path.isdir(expanded) and clean_prefix != ""):
+        search_dir = expanded
+        base_prefix = ""
+    else:
+        search_dir = os.path.dirname(expanded) or "."
+        base_prefix = os.path.basename(expanded)
+    
+    if not os.path.isdir(search_dir):
+        return []
+    
+    try:
+        entries = os.listdir(search_dir)
+    except Exception:
+        return []
+        
+    matches = []
+    for entry in entries:
+        if entry.startswith(base_prefix):
+            full_path = os.path.join(search_dir, entry)
+            # Reconstruct the user-facing path relative to the search prefix
+            dir_part = os.path.dirname(clean_prefix)
+            user_path = os.path.join(dir_part, entry) if dir_part else entry
+            
+            if os.path.isdir(full_path):
+                user_path += "/"
+            
+            if has_at:
+                matches.append("@" + user_path)
+            else:
+                matches.append(user_path)
+    return sorted(matches)
+
+
 # ─── Autocomplete Dropdown ────────────────────────────────────────────────────
 
 class AutocompleteList(Widget):
@@ -286,22 +331,30 @@ class AutocompleteList(Widget):
     }
     """
 
-    items: reactive[list[AgentCommand]] = reactive([], recompose=True)
+    items: reactive[list[AgentCommand | str]] = reactive([], recompose=True)
     cursor: reactive[int] = reactive(0)
 
     class Selected(Message):
-        def __init__(self, command: AgentCommand) -> None:
+        def __init__(self, command: AgentCommand | str) -> None:
             super().__init__()
             self.command = command
 
     def compose(self) -> ComposeResult:
         for i, cmd in enumerate(self.items):
             classes = "ac-item highlighted" if i == self.cursor else "ac-item"
-            yield Static(
-                f"[bold]{cmd.path}[/]  [dim]{cmd.description}[/]",
-                classes=classes,
-                id=f"ac_{i}",
-            )
+            if isinstance(cmd, AgentCommand):
+                yield Static(
+                    f"[bold]{cmd.path}[/]  [dim]{cmd.description}[/]",
+                    classes=classes,
+                    id=f"ac_{i}",
+                )
+            else:
+                icon = "📁" if cmd.endswith("/") else "📄"
+                yield Static(
+                    f"{icon} [bold #89b4fa]{cmd}[/]",
+                    classes=classes,
+                    id=f"ac_{i}",
+                )
 
     def watch_cursor(self, old: int, new: int) -> None:
         for i in range(len(self.items)):
@@ -329,6 +382,29 @@ class AutocompleteList(Widget):
             self.post_message(self.Selected(self.items[self.cursor]))
 
     def update_items(self, prefix: str) -> None:
+        if " " in prefix:
+            tokens = prefix.split(" ")
+            last_token = tokens[-1]
+            cmd_part = " ".join(tokens[:-1]).strip()
+            
+            path_commands = [
+                "/asset import", "/asset import-secret", "/asset export",
+                "/secret encrypt", "/secret decrypt", "/secret keygen",
+                "/workspace add", "/workspace use", "/workspace remove"
+            ]
+            
+            is_path_cmd = any(cmd_part.startswith(pc) for pc in path_commands)
+            
+            if last_token.startswith("@") or is_path_cmd or last_token.startswith("/") or last_token.startswith("."):
+                path_matches = get_path_completions(last_token)
+                self.items = path_matches[:8]
+                self.cursor = 0
+                if path_matches:
+                    self.add_class("visible")
+                else:
+                    self.remove_class("visible")
+                return
+                
         matches = autocomplete_commands(prefix)[:8]
         self.items = matches
         self.cursor = 0
@@ -340,6 +416,7 @@ class AutocompleteList(Widget):
     def hide(self) -> None:
         self.items = []
         self.remove_class("visible")
+
 
 
 # ─── Sidebar Cards ────────────────────────────────────────────────────────────
@@ -525,7 +602,7 @@ class HeaderBar(Static):
 # ─── Main App ─────────────────────────────────────────────────────────────────
 
 class ReviveApp(App[None]):
-    """Revive TUI — agentic chat interface."""
+    """Revive TUI — minimal agentic chat interface."""
 
     TITLE = "rv"
     CSS = """
@@ -536,39 +613,7 @@ class ReviveApp(App[None]):
     }
 
     #main-container {
-        layout: horizontal;
-        height: 1fr;
-    }
-
-    #sidebar {
-        width: 35;
         height: 100%;
-        background: #1e1e2e;
-        border-right: solid #313244;
-        padding: 1 1;
-    }
-
-    #sidebar-logo {
-        height: 3;
-        content-align: center middle;
-        text-style: bold;
-        border-bottom: solid #313244;
-        margin-bottom: 1;
-    }
-
-    #right-pane {
-        width: 1fr;
-        height: 100%;
-        background: #11111b;
-    }
-
-    TabbedContent {
-        height: 1fr;
-        background: #11111b;
-    }
-
-    TabPane {
-        padding: 1 1;
         background: #11111b;
     }
 
@@ -576,27 +621,7 @@ class ReviveApp(App[None]):
         background: #11111b;
         border: none;
         scrollbar-size: 1 1;
-    }
-
-    #doctor-log {
-        background: #11111b;
-        border: none;
-        scrollbar-size: 1 1;
-    }
-
-    DataTable {
-        background: #181825;
-        border: solid #313244;
         height: 1fr;
-        scrollbar-size: 1 1;
-    }
-
-    #drift-details {
-        height: 4;
-        background: #181825;
-        border: round #313244;
-        margin-top: 1;
-        padding: 0 1;
     }
 
     #input-row {
@@ -646,107 +671,55 @@ class ReviveApp(App[None]):
         super().__init__()
         self.workspace = WorkspaceService.get_current_workspace()
         self._ac_active = False
+        self._history: list[str] = []
+        self._history_cursor: int = -1
+        self._saved_input = ""
 
     # ── Layout ──────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar(id="header")
-        with Horizontal(id="main-container"):
-            # Left Sidebar
-            with Vertical(id="sidebar"):
-                yield WorkspaceDetailsCard(id="ws-details-card")
-                yield ToolsCapabilityCard(id="tools-capability-card")
-                yield ActiveProfileCard(id="profile-card")
-                yield WorkspaceSwitcherCard(id="ws-switcher-card")
-            # Right Area
-            with Vertical(id="right-pane"):
-                with TabbedContent(initial="tab-console", id="tabs"):
-                    with TabPane("Console Chat", id="tab-console"):
-                        yield RichLog(id="transcript", highlight=True, markup=True, wrap=True)
-                    with TabPane("Drift Explorer", id="tab-drift"):
-                        yield DataTable(id="drift-table")
-                        yield Static("[dim]Select an asset row above to inspect details.[/]", id="drift-details")
-                    with TabPane("System Diagnostics", id="tab-doctor"):
-                        yield RichLog(id="doctor-log", highlight=True, markup=True, wrap=True)
-                yield SuggestionBar(id="suggestions")
-                with Horizontal(id="input-row"):
-                    yield Label("❯ ", id="prompt-label")
-                    yield Input(
-                        placeholder="/help  or  /status base",
-                        id="cmd-input",
-                    )
-                yield AutocompleteList(id="autocomplete")
-        yield Footer()
+        with Vertical(id="main-container"):
+            yield RichLog(id="transcript", highlight=True, markup=True, wrap=True)
+            with Horizontal(id="input-row"):
+                yield Label("❯ ", id="prompt-label")
+                yield Input(
+                    placeholder="Type a command (e.g. /status, /help) ...",
+                    id="cmd-input",
+                )
+            yield AutocompleteList(id="autocomplete")
 
     def on_mount(self) -> None:
         self._log_agent(
             "[bold]Revive agent online.[/]\n"
-            "Type [bold cyan]/help[/] for commands, [bold cyan]/[/] + Tab to autocomplete.\n"
+            "Type [bold cyan]/help[/] for commands, type [bold cyan]@[/] or [bold cyan]/[/] + Tab to autocomplete directories/files.\n"
             f"Workspace: [bold]{self.workspace.name if self.workspace else 'none — run /workspace add .'}[/]"
         )
-        self._set_context("start")
         self.query_one("#cmd-input").focus()
         self._refresh_all()
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def _refresh_all(self) -> None:
-        """Reactive refresh of all sidebar card widgets."""
-        self.query_one("#ws-details-card", WorkspaceDetailsCard).refresh()
-        self.query_one("#ws-switcher-card", WorkspaceSwitcherCard).refresh()
-        
+        """Reactive refresh of workspace status."""
         profile = "base"
-        self.query_one("#profile-card", ActiveProfileCard).update_stats(profile)
         self._run_status_in_background(profile)
 
     @work
     async def _run_status_in_background(self, profile: str) -> None:
-        """Quietly checks sync state in background to update the table."""
+        """Quietly checks sync state in background."""
         if not self.workspace:
             return
         try:
-            report = StatusService.get_status(self.workspace.path, profile)
-            self.call_from_thread(self._populate_table, report)
+            StatusService.get_status(self.workspace.path, profile)
         except Exception:
             pass
 
     def _populate_table(self, report: dict[str, Any]) -> None:
-        """Populates Tab 2 DataTable with live drift status."""
-        table = self.query_one("#drift-table", DataTable)
-        table.clear(columns=True)
-        table.cursor_type = "row"
-        table.add_columns("Asset / Secret", "Type", "Target Path", "Status")
-        
-        for item_id, info in report.get("assets", {}).items():
-            status = info["status"]
-            if status == "in_sync":
-                status_str = "[bold #a6e3a1]✓ In Sync[/]"
-            elif status == "modified":
-                status_str = "[bold #f38ba8]✗ Drifted[/]"
-            elif status == "missing":
-                status_str = "[bold #f9e2af]⚠ Missing[/]"
-            else:
-                status_str = f"[bold #f38ba8]⚠ {status}[/]"
-            table.add_row(item_id, str(info["type"]), info["target"], status_str)
-
-    @on(DataTable.RowSelected, "#drift-table")
-    def on_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Update selected details under Table tab when navigating rows."""
-        table = self.query_one("#drift-table", DataTable)
-        try:
-            row = table.get_row(event.row_key)
-            item_id = row[0]
-            details = self.query_one("#drift-details", Static)
-            details.update(
-                f"[bold #89b4fa]Selected ID:[/] [bold]{item_id}[/]\n"
-                f"[dim #a6adc8]Type: {row[1]}  |  Target: {row[2]}[/]\n"
-                f"Status: {row[3]}  |  Run [/][bold cyan]/diff[/][dim] or [/][bold cyan]/restore[/][dim] to apply.[/]"
-            )
-        except Exception:
-            pass
+        """DataTable is no longer present in minimal layout — no-op."""
+        pass
 
     def action_switch_ws(self, name: str) -> None:
-        """Action handler when clicking workspace links in sidebar switcher."""
+        """Action handler when clicking workspace links."""
         self._log_sep()
         self._log_user(f"use workspace {name}")
         self._run_workspace_use(name)
@@ -771,7 +744,8 @@ class ReviveApp(App[None]):
         self.query_one("#transcript", RichLog).write("[dim]─[/]" * 40)
 
     def _set_context(self, ctx: str) -> None:
-        self.query_one("#suggestions", SuggestionBar).set_context(ctx)
+        """Suggestion bar is no longer present — no-op."""
+        pass
 
     def _profile_from(self, parsed: ParsedCommand) -> str:
         p = parsed.flags.get("profile")
@@ -787,7 +761,7 @@ class ReviveApp(App[None]):
     def on_input_changed(self, event: Input.Changed) -> None:
         val = event.value
         ac = self.query_one("#autocomplete", AutocompleteList)
-        if val.startswith("/") and len(val) >= 1:
+        if val.startswith("/") or "@" in val:
             ac.update_items(val)
             self._ac_active = bool(ac.items)
         else:
@@ -797,13 +771,18 @@ class ReviveApp(App[None]):
     @on(Input.Submitted, "#cmd-input")
     async def on_submitted(self, event: Input.Submitted) -> None:
         ac = self.query_one("#autocomplete", AutocompleteList)
-        # If autocomplete visible and user hits enter, accept suggestion
         if self._ac_active and ac.items:
             ac.accept()
             return
         cmd = event.value.strip()
         if not cmd:
             return
+        
+        # Add to history
+        if not self._history or self._history[-1] != cmd:
+            self._history.append(cmd)
+        self._history_cursor = -1
+        
         event.input.value = ""
         ac.hide()
         self._ac_active = False
@@ -814,7 +793,17 @@ class ReviveApp(App[None]):
     @on(AutocompleteList.Selected)
     def on_ac_selected(self, event: AutocompleteList.Selected) -> None:
         inp = self.query_one("#cmd-input", Input)
-        inp.value = event.command.path + " "
+        selected = event.command
+        if isinstance(selected, AgentCommand):
+            inp.value = selected.path + " "
+        else:
+            # Replaces/completes the last token typed
+            val = inp.value
+            last_space = val.rfind(" ")
+            if last_space != -1:
+                inp.value = val[:last_space + 1] + selected
+            else:
+                inp.value = selected
         inp.cursor_position = len(inp.value)
         self.query_one("#autocomplete", AutocompleteList).hide()
         self._ac_active = False
@@ -823,16 +812,45 @@ class ReviveApp(App[None]):
     def action_ac_up(self) -> None:
         if self._ac_active:
             self.query_one("#autocomplete", AutocompleteList).move_up()
+        else:
+            self._history_up()
 
     def action_ac_down(self) -> None:
         if self._ac_active:
             self.query_one("#autocomplete", AutocompleteList).move_down()
+        else:
+            self._history_down()
+
+    def _history_up(self) -> None:
+        if not self._history:
+            return
+        inp = self.query_one("#cmd-input", Input)
+        if self._history_cursor == -1:
+            self._saved_input = inp.value
+            self._history_cursor = len(self._history) - 1
+        elif self._history_cursor > 0:
+            self._history_cursor -= 1
+        else:
+            return
+        inp.value = self._history[self._history_cursor]
+        inp.cursor_position = len(inp.value)
+
+    def _history_down(self) -> None:
+        if self._history_cursor == -1:
+            return
+        inp = self.query_one("#cmd-input", Input)
+        if self._history_cursor == len(self._history) - 1:
+            self._history_cursor = -1
+            inp.value = self._saved_input
+        else:
+            self._history_cursor += 1
+            inp.value = self._history[self._history_cursor]
+        inp.cursor_position = len(inp.value)
 
     def action_ac_accept(self) -> None:
         if self._ac_active:
             self.query_one("#autocomplete", AutocompleteList).accept()
         else:
-            # Tab when not in AC — show all completions
             val = self.query_one("#cmd-input", Input).value
             ac = self.query_one("#autocomplete", AutocompleteList)
             ac.update_items(val or "/")
@@ -844,10 +862,8 @@ class ReviveApp(App[None]):
 
     def action_clear_transcript(self) -> None:
         self.query_one("#transcript", RichLog).clear()
-        self._set_context("start")
 
     def action_show_palette(self) -> None:
-        # Ctrl+P: show full command list inline
         self.query_one("#cmd-input", Input).value = "/"
         ac = self.query_one("#autocomplete", AutocompleteList)
         ac.update_items("/")
@@ -1019,31 +1035,28 @@ class ReviveApp(App[None]):
                 sev = "[red][crit][/]" if issue.get("severity") == "critical" else "[yellow][warn][/]"
                 self._log_agent(f"  {sev} {issue['category']}: {issue['message']}")
             
-            # Format in detailed Tab 3 diagnostics log
-            doc_log = self.query_one("#doctor-log", RichLog)
-            doc_log.clear()
-            doc_log.write("[bold #cba6f7]System Diagnostics Report[/]\n")
-            doc_log.write(f"Workspace Status: {health}\n")
-            doc_log.write(f"Audited: {report['checks_run']} check points\n")
-            doc_log.write("[dim]─[/]" * 40 + "\n")
+            # Format in conversation transcript
+            self._log_sep()
+            self._log_agent("[bold #cba6f7]System Diagnostics Report[/]")
+            self._log_agent(f"Workspace Status: {health}")
+            self._log_agent(f"Audited: {report['checks_run']} check points")
+            self._log_sep()
             
-            doc_log.write("[bold #89b4fa]Tools Audit:[/]")
+            self._log_agent("[bold #89b4fa]Tools Audit:[/]")
             for tool, ok in report.get("tools", {}).items():
                 icon = "[#a6e3a1]✓[/]" if ok else "[#f38ba8]✗[/]"
-                doc_log.write(f"  {icon} {tool}")
+                self._log_agent(f"  {icon} {tool}")
                 
-            doc_log.write("\n[bold #f9e2af]Discovered Issues:[/]")
+            self._log_agent("\n[bold #f9e2af]Discovered Issues:[/]")
             if not report.get("issues"):
-                doc_log.write("  [#a6e3a1]No configuration or security warnings registered![/]")
+                self._log_agent("  [#a6e3a1]No configuration or security warnings registered![/]")
             else:
                 for issue in report.get("issues", []):
                     sev = "[bold #f38ba8][CRIT][/]" if issue.get("severity") == "critical" else "[bold #f9e2af][WARN][/]"
-                    doc_log.write(f"  {sev} {issue['category']}: {issue['message']}")
+                    self._log_agent(f"  {sev} {issue['category']}: {issue['message']}")
             
-            self._set_context("doctor_ok" if report["healthy"] else "doctor_issues")
         except Exception as e:
             self._log_err(f"Doctor failed: {e}")
-            self._set_context("unknown")
 
     def _run_asset_list(self) -> None:
         if not self.workspace:
@@ -1069,8 +1082,7 @@ class ReviveApp(App[None]):
 
     @work
     async def _run_asset_import(self, parsed: ParsedCommand, is_secret: bool) -> None:
-        path = parsed.args[0] if parsed.args else None
-        if not path:
+        if not parsed.args:
             self._log_err(f"Usage: {COMMANDS[parsed.path].usage}")
             self._set_context("asset")
             return
@@ -1084,18 +1096,49 @@ class ReviveApp(App[None]):
         asset_id = parsed.flags.get("id")
         target = parsed.flags.get("target")
         profile = parsed.flags.get("profile")
-        try:
-            self._import_item(
-                source_path=path,
-                is_secret=is_secret,
-                asset_id=asset_id if isinstance(asset_id, str) else None,
-                target_path=target if isinstance(target, str) else None,
-                profile=profile if isinstance(profile, str) else "base",
-                recipient=recipient if isinstance(recipient, str) else None,
-            )
-        except Exception as e:
-            self._log_err(f"Import failed: {e}")
+        
+        # Resolve all source files to import
+        sources = []
+        for arg in parsed.args:
+            clean_arg = arg[1:] if arg.startswith("@") else arg
+            abs_arg = os.path.abspath(os.path.expanduser(clean_arg))
+            
+            if os.path.isdir(abs_arg):
+                for root, _, files in os.walk(abs_arg):
+                    for f in files:
+                        sources.append(os.path.join(root, f))
+            elif os.path.isfile(abs_arg):
+                sources.append(abs_arg)
+            else:
+                self._log_err(f"Source not found: {arg}")
+                
+        if not sources:
+            self._log_err("No valid files found to import.")
             self._set_context("asset")
+            return
+            
+        success_count = 0
+        for src in sources:
+            try:
+                single = (len(sources) == 1)
+                curr_id = (asset_id if isinstance(asset_id, str) else None) if single else None
+                curr_target = (target if isinstance(target, str) else None) if single else None
+                
+                self._import_item(
+                    source_path=src,
+                    is_secret=is_secret,
+                    asset_id=curr_id,
+                    target_path=curr_target,
+                    profile=profile if isinstance(profile, str) else "base",
+                    recipient=recipient if isinstance(recipient, str) else None,
+                )
+                success_count += 1
+            except Exception as e:
+                self._log_err(f"Failed to import {os.path.basename(src)}: {e}")
+                
+        if success_count > 0:
+            self._log_agent(f"[green]✓ Successfully imported {success_count}/{len(sources)} files.[/]")
+        self._set_context("asset")
 
     def _import_item(
         self,

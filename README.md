@@ -11,6 +11,7 @@ Revive features a rigorous transactional execution lifecycle (Plan, Validate, Sn
 *   **Transactional File Synchronizations**: Assets are managed as atomic transactions. Any failure during execution triggers a safe rollback of mutated files from snapshots.
 *   **Cryptographic Secret Management**: Seamless encryption and decryption of secrets using age keys (`pyrage` first, falling back to age CLI), with log scrubbing and memory zero-buffers.
 *   **Multi-Provider Packages**: Secure native package installations (`brew`, `apt`, `flatpak`, `snap`, `docker`, `node`) with strict error recovery.
+*   **Workspace Management & TUI**: Interactive command center for managing multiple Revive repositories, importing/exporting assets, and running guided restorations.
 *   **Isolated Sandboxed Plugins**: Extensible hook loader running custom Python scripts in sandboxed environments with resource limits and path restrictions.
 *   **Real-time Watchdog Daemon**: Keeps directories in sync automatically using debounced file event observers.
 *   **Disaster Recovery Engine**: Scans, lists, and recovers interrupted transactions using interactive or headless automated rollbacks.
@@ -214,10 +215,32 @@ Scan transaction logs (`~/.config/rv/journals`) to clean up or safely roll back 
 rv recover [OPTIONS]
 ```
 *   `--auto`: Headless recovery. Automatically rolls back the latest incomplete transaction and exits without prompting.
-*   **Interactive Mode**: Prompts developers to:
-    *   `[r]ollback`: Roll back all modified files to original snapshots.
-    *   `[d]iscard`: Discard the journal and backups without mutating system files.
-    *   `[s]kip`: Skip recovery of this journal entry.
+
+---
+
+### Interactive Control Center
+
+#### `rv tui`
+Launch the Rich-based interactive TUI to manage workspaces, import/export assets, and perform guided restorations.
+```bash
+rv tui
+```
+
+---
+
+### Workspace Management (`rv workspace`)
+
+Manage registered Revive repositories globally:
+
+#### `rv workspace list`
+List all registered workspaces and their last access times.
+
+#### `rv workspace add <path>`
+Register an existing directory as a Revive workspace.
+*   `--name`, `-n`: Friendly name for the workspace.
+
+#### `rv workspace remove <name>`
+Unregister a workspace by name.
 
 ---
 
@@ -241,6 +264,19 @@ Decrypt an existing encrypted secret and re-encrypt it for a new set of recipien
 ```bash
 rv secret rotate <encrypted_file> --identity <current_private_key> --new-recipient <new_pubkey>
 ```
+
+---
+
+### Installation Management
+
+#### `rv self-install`
+Install the `rv` tool wrapper globally to `~/.local/bin/rv`.
+*   `--force`, `-f`: Overwrite existing wrapper.
+
+#### `rv self-uninstall`
+Remove the `rv` wrapper and isolated installation directory.
+*   `--force`, `-f`: Force removal of the wrapper.
+*   `--purge-config`: Also remove the `~/.config/rv` directory.
 
 ---
 

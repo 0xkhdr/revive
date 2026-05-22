@@ -101,52 +101,31 @@ cd ~/workspace/my-revive-backup
 rv init
 ```
 
-This scaffolds the following layout:
-*   `manifest.yaml`: Primary global configuration.
-*   `assets/`: Folder for managed system files, configuration templates, and directories.
-*   `secrets/`: Folder for age-encrypted `.age` files.
-*   `machine/`: Machine-specific overrides.
-
-### 2. Configure Standard Assets
-Copy files you want to manage into the `assets/` directory.
-
-#### A. Manage shell configuration:
-```bash
-cp ~/.zshrc assets/zshrc
-```
-
-#### B. Manage Git config (using a template):
-Templates support Jinja2 syntax and environment variable interpolation.
-Create `assets/gitconfig.j2`:
-```ini
-[user]
-    name = ${GIT_USER_NAME:-"Default User"}
-    email = ${GIT_USER_EMAIL:-"user@example.com"}
-[core]
-    editor = nano
-    excludesfile = ~/.gitignore_global
-```
-
-### 3. Secure and Encrypt Secrets
-Secrets such as SSH private keys, API keys, or database credentials must be encrypted before being placed in `secrets/`.
-
-#### A. Encrypt an SSH Private Key:
-Use the recipient key generated in Phase 1:
-```bash
-rv secret encrypt ~/.ssh/id_ed25519 -o secrets/id_ed25519.age -r age1f3sw...
-```
-
-#### B. Encrypt AI API Tokens:
-```bash
-# Save your API token to a temp file, encrypt, then wipe the temp file
-echo "your-anthropic-api-key" > /tmp/key.txt
-rv secret encrypt /tmp/key.txt -o secrets/anthropic_key.age -r age1f3sw...
-rm -f /tmp/key.txt
-```
+This scaffolds the repository layout and **automatically registers** the directory in your global workspace registry (`~/.config/rv/workspaces.yaml`).
 
 ---
 
-## Phase 3: AI Skills & Tooling Integration
+## Phase 3: Interactive Asset Management (The TUI)
+
+While you can manually edit `manifest.yaml`, Revive provides a powerful **Terminal User Interface (TUI)** to simplify workspace switching, asset imports, and secret management.
+
+### 1. Launch the Control Center
+To manage your environment interactively, run:
+
+```bash
+rv tui
+```
+
+The TUI provides a guided experience to:
+*   **Switch Workspaces**: Easily jump between different configuration repositories.
+*   **Import Assets**: Point to any local file, and the TUI will copy it to `assets/`, assign it an ID, and update your `manifest.yaml` automatically.
+*   **Secure Secrets**: Import sensitive files as `secret` types. The TUI will prompt for your recipient key and handle the **age encryption** for you.
+*   **Import Plugins**: Quickly add new AI skills or operational hooks to your workspace.
+*   **Guided Restore**: Run status checks and restorations without remembering profile names or path flags.
+
+---
+
+## Phase 4: AI Skills & Tooling Integration
 
 Revive comes pre-equipped with first-party AI Skill plugins to automatically bootstrap advanced developer tools (such as Claude Desktop, ClaudeCode, and local Python scripts).
 

@@ -35,7 +35,8 @@ src/rv/
 ├── models/
 │   ├── __init__.py
 │   ├── manifest.py    # Pydantic v2 validation models for manifest.yaml
-│   └── transaction.py # Pydantic schemas for Transaction Journals and manifest.lock
+│   ├── transaction.py # Pydantic schemas for Transaction Journals and manifest.lock
+│   └── workspace.py   # Global workspace registry models (~/.config/rv/workspaces.yaml)
 ├── plugins/
 │   ├── __init__.py
 │   ├── context.py     # ReviveContext schema passed to plugins
@@ -65,7 +66,8 @@ src/rv/
 │   ├── handlers.py    # Asset type executors (Copy, Symlink, Template, Secret)
 │   ├── recovery.py    # Transaction recovery and journal replay engine
 │   ├── restore.py     # 14-step unidirectional apply coordinator
-│   └── status.py      # Drift analysis & colored diff generation
+│   ├── status.py      # Drift analysis & colored diff generation
+│   └── workspace.py   # Workspace discovery and registration service
 ├── transactions/
 │   ├── __init__.py
 │   ├── atomic.py      # Atomic temp-write + rename helper (prevents partial writes)

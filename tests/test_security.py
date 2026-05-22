@@ -129,6 +129,37 @@ def test_permission_enforcer_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         assert "Failed to change permissions for" in str(excinfo.value)
 
 
+def test_permission_enforcer_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that PermissionEnforcer handles Windows platform gracefully with warnings."""
+    monkeypatch.setattr(PermissionEnforcer, "_is_windows", lambda: True)
+
+    import logging
+
+    logger = logging.getLogger("rv.security.permissions")
+    warnings_logged = []
+    monkeypatch.setattr(logger, "warning", lambda msg: warnings_logged.append(msg))
+
+    with tempfile.NamedTemporaryFile() as tmp:
+        # 1. Enforce read-only POSIX permissions (e.g. 0400)
+        PermissionEnforcer.enforce(tmp.name, "0400")
+        assert any("Mapped POSIX permissions '0400' to Windows attributes" in w for w in warnings_logged)
+
+        # 2. Enforce writable POSIX permissions (e.g. 0644)
+        warnings_logged.clear()
+        PermissionEnforcer.enforce(tmp.name, "0644")
+        assert any("Mapped POSIX permissions '0644' to Windows attributes" in w for w in warnings_logged)
+
+        # 3. Enforce ownership (chown) - should not raise chown error on Windows
+        warnings_logged.clear()
+        PermissionEnforcer.enforce(tmp.name, "0644", owner="any_owner")
+        assert any("Ownership configuration (chown) is only supported on UNIX/POSIX" in w for w in warnings_logged)
+
+        # 4. Verify on Windows - should return True and log a warning
+        warnings_logged.clear()
+        assert PermissionEnforcer.verify(tmp.name, "0600") is True
+        assert any("Permissions verification bypassed on Windows" in w for w in warnings_logged)
+
+
 def test_zero_buffer_type_error() -> None:
     with pytest.raises(TypeError):
         ZeroBuffer.zero("string_is_immutable")  # type: ignore

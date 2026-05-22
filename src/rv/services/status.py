@@ -229,17 +229,19 @@ class StatusService:
             return True
 
     @classmethod
-    def get_diff(cls, repo_dir: str, profile_name: str, asset_id: str, identity_path: str | None = None) -> str | None:
-        """Calculates a diff representation between expected source and system file.
+    def get_contents_for_diff(
+        cls, repo_dir: str, profile_name: str, asset_id: str, identity_path: str | None = None
+    ) -> tuple[str, str] | None:
+        """Retrieves the expected and actual contents for calculating a diff.
 
         Args:
             repo_dir: Absolute path to the source repository.
             profile_name: Deployment profile name.
-            asset_id: The ID of the asset to diff.
+            asset_id: The ID of the asset.
             identity_path: Optional path to the age identity file.
 
         Returns:
-            A string diff, or None if no drift or binary file.
+            A tuple of (expected_text, actual_text), or None if no drift or binary file.
         """
         repo_dir = os.path.abspath(repo_dir)
         manifest_path = os.path.join(repo_dir, "manifest.yaml")
@@ -266,14 +268,14 @@ class StatusService:
         if asset.type == AssetType.COPY:
             if asset.encrypted:
                 if not identity_path or not os.path.exists(identity_path):
-                    return "[Cannot decrypt source: identity file missing]"
+                    return "[Cannot decrypt source: identity file missing]", ""
                 with SecureTempFile.file() as tmp_decrypted:
                     try:
                         AgeEncryptor.decrypt_file(abs_source, tmp_decrypted, identity_path)
                         with open(tmp_decrypted, encoding="utf-8", errors="replace") as f:
                             expected_text = f.read()
                     except Exception as e:
-                        return f"[Decryption failed: {e}]"
+                        return f"[Decryption failed: {e}]", ""
             else:
                 try:
                     with open(abs_source, encoding="utf-8", errors="replace") as f:
@@ -292,17 +294,17 @@ class StatusService:
                 template = jinja2.Template(template_content, undefined=jinja2.StrictUndefined)
                 expected_text = template.render(context)
             except Exception as e:
-                return f"[Template rendering failed: {e}]"
+                return f"[Template rendering failed: {e}]", ""
         elif asset.type == AssetType.SECRET:
             if not identity_path or not os.path.exists(identity_path):
-                return "[Cannot decrypt secret: identity file missing]"
+                return "[Cannot decrypt secret: identity file missing]", ""
             with SecureTempFile.file() as tmp_decrypted:
                 try:
                     AgeEncryptor.decrypt_file(abs_source, tmp_decrypted, identity_path)
                     with open(tmp_decrypted, encoding="utf-8", errors="replace") as f:
                         expected_text = f.read()
                 except Exception as e:
-                    return f"[Decryption failed: {e}]"
+                    return f"[Decryption failed: {e}]", ""
         else:
             return None
 
@@ -313,7 +315,48 @@ class StatusService:
         except Exception:
             return None
 
-        # 3. Compute diff
+        return expected_text, actual_text
+
+    @classmethod
+    def get_diff(cls, repo_dir: str, profile_name: str, asset_id: str, identity_path: str | None = None) -> str | None:
+        """Calculates a diff representation between expected source and system file.
+
+        Args:
+            repo_dir: Absolute path to the source repository.
+            profile_name: Deployment profile name.
+            asset_id: The ID of the asset to diff.
+            identity_path: Optional path to the age identity file.
+
+        Returns:
+            A string diff, or None if no drift or binary file.
+        """
+        contents = cls.get_contents_for_diff(repo_dir, profile_name, asset_id, identity_path)
+        if not contents:
+            return None
+
+        expected_text, actual_text = contents
+
+        # Handle early-return error string placeholders from get_contents_for_diff
+        if not actual_text and (
+            expected_text.startswith("[Cannot decrypt")
+            or expected_text.startswith("[Decryption failed")
+            or expected_text.startswith("[Template rendering failed")
+        ):
+            return expected_text
+
+        repo_dir = os.path.abspath(repo_dir)
+        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        manifest = ManifestLoader.load(manifest_path)
+        resolved = ProfileResolver.resolve(manifest, profile_name)
+        asset = resolved.assets.get(asset_id) or resolved.secrets.get(asset_id)
+        if not asset:
+            return None
+
+        try:
+            abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
+        except Exception:
+            return None
+
         diff_lines = difflib.unified_diff(
             expected_text.splitlines(),
             actual_text.splitlines(),

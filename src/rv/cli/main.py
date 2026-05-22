@@ -191,10 +191,86 @@ def status(
         console.print("[bold green]In Sync:[/] Environment is perfectly synchronized with the repository state.")
 
 
+def _render_side_by_side_diff(
+    expected_text: str, actual_text: str, source_name: str, target_name: str
+) -> Table:
+    """Generates a beautiful aligned side-by-side terminal comparison using Rich."""
+    import difflib
+    from rich.text import Text
+
+    expected_lines = expected_text.splitlines()
+    actual_lines = actual_text.splitlines()
+
+    table = Table(show_header=True, header_style="bold magenta", box=None, expand=True)
+    table.add_column("L#", style="dim cyan", width=5, justify="right")
+    table.add_column(f"Expected (Repository: {source_name})", ratio=1)
+    table.add_column("L#", style="dim cyan", width=5, justify="right")
+    table.add_column(f"Actual (System: {target_name})", ratio=1)
+
+    matcher = difflib.SequenceMatcher(None, expected_lines, actual_lines)
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for idx in range(i2 - i1):
+                exp_line_num = str(i1 + idx + 1)
+                act_line_num = str(j1 + idx + 1)
+                table.add_row(
+                    exp_line_num,
+                    Text(expected_lines[i1 + idx]),
+                    act_line_num,
+                    Text(actual_lines[j1 + idx]),
+                )
+        elif tag == "delete":
+            for idx in range(i2 - i1):
+                exp_line_num = str(i1 + idx + 1)
+                table.add_row(
+                    exp_line_num,
+                    Text(expected_lines[i1 + idx], style="red bold"),
+                    "",
+                    Text(""),
+                )
+        elif tag == "insert":
+            for idx in range(j2 - j1):
+                act_line_num = str(j1 + idx + 1)
+                table.add_row(
+                    "",
+                    Text(""),
+                    act_line_num,
+                    Text(actual_lines[j1 + idx], style="green bold"),
+                )
+        elif tag == "replace":
+            max_len = max(i2 - i1, j2 - j1)
+            for idx in range(max_len):
+                exp_content = ""
+                exp_line_num = ""
+                exp_style = ""
+                if idx < (i2 - i1):
+                    exp_content = expected_lines[i1 + idx]
+                    exp_line_num = str(i1 + idx + 1)
+                    exp_style = "red bold"
+
+                act_content = ""
+                act_line_num = ""
+                act_style = ""
+                if idx < (j2 - j1):
+                    act_content = actual_lines[j1 + idx]
+                    act_line_num = str(j1 + idx + 1)
+                    act_style = "green bold"
+
+                table.add_row(
+                    exp_line_num,
+                    Text(exp_content, style=exp_style),
+                    act_line_num,
+                    Text(act_content, style=act_style),
+                )
+    return table
+
+
 @app.command("diff")
 def diff(
     profile: str = typer.Option(..., "--profile", "-p", help="Profile name to check drift for."),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to diff encrypted secrets."),
+    unified: bool = typer.Option(False, "--unified", "-u", help="Display standard unified diff format."),
 ) -> None:
     """Print colored diffs of all modified file assets on the filesystem."""
     repo_dir = _get_repo_dir()
@@ -209,16 +285,55 @@ def diff(
 
     for asset_id, info in report["assets"].items():
         if info["status"] == "modified":
-            diff_text = StatusService.get_diff(repo_dir, profile, asset_id, identity)
-            if diff_text:
-                has_diffs = True
-                console.print(
-                    Panel(
-                        Syntax(diff_text, "diff", theme="monokai", background_color="default"),
-                        title=f"Drift Diff: {asset_id} -> {info['target']}",
-                        border_style="yellow",
+            if unified:
+                diff_text = StatusService.get_diff(repo_dir, profile, asset_id, identity)
+                if diff_text:
+                    has_diffs = True
+                    console.print(
+                        Panel(
+                            Syntax(diff_text, "diff", theme="monokai", background_color="default"),
+                            title=f"Drift Diff: {asset_id} -> {info['target']}",
+                            border_style="yellow",
+                        )
                     )
-                )
+            else:
+                contents = StatusService.get_contents_for_diff(repo_dir, profile, asset_id, identity)
+                if contents:
+                    expected_text, actual_text = contents
+                    if not actual_text and expected_text.startswith("["):
+                        has_diffs = True
+                        console.print(
+                            Panel(
+                                f"[bold red]Error rendering diff:[/] {expected_text}",
+                                title=f"Drift Diff: {asset_id} -> {info['target']}",
+                                border_style="red",
+                            )
+                        )
+                    elif expected_text != actual_text:
+                        has_diffs = True
+                        from rv.services.restore import ManifestLoader, ProfileResolver
+
+                        source_name = f"repo://{asset_id}"
+                        try:
+                            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+                            manifest = ManifestLoader.load(manifest_path)
+                            resolved = ProfileResolver.resolve(manifest, profile)
+                            asset = resolved.assets.get(asset_id) or resolved.secrets.get(asset_id)
+                            if asset:
+                                source_name = f"repo://{asset.source}"
+                        except Exception:
+                            pass
+
+                        diff_table = _render_side_by_side_diff(
+                            expected_text, actual_text, source_name, info["target"]
+                        )
+                        console.print(
+                            Panel(
+                                diff_table,
+                                title=f"Drift Diff (Side-by-Side): {asset_id} -> {info['target']}",
+                                border_style="yellow",
+                            )
+                        )
 
     if not has_diffs:
         console.print("[green]No file content modifications detected.[/]")

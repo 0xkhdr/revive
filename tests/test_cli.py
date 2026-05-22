@@ -151,7 +151,7 @@ def test_cli_diff(temp_repo: str) -> None:
             assert result.exit_code == 0
             assert "No file content modifications detected." in result.stdout
 
-        # 2. Diffs present
+        # 2. Diffs present (Unified flag)
         report_drifted = {
             "drifted": True,
             "assets": {
@@ -165,11 +165,24 @@ def test_cli_diff(temp_repo: str) -> None:
         }
         with patch("rv.services.status.StatusService.get_status", return_value=report_drifted):
             with patch("rv.services.status.StatusService.get_diff", return_value="- old\n+ new") as mock_diff:
-                result = runner.invoke(app, ["diff", "-p", "base"])
+                result = runner.invoke(app, ["diff", "-p", "base", "--unified"])
                 assert result.exit_code == 0
                 assert "Drift Diff: test_zshrc" in result.stdout
                 assert "- old" in result.stdout
                 mock_diff.assert_called_once_with(temp_repo, "base", "test_zshrc", None)
+
+            # 2b. Diffs present (Side-by-side default)
+            with patch("rv.services.status.StatusService.get_contents_for_diff", return_value=("old\nline1", "new\nline1")) as mock_contents:
+                result = runner.invoke(app, ["diff", "-p", "base"])
+                assert result.exit_code == 0
+                assert "Expected" in result.stdout
+                assert "Actual" in result.stdout
+
+            # 2c. Diffs present with early-return error placeholder
+            with patch("rv.services.status.StatusService.get_contents_for_diff", return_value=("[Cannot decrypt source: identity file missing]", "")) as mock_contents:
+                result = runner.invoke(app, ["diff", "-p", "base"])
+                assert result.exit_code == 0
+                assert "Error rendering diff" in result.stdout
 
         # 3. Failed status in diff
         with patch("rv.services.status.StatusService.get_status", side_effect=Exception("Diff status failed")):

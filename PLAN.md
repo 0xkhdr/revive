@@ -43,7 +43,7 @@
 |-------|------------|---------------|
 | Language | Python 3.11+ | Match statements, `tomllib`, modern typing |
 | CLI | Typer | Type-safe, auto-generated help, Rich integration |
-| TUI | Rich | Tables, progress, colored diffs, spinners |
+| GUI | http.server + HTML/CSS/JS | Cosmic-dark dashboard, responsive layout, interactive inheritance maps, real-time logs & diffs |
 | Validation | Pydantic v2 | Strict manifest schema, fast serialization |
 | Encryption | `pyrage` + `age` CLI fallback | `age` is modern, `pyrage` is native Python; CLI fallback for build edge cases |
 | Integrity | `hashlib` (SHA-256) | Lockfile diffing, deterministic verification |

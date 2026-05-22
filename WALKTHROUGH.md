@@ -105,23 +105,24 @@ This scaffolds the repository layout and **automatically registers** the directo
 
 ---
 
-## Phase 3: Interactive Asset Management (The TUI)
+## Phase 3: Interactive Asset Management (The Web GUI)
 
-While you can manually edit `manifest.yaml`, Revive provides a powerful **Terminal User Interface (TUI)** to simplify workspace switching, asset imports, and secret management.
+While you can manually edit `manifest.yaml`, Revive provides a powerful, highly interactive **Web GUI Dashboard** to simplify workspace switching, asset imports, and secret management.
 
 ### 1. Launch the Control Center
 To manage your environment interactively, run:
 
 ```bash
-rv tui
+rv gui
 ```
 
-The TUI provides a guided experience to:
-*   **Switch Workspaces**: Easily jump between different configuration repositories.
-*   **Import Assets**: Point to any local file, and the TUI will copy it to `assets/`, assign it an ID, and update your `manifest.yaml` automatically.
-*   **Secure Secrets**: Import sensitive files as `secret` types. The TUI will prompt for your recipient key and handle the **age encryption** for you.
-*   **Import Plugins**: Quickly add new AI skills or operational hooks to your workspace.
-*   **Guided Restore**: Run status checks and restorations without remembering profile names or path flags.
+The Web GUI provides a guided experience to:
+*   **Switch Workspaces**: Easily jump between different configuration repositories with a single click.
+*   **Visualize Profiles**: View the full inheritance tree and manifest configuration of your workspaces dynamically.
+*   **Import Assets**: Point to any local file, and the Web GUI will copy it to `assets/`, assign it an ID, and update your `manifest.yaml` automatically.
+*   **Secure Secrets**: Import sensitive files as `secret` types. The Web GUI will securely age-encrypt them on the fly.
+*   **Run Diagnostics**: Trigger automated doctor/health checks and see status diagnostics in real time.
+*   **Guided Restore**: Review a side-by-side diff comparison of changes and trigger executions with live terminal logs streaming to your screen.
 
 ---
 

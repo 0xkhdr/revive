@@ -11,7 +11,7 @@ Revive features a rigorous transactional execution lifecycle (Plan, Validate, Sn
 *   **Transactional File Synchronizations**: Assets are managed as atomic transactions. Any failure during execution triggers a safe rollback of mutated files from snapshots.
 *   **Cryptographic Secret Management**: Seamless encryption and decryption of secrets using age keys (`pyrage` first, falling back to age CLI), with log scrubbing and memory zero-buffers.
 *   **Multi-Provider Packages**: Secure native package installations (`brew`, `apt`, `flatpak`, `snap`, `docker`, `node`) with strict error recovery.
-*   **Workspace Management & TUI**: Interactive command center for managing multiple Revive repositories, importing/exporting assets, and running guided restorations.
+*   **Interactive Web GUI Dashboard**: A stunning, premium cosmic-dark themed dashboard for managing multiple Revive workspaces, importing assets, visual inheritance maps, and guided restorations.
 *   **Isolated Sandboxed Plugins**: Extensible hook loader running custom Python scripts in sandboxed environments with resource limits and path restrictions.
 *   **Real-time Watchdog Daemon**: Keeps directories in sync automatically using debounced file event observers.
 *   **Disaster Recovery Engine**: Scans, lists, and recovers interrupted transactions using interactive or headless automated rollbacks.
@@ -254,13 +254,16 @@ rv recover [OPTIONS]
 
 ---
 
-### Interactive Control Center
+### Interactive Control Center (Web GUI)
 
-#### `rv tui`
-Launch the interactive TUI to manage workspaces, import/export assets, and perform guided restorations.
+#### `rv gui`
+Launch a stunning, cosmic-dark themed Web GUI Dashboard locally to manage your Revive workspaces, import files as assets/secrets, view real-time restore logs, track visual manifest profiles/inheritance maps, and execute diffs side-by-side.
 ```bash
-rv tui
+rv gui [OPTIONS]
 ```
+*   `--port`, `-p`: Port to run the GUI server on (default: `8080`).
+*   `--host`, `-h`: Host address to bind to (default: `127.0.0.1` for loopback security).
+*   `--no-browser`: Start the server without automatically opening the browser.
 
 ---
 

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revive — Environment Orchestrator Dashboard</title>
+    <!-- Premium Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Starry Cosmic Background Elements -->
+    <div class="cosmic-bg">
+        <div class="stars"></div>
+        <div class="glow-sphere purple"></div>
+        <div class="glow-sphere cyan"></div>
+    </div>
+
+    <!-- Main Dashboard Shell -->
+    <div class="dashboard-shell">
+        
+        <!-- ─── Sidebar Workspace Manager ─── -->
+        <aside class="sidebar-panel">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <span class="logo-glow">🌀</span>
+                    <div class="brand-text">
+                        <h1>Revive</h1>
+                        <span class="brand-badge">Orchestrator v2</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workspace Section -->
+            <section class="sidebar-section">
+                <h2 class="section-title">Global Workspaces</h2>
+                <div class="workspace-card active" id="active-workspace-card">
+                    <div class="ws-info">
+                        <span class="ws-icon">📁</span>
+                        <div class="ws-details">
+                            <span class="ws-name" id="active-ws-name">Detecting...</span>
+                            <span class="ws-path" id="active-ws-path">Locating workspace context...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- List of other registered workspaces -->
+                <div class="workspaces-list" id="workspaces-list">
+                    <!-- Loaded dynamically -->
+                </div>
+
+                <!-- Register Workspace Form -->
+                <form class="workspace-register-form" id="ws-register-form">
+                    <div class="input-glow-group">
+                        <input type="text" id="new-ws-path" placeholder="Register absolute workspace path..." required autocomplete="off">
+                        <input type="text" id="new-ws-name" placeholder="Friendly name (optional)..." autocomplete="off">
+                    </div>
+                    <button type="submit" class="cyber-btn sm green">
+                        <span class="btn-glow"></span>
+                        <span>Register Workspace</span>
+                    </button>
+                </form>
+            </section>
+
+            <!-- Profiles Navigation -->
+            <section class="sidebar-section">
+                <h2 class="section-title">Deployment Profiles</h2>
+                <div class="profiles-grid" id="profiles-grid">
+                    <!-- Loaded dynamically -->
+                </div>
+                <button class="cyber-btn sm purple borderless" id="btn-create-profile-modal">
+                    <span>+ Create New Profile</span>
+                </button>
+            </section>
+
+            <!-- Diagnostics Clinic Quick Panel -->
+            <section class="sidebar-section diagnostics-quick-panel">
+                <h2 class="section-title">Diagnostics Status</h2>
+                <div class="diag-summary" id="diag-summary">
+                    <span class="diag-spinner">Running diagnostic check...</span>
+                </div>
+            </section>
+        </aside>
+
+        <!-- ─── Main Action Hub ─── -->
+        <main class="main-hub">
+            
+            <!-- Workspace Summary Header -->
+            <header class="hub-header">
+                <div class="header-welcome">
+                    <h2>Active Profile: <span class="accent-text" id="current-profile-badge">base</span></h2>
+                    <p class="subtitle" id="workspace-subtitle">Synchronizing dev repositories to target system files</p>
+                </div>
+                <div class="header-actions">
+                    <button class="cyber-btn cyan" id="btn-check-drift">
+                        <span class="btn-glow"></span>
+                        <span>Check Environment Drift</span>
+                    </button>
+                    <button class="cyber-btn purple glow" id="btn-open-restore">
+                        <span class="btn-glow"></span>
+                        <span>Restore System</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Profile Inheritance and Visual Overview Map -->
+            <section class="hub-card glass-panel" id="inheritance-map-card">
+                <div class="card-header">
+                    <h3>Profile Hierarchy & Inheritance Flow</h3>
+                </div>
+                <div class="inheritance-container" id="inheritance-flow-container">
+                    <!-- Flow diagram populated dynamically -->
+                    <div class="flow-placeholder">Select a profile to view inheritance path.</div>
+                </div>
+            </section>
+
+            <!-- Drift Check & Asset List Area -->
+            <div class="content-split-grid">
+                
+                <!-- Left panel: Assets and Secrets Orchestrator -->
+                <section class="hub-card glass-panel flex-grow">
+                    <div class="card-header flex-between">
+                        <h3>Configured Assets & Secrets</h3>
+                        <span class="badge" id="assets-count-badge">0 Assets</span>
+                    </div>
+
+                    <div class="table-container">
+                        <table class="cyber-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Orchestration Type</th>
+                                    <th>Source Path</th>
+                                    <th>Target Path</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assets-table-body">
+                                <tr>
+                                    <td colspan="6" class="center-text text-dim">Please run "Check Environment Drift" to audit target file synchronizations.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Right panel: Quick Import Form & Packages Checklist -->
+                <div class="side-form-stack">
+                    <!-- Import Station -->
+                    <section class="hub-card glass-panel">
+                        <div class="card-header">
+                            <h3>Asset Import Station</h3>
+                        </div>
+                        <form id="import-asset-form" class="import-form">
+                            <div class="form-group">
+                                <label for="import-src">Local Source File Path</label>
+                                <input type="text" id="import-src" placeholder="/home/user/.zshrc" required autocomplete="off">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="import-id">Asset/Secret ID</label>
+                                    <input type="text" id="import-id" placeholder="dot_zshrc" required autocomplete="off">
+                                </div>
+                                <div class="form-group">
+                                    <label for="import-type">Orchestration Type</label>
+                                    <select id="import-type">
+                                        <option value="copy">Copy File</option>
+                                        <option value="symlink">Symlink File</option>
+                                        <option value="secret">Encrypted Secret</option>
+                                        <option value="template">Jinja2 Template</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="import-target">System Target Destination Path</label>
+                                <input type="text" id="import-target" placeholder="~/.zshrc" required autocomplete="off">
+                            </div>
+
+                            <div class="form-group hidden" id="secret-key-group">
+                                <label for="import-recipient">Age Recipient Public Key</label>
+                                <input type="text" id="import-recipient" placeholder="age1..." autocomplete="off">
+                                <span class="help-text">Mandatory to encrypt secrets locally. Looked up in environment if blank.</span>
+                            </div>
+
+                            <button type="submit" class="cyber-btn purple fill">
+                                <span class="btn-glow"></span>
+                                <span>Import into Workspace</span>
+                            </button>
+                        </form>
+                    </section>
+
+                    <!-- Packages Configuration Checklist -->
+                    <section class="hub-card glass-panel">
+                        <div class="card-header">
+                            <h3>Native Packages Checklist</h3>
+                        </div>
+                        <div class="packages-summary" id="packages-summary-panel">
+                            <div class="pkg-list-container">
+                                <!-- Loaded dynamically based on active profile manifest -->
+                                <p class="text-dim">No package requirements listed in profile.</p>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+            </div>
+
+        </main>
+    </div>
+
+    <!-- ─── Restores Execution Overlay Console Modal ─── -->
+    <div class="modal-overlay" id="restore-modal">
+        <div class="modal-box glass-panel glow-card large">
+            <div class="modal-header">
+                <h2>Transactional System Restoration</h2>
+                <button class="close-btn" id="btn-close-restore-modal">×</button>
+            </div>
+            <div class="modal-content">
+                <p class="modal-description">Deploy and synchronize profiles to your local system files under flock transaction locking protection.</p>
+                
+                <form id="restore-config-form" class="restore-config-form">
+                    <div class="form-row">
+                        <div class="form-group flex-row">
+                            <input type="checkbox" id="restore-dry-run">
+                            <label for="restore-dry-run">
+                                <strong>Dry Run Execution</strong>
+                                <span class="help-text">Plans and validates transactions without mutating the system.</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="restore-identity">Age Decryption Identity Path (Optional)</label>
+                        <input type="text" id="restore-identity" placeholder="~/.config/rv/identity.txt">
+                        <span class="help-text">Private key required only if decrypting .age secrets during restoration.</span>
+                    </div>
+                    <button type="submit" class="cyber-btn purple glow fill xl" id="btn-trigger-restore">
+                        <span class="btn-glow"></span>
+                        <span>Acquire Process Lock & Synchronize</span>
+                    </button>
+                </form>
+
+                <!-- Live restoring log terminal visualizer -->
+                <div class="terminal-shell hidden" id="restore-terminal-container">
+                    <div class="terminal-header">
+                        <div class="terminal-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <span class="terminal-title">restore_transaction_console.log</span>
+                        <span class="terminal-loader" id="terminal-pulse"></span>
+                    </div>
+                    <div class="terminal-body" id="restore-logs-body">
+                        <!-- Stream logs dynamically -->
+                    </div>
+                </div>
+
+                <!-- Transaction success banner -->
+                <div class="success-banner hidden" id="restore-success-banner">
+                    <span class="success-badge">✓ ENVIRONMENT FULLY ALIGNED</span>
+                    <p>Environment restoration transaction executed successfully. Transaction ID: <code id="success-tx-id">N/A</code></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Interactive Diff Viewer Modal ─── -->
+    <div class="modal-overlay" id="diff-modal">
+        <div class="modal-box glass-panel glow-card large">
+            <div class="modal-header">
+                <h2>Asset Drift Diff Viewer</h2>
+                <button class="close-btn" id="btn-close-diff-modal">×</button>
+            </div>
+            <div class="modal-content">
+                <div class="diff-meta">
+                    <span class="diff-label">Asset:</span> <strong id="diff-asset-id" class="accent-text">zshrc</strong>
+                    <span class="diff-label margin-left">Target:</span> <code id="diff-asset-target">~/.zshrc</code>
+                </div>
+                <div class="diff-viewer-shell">
+                    <pre class="diff-lines" id="diff-content-body">
+                        <!-- Loaded dynamically -->
+                    </pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Profile Creation Modal ─── -->
+    <div class="modal-overlay" id="create-profile-modal">
+        <div class="modal-box glass-panel glow-card">
+            <div class="modal-header">
+                <h2>Create Named Deployment Profile</h2>
+                <button class="close-btn" id="btn-close-profile-modal">×</button>
+            </div>
+            <div class="modal-content">
+                <form id="create-profile-form">
+                    <div class="form-group">
+                        <label for="new-profile-name">Profile Name</label>
+                        <input type="text" id="new-profile-name" placeholder="e.g. staging, work_env" required autocomplete="off">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Extends (Base Profile Inheritance)</label>
+                        <div class="checkbox-stack" id="profile-extends-checkboxes">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Asset Pool Subscriptions</label>
+                        <div class="checkbox-stack limit-height" id="profile-assets-checkboxes">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Secret Pool Subscriptions</label>
+                        <div class="checkbox-stack limit-height" id="profile-secrets-checkboxes">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Package Providers Registration</label>
+                        <div class="checkbox-stack" id="profile-packages-checkboxes">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <button type="submit" class="cyber-btn purple fill">
+                        <span class="btn-glow"></span>
+                        <span>Save Manifest & Register Profile</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confetti Canvas for restore celebration -->
+    <canvas id="confetti-canvas"></canvas>
+    
+    <script src="app.js"></script>
+</body>
+</html>

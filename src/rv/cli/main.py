@@ -698,12 +698,18 @@ def self_uninstall(
         console.print("\n[yellow]Nothing to uninstall.[/]")
 
 
-@app.command("tui")
-def tui() -> None:
-    """Launch the interactive Revive TUI."""
-    from rv.cli.tui import start_tui
 
-    start_tui()
+@app.command("gui")
+def gui(
+    port: int = typer.Option(8080, "--port", "-p", help="Port to run the GUI server on."),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host address to bind to."),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Do not open the browser automatically."),
+) -> None:
+    """Launch the interactive Revive Web GUI."""
+    from rv.gui.server import start_gui_server
+
+    start_gui_server(host=host, port=port, open_browser=not no_browser)
+
 
 
 @workspace_app.command("list")

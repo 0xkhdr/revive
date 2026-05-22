@@ -40,15 +40,34 @@ class SandboxRunner:
             timeout = min(max(1, plugin.manifest.timeout), 300)
 
         # Build execution command using sys.executable to run module sandbox_wrapper
-        cmd = [
-            sys.executable,
-            "-m",
-            "rv.plugins.sandbox_wrapper",
-            plugin.entrypoint_path,
-            perms_b64,
-            ctx_b64,
-            context.hook_type,
-        ]
+        if os.environ.get("REVIVE_COV_SUBPROCESS") == "1":
+            rcfile_path = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..", ".coveragerc")
+            )
+            cmd = [
+                sys.executable,
+                "-m",
+                "coverage",
+                "run",
+                f"--rcfile={rcfile_path}",
+                "-p",
+                "-m",
+                "rv.plugins.sandbox_wrapper",
+                plugin.entrypoint_path,
+                perms_b64,
+                ctx_b64,
+                context.hook_type,
+            ]
+        else:
+            cmd = [
+                sys.executable,
+                "-m",
+                "rv.plugins.sandbox_wrapper",
+                plugin.entrypoint_path,
+                perms_b64,
+                ctx_b64,
+                context.hook_type,
+            ]
 
         # Prepare isolated environment
         env = os.environ.copy()

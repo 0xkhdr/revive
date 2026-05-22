@@ -446,3 +446,177 @@ def test_builtin_plugins_python_skills(temp_workspace: str) -> None:
         res = SandboxRunner.run_plugin(skills_plugin, context)
         assert res["status"] == "success"
         assert os.path.exists(os.path.join(target_dir, "skill_a.py"))
+
+
+def test_sandbox_runner_os_functions_block(temp_workspace: str) -> None:
+    """Tests that a plugin attempting forbidden OS functions is successfully blocked."""
+    plugin_dir = os.path.join(temp_workspace, "os-plugin")
+    os.makedirs(plugin_dir, exist_ok=True)
+
+    with open(os.path.join(plugin_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "name": "os-plugin",
+                "version": "1.0.0",
+                "entrypoint": "main.py",
+                "permissions": {"allowed_paths": []},
+            },
+            f,
+        )
+
+    with open(os.path.join(plugin_dir, "main.py"), "w", encoding="utf-8") as f:
+        f.write("""import os
+import json
+
+errors = []
+forbidden = "/etc/forbidden_path_test_123"
+
+funcs = [
+    ("remove", lambda: os.remove(forbidden)),
+    ("unlink", lambda: os.unlink(forbidden)),
+    ("mkdir", lambda: os.mkdir(forbidden)),
+    ("rmdir", lambda: os.rmdir(forbidden)),
+    ("rename", lambda: os.rename(forbidden, "/tmp/another")),
+    ("listdir", lambda: os.listdir(forbidden)),
+]
+
+for name, func in funcs:
+    try:
+        func()
+        errors.append(f"{name} succeeded unexpectedly")
+    except PermissionError:
+        pass
+    except Exception as e:
+        errors.append(f"{name} raised unexpected exception: {e}")
+
+if errors:
+    print(json.dumps({"status": "error", "message": ", ".join(errors)}))
+else:
+    print(json.dumps({"status": "success", "message": "All forbidden OS functions blocked"}))
+""")
+
+    plugin = PluginLoader.load_from_directory(plugin_dir)
+    assert plugin is not None
+
+    context = ReviveContext(
+        repo_dir=plugin_dir,
+        profile_name="base",
+        dry_run=False,
+        targets=[],
+        hook_type="pre-restore",
+    )
+
+    res = SandboxRunner.run_plugin(plugin, context)
+    assert res["status"] == "success"
+    assert res["message"] == "All forbidden OS functions blocked"
+
+
+def test_sandbox_runner_malformed_args(temp_workspace: str) -> None:
+    """Tests that the sandbox wrapper fails gracefully with invalid/malformed arguments."""
+    import sys
+    import subprocess
+
+    # 1. Less than 5 arguments
+    cmd = [sys.executable, "-m", "rv.plugins.sandbox_wrapper", "arg1", "arg2"]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    assert res.returncode == 1
+    assert "Invalid arguments to sandbox wrapper" in res.stderr
+
+    # 2. Malformed base64 params
+    cmd = [sys.executable, "-m", "rv.plugins.sandbox_wrapper", "main.py", "invalid_b64!", "invalid_b64!", "pre-restore"]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    assert res.returncode == 1
+    assert "Malformed parameters" in res.stderr or "Invalid base64-encoded string" in res.stderr or "binascii.Error" in res.stderr or "Incorrect padding" in res.stderr
+
+
+def test_sandbox_runner_plugin_exception(temp_workspace: str) -> None:
+    """Tests that plugins raising exceptions are caught and reported as failures by the SandboxRunner."""
+    plugin_dir = os.path.join(temp_workspace, "err-plugin")
+    os.makedirs(plugin_dir, exist_ok=True)
+
+    with open(os.path.join(plugin_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "name": "err-plugin",
+                "version": "1.0.0",
+                "entrypoint": "main.py",
+            },
+            f,
+        )
+
+    with open(os.path.join(plugin_dir, "main.py"), "w", encoding="utf-8") as f:
+        f.write("""raise ValueError("Intended plugin exception")\n""")
+
+    plugin = PluginLoader.load_from_directory(plugin_dir)
+    assert plugin is not None
+
+    context = ReviveContext(
+        repo_dir=temp_workspace,
+        profile_name="base",
+        dry_run=False,
+        targets=[],
+        hook_type="pre-restore",
+    )
+
+    with pytest.raises(RuntimeError, match="Plugin 'err-plugin' execution failed"):
+        SandboxRunner.run_plugin(plugin, context)
+
+
+def test_sandbox_runner_allowed_shell_and_network(temp_workspace: str) -> None:
+    """Tests plugin execution with both shell and network permissions enabled, empty paths, and non-string OS paths."""
+    plugin_dir = os.path.join(temp_workspace, "full-plugin")
+    os.makedirs(plugin_dir, exist_ok=True)
+
+    # plugin.yaml with network: true, shell: true, and empty values in allowed_paths
+    with open(os.path.join(plugin_dir, "plugin.yaml"), "w", encoding="utf-8") as f:
+        yaml.safe_dump(
+            {
+                "name": "full-plugin",
+                "version": "1.0.0",
+                "entrypoint": "main.py",
+                "permissions": {
+                    "network": True,
+                    "shell": True,
+                    "allowed_paths": ["", "/tmp/allowed-test"],
+                },
+            },
+            f,
+        )
+
+    # main.py that runs subprocess, socket, and os functions with non-string path (e.g. integer file descriptor)
+    with open(os.path.join(plugin_dir, "main.py"), "w", encoding="utf-8") as f:
+        f.write("""import os
+import socket
+import subprocess
+import json
+
+# Verify network & shell run fine without PermissionError
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+p = subprocess.run(["echo", "hello"], capture_output=True)
+
+# Try calling os function with non-string path (e.g., fd 0) to hit path type check bypass
+try:
+    os.stat(0)
+except Exception:
+    pass
+
+print(json.dumps({"status": "success", "message": "Shell and network allowed successfully"}))
+""")
+
+    plugin = PluginLoader.load_from_directory(plugin_dir)
+    assert plugin is not None
+
+    # Context with empty string inside targets
+    context = ReviveContext(
+        repo_dir=temp_workspace,
+        profile_name="base",
+        dry_run=False,
+        targets=["", os.path.join(temp_workspace, "target-file.txt")],
+        hook_type="pre-restore",
+    )
+
+    res = SandboxRunner.run_plugin(plugin, context)
+    assert res["status"] == "success"
+    assert res["message"] == "Shell and network allowed successfully"
+
+

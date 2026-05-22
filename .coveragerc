@@ -1,0 +1,11 @@
+[run]
+branch = True
+parallel = True
+source =
+    src/rv
+
+[report]
+show_missing = True
+omit =
+    tests/*
+    .venv/*

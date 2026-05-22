@@ -24,16 +24,35 @@ class AgeEncryptor:
             return False
 
     @classmethod
+    def resolve_recipient(cls, recipient: str) -> str:
+        """Resolves a recipient public key from a string or a file path."""
+        if recipient.startswith("age1"):
+            return recipient
+
+        if os.path.exists(recipient) and os.path.isfile(recipient):
+            with open(recipient, encoding="utf-8") as f:
+                content = f.read().strip()
+                for line in content.splitlines():
+                    line = line.strip()
+                    if line.startswith("age1"):
+                        return line
+                return content
+
+        return recipient
+
+    @classmethod
     def encrypt_file(cls, in_path: str, out_path: str, recipients: list[str]) -> None:
         """Encrypts a file with the given list of age public key recipients.
 
         Args:
             in_path: Absolute path to plaintext source file.
             out_path: Absolute path to target encrypted file.
-            recipients: List of age public keys (e.g., 'age1...').
+            recipients: List of age public keys (e.g., 'age1...') OR paths to files containing them.
         """
         if not recipients:
             raise ValueError("At least one recipient public key is required for encryption")
+
+        resolved_recipients = [cls.resolve_recipient(r) for r in recipients]
 
         if cls.is_pyrage_available():
             try:
@@ -44,7 +63,7 @@ class AgeEncryptor:
                     plaintext = f.read()
 
                 # Parse recipients
-                parsed_recipients = [pyrage.x25519.Recipient.from_str(r) for r in recipients]
+                parsed_recipients = [pyrage.x25519.Recipient.from_str(r) for r in resolved_recipients]
 
                 # Encrypt
                 encrypted_data = pyrage.encrypt(plaintext, parsed_recipients)
@@ -59,36 +78,55 @@ class AgeEncryptor:
                     raise RuntimeError(f"Pyrage encryption failed and 'age' CLI is not installed: {e}") from e
 
         # Fallback to age CLI
-        cls._encrypt_file_cli(in_path, out_path, recipients)
+        cls._encrypt_file_cli(in_path, out_path, resolved_recipients)
 
     @classmethod
-    def decrypt_file(cls, in_path: str, out_path: str, identity_path: str) -> None:
-        """Decrypts a file using the provided age identity (private key) file.
+    def resolve_identity(cls, identity: str) -> str:
+        """Resolves an identity from a string or a file path.
+
+        If the string matches the age secret key format or doesn't look like a path,
+        it's returned as is. Otherwise, it's treated as a path to a file.
+        """
+        if identity.startswith("AGE-SECRET-KEY-1"):
+            return identity
+
+        # If it looks like a file path and exists, read it
+        if os.path.exists(identity) and os.path.isfile(identity):
+            with open(identity, encoding="utf-8") as f:
+                content = f.read().strip()
+                # If the file contains a key, return it.
+                # It might have comments (like the ones we generate)
+                for line in content.splitlines():
+                    line = line.strip()
+                    if line.startswith("AGE-SECRET-KEY-1"):
+                        return line
+                return content # Fallback to full content
+
+        return identity
+
+    @classmethod
+    def decrypt_file(cls, in_path: str, out_path: str, identity: str) -> None:
+        """Decrypts a file using the provided age identity (private key) or identity file path.
 
         Args:
             in_path: Absolute path to the encrypted source file (.age).
             out_path: Absolute path to target decrypted plaintext file.
-            identity_path: Path to the age identity private key file.
+            identity: The age identity string OR path to the age identity private key file.
         """
-        if not os.path.exists(identity_path):
-            raise FileNotFoundError(f"Age identity file not found at: {identity_path}")
+        resolved_identity = cls.resolve_identity(identity)
 
         if cls.is_pyrage_available():
             try:
                 import pyrage
 
-                # Read private key identity
-                with open(identity_path) as f:
-                    identity_str = f.read().strip()
-
-                identity = pyrage.x25519.Identity.from_str(identity_str)
+                identity_obj = pyrage.x25519.Identity.from_str(resolved_identity)
 
                 # Read encrypted data
                 with open(in_path, "rb") as f:
                     encrypted_data = f.read()
 
                 # Decrypt
-                decrypted_data = pyrage.decrypt(encrypted_data, [identity])
+                decrypted_data = pyrage.decrypt(encrypted_data, [identity_obj])
 
                 # Write to output file
                 with open(out_path, "wb") as f:
@@ -99,7 +137,19 @@ class AgeEncryptor:
                     raise RuntimeError(f"Pyrage decryption failed and 'age' CLI is not installed: {e}") from e
 
         # Fallback to age CLI
-        cls._decrypt_file_cli(in_path, out_path, identity_path)
+        # For CLI, we might need a temporary file if identity was a string but CLI needs a file
+        if not os.path.exists(identity):
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
+                tf.write(resolved_identity)
+                temp_identity_path = tf.name
+            try:
+                cls._decrypt_file_cli(in_path, out_path, temp_identity_path)
+            finally:
+                if os.path.exists(temp_identity_path):
+                    os.remove(temp_identity_path)
+        else:
+            cls._decrypt_file_cli(in_path, out_path, identity)
 
     @classmethod
     def generate_keypair(cls) -> tuple[str, str]:

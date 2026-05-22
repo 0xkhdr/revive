@@ -23,6 +23,7 @@ dependencies = [
     "watchdog>=3.0.0",
     "jinja2>=3.0.0",
     "PyYAML>=6.0.0",
+    "textual>=0.50.0",
 ]
 
 [project.optional-dependencies]

@@ -473,7 +473,7 @@ class SuggestionBar(Static):
     SuggestionBar {
         height: 3;
         background: #1e1e2e;
-        border-top: thin #313244;
+        border-top: solid #313244;
         padding: 1 2;
         align: left middle;
     }
@@ -544,7 +544,7 @@ class ReviveApp(App[None]):
         width: 35;
         height: 100%;
         background: #1e1e2e;
-        border-right: thin #313244;
+        border-right: solid #313244;
         padding: 1 1;
     }
 
@@ -552,7 +552,7 @@ class ReviveApp(App[None]):
         height: 3;
         content-align: center middle;
         text-style: bold;
-        border-bottom: thin #313244;
+        border-bottom: solid #313244;
         margin-bottom: 1;
     }
 
@@ -586,7 +586,7 @@ class ReviveApp(App[None]):
 
     DataTable {
         background: #181825;
-        border: thin #313244;
+        border: solid #313244;
         height: 1fr;
         scrollbar-size: 1 1;
     }
@@ -604,7 +604,7 @@ class ReviveApp(App[None]):
         padding: 0 2;
         align: left middle;
         background: #1e1e2e;
-        border-top: thin #313244;
+        border-top: solid #313244;
     }
 
     #prompt-label {

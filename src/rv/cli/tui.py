@@ -6,8 +6,7 @@ import os
 import shlex
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import yaml
 from textual import on, work
@@ -19,20 +18,23 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import (
+    DataTable,
     Footer,
     Input,
     Label,
     RichLog,
     Static,
+    TabbedContent,
+    TabPane,
 )
 
-from rv.models.manifest import Asset, AssetType, Secret
+from rv import __version__
+from rv.models.manifest import Asset, AssetType, ConflictStrategy, Manifest, Secret
 from rv.security.encryptor import AgeEncryptor
 from rv.services.doctor import DoctorService
-from rv.services.restore import ManifestLoader, RestoreService
+from rv.services.restore import ManifestLoader, ProfileResolver, RestoreService
 from rv.services.status import StatusService
 from rv.services.workspace import WorkspaceService
-
 
 # ─── Command Registry ────────────────────────────────────────────────────────
 
@@ -266,8 +268,8 @@ class AutocompleteList(Widget):
         height: auto;
         max-height: 8;
         width: 100%;
-        background: $surface;
-        border-top: tall $accent;
+        background: #1e1e2e;
+        border-top: tall #cba6f7;
         display: none;
     }
     AutocompleteList.visible {
@@ -276,11 +278,11 @@ class AutocompleteList(Widget):
     .ac-item {
         height: 1;
         padding: 0 2;
-        color: $text-muted;
+        color: #a6adc8;
     }
     .ac-item.highlighted {
-        background: $accent;
-        color: $text;
+        background: #cba6f7;
+        color: #11111b;
     }
     """
 
@@ -340,21 +342,140 @@ class AutocompleteList(Widget):
         self.remove_class("visible")
 
 
+# ─── Sidebar Cards ────────────────────────────────────────────────────────────
+
+class WorkspaceDetailsCard(Static):
+    """Workspace details status card."""
+    DEFAULT_CSS = """
+    WorkspaceDetailsCard {
+        background: #181825;
+        border: round #a6e3a1;
+        padding: 1 2;
+        margin-bottom: 1;
+        height: auto;
+    }
+    """
+    def render(self) -> str:
+        app = self.app
+        assert isinstance(app, ReviveApp)  # noqa: S101
+        ws = app.workspace
+        if not ws:
+            return (
+                "[bold #f38ba8]No Workspace Active[/]\n"
+                "[dim]Run [bold cyan]/workspace add .[/] to register[/]"
+            )
+        return (
+            f"[bold #a6e3a1]● Connected[/]\n"
+            f"[bold #cdd6f4]{ws.name}[/]\n"
+            f"[dim #a6adc8]{ws.path}[/]"
+        )
+
+
+class ToolsCapabilityCard(Static):
+    """System capability tools status checker."""
+    DEFAULT_CSS = """
+    ToolsCapabilityCard {
+        background: #181825;
+        border: round #89b4fa;
+        padding: 1 2;
+        margin-bottom: 1;
+        height: auto;
+    }
+    """
+    def render(self) -> str:
+        from rv.utils.platform import Platform
+        tools = ["age", "brew", "docker", "git", "node", "apt"]
+        lines = ["[bold #89b4fa]System Tools[/]"]
+        for tool in tools:
+            available = Platform.has_tool(tool)
+            icon = "[#a6e3a1]●[/]" if available else "[#f38ba8]○[/]"
+            lines.append(f" {icon} {tool}")
+        return "\n".join(lines)
+
+
+class ActiveProfileCard(Static):
+    """Active deployment profile statistics."""
+    DEFAULT_CSS = """
+    ActiveProfileCard {
+        background: #181825;
+        border: round #cba6f7;
+        padding: 1 2;
+        margin-bottom: 1;
+        height: auto;
+    }
+    """
+    profile_name: reactive[str] = reactive("base")
+    assets_count: reactive[int] = reactive(0)
+    secrets_count: reactive[int] = reactive(0)
+    packages_count: reactive[int] = reactive(0)
+
+    def render(self) -> str:
+        app = self.app
+        assert isinstance(app, ReviveApp)  # noqa: S101
+        if not app.workspace:
+            return "[bold #f9e2af]No Profile Loaded[/]"
+        return (
+            f"[bold #cba6f7]Profile: {self.profile_name}[/]\n"
+            f" ✦ Assets:   [bold #cdd6f4]{self.assets_count}[/]\n"
+            f" ✦ Secrets:  [bold #cdd6f4]{self.secrets_count}[/]\n"
+            f" ✦ Packages: [bold #cdd6f4]{self.packages_count}[/]"
+        )
+
+    def update_stats(self, profile: str) -> None:
+        app = self.app
+        assert isinstance(app, ReviveApp)  # noqa: S101
+        self.profile_name = profile
+        if not app.workspace:
+            return
+        try:
+            manifest_path = os.path.join(app.workspace.path, "manifest.yaml")
+            if os.path.exists(manifest_path):
+                manifest = ManifestLoader.load(manifest_path)
+                resolved = ProfileResolver.resolve(manifest, profile)
+                self.assets_count = len(resolved.assets)
+                self.secrets_count = len(resolved.secrets)
+                self.packages_count = sum(len(pkgs) for pkgs in resolved.packages.values() if isinstance(pkgs, list))
+        except Exception:
+            pass
+
+
+class WorkspaceSwitcherCard(Static):
+    """Workspace switcher list panel."""
+    DEFAULT_CSS = """
+    WorkspaceSwitcherCard {
+        background: #181825;
+        border: round #f9e2af;
+        padding: 1 2;
+        margin-bottom: 1;
+        height: auto;
+    }
+    """
+    def render(self) -> str:
+        app = self.app
+        assert isinstance(app, ReviveApp)  # noqa: S101
+        workspaces = WorkspaceService.list_workspaces()
+        lines = ["[bold #f9e2af]Workspaces[/]"]
+        if not workspaces:
+            lines.append(" [dim]none registered[/]")
+            return "\n".join(lines)
+        for ws in workspaces:
+            active = " [bold #a6e3a1]←[/]" if app.workspace and ws.path == app.workspace.path else ""
+            lines.append(f" [@click=app.switch_ws('{ws.name}')]• {ws.name}[/]{active}")
+        return "\n".join(lines)
+
+
 # ─── Suggestion Chips Bar ─────────────────────────────────────────────────────
 
-class SuggestionBar(Widget):
+class SuggestionBar(Static):
     """Row of clickable next-step command chips."""
 
     DEFAULT_CSS = """
     SuggestionBar {
-        height: 1;
-        padding: 0 1;
-        background: $surface-darken-1;
-        color: $text-muted;
-    }
-    SuggestionBar .chip {
-        color: $accent;
-        margin: 0 1 0 0;
+        height: 3;
+        background: #1e1e2e;
+        border-top: thin #313244;
+        padding: 1 2;
+        align: left middle;
     }
     """
 
@@ -363,88 +484,144 @@ class SuggestionBar(Widget):
             super().__init__()
             self.command = command
 
-    suggestions: reactive[list[str]] = reactive([], recompose=True)
+    suggestions: reactive[list[str]] = reactive([])
 
-    def compose(self) -> ComposeResult:
-        if not self.suggestions:
-            yield Static("[dim]type /help or press / to begin[/]")
-            return
-        parts = ["[dim]next →[/] "]
-        for s in self.suggestions:
-            parts.append(f"[link]{s}[/link]")
-        yield Static("  ".join(parts))
+    def watch_suggestions(self, old: list[str], new: list[str]) -> None:
+        self.update_content()
 
     def set_context(self, context: str) -> None:
         self.suggestions = CONTEXT_SUGGESTIONS.get(context, CONTEXT_SUGGESTIONS["start"])
 
-    def on_click(self, event: object) -> None:
-        # static chips — user copies text; full click routing needs richer widget
-        pass
+    def update_content(self) -> None:
+        if not self.suggestions:
+            self.update("[dim]type /help or press / to begin[/]")
+            return
+        parts = ["[dim]next →[/] "]
+        for s in self.suggestions:
+            parts.append(f"[@click=app.select_suggestion('{s}')][#89b4fa]⬡ {s}[/][/]")
+        self.update("  ".join(parts))
 
 
-# ─── Status Bar ───────────────────────────────────────────────────────────────
+# ─── Header Bar ───────────────────────────────────────────────────────────────
 
-class StatusBar(Static):
+class HeaderBar(Static):
     """Single-line status strip at top."""
 
     DEFAULT_CSS = """
-    StatusBar {
-        height: 1;
-        padding: 0 1;
-        background: $primary;
-        color: $text;
+    HeaderBar {
+        height: 3;
+        background: #1e1e2e;
+        color: #cdd6f4;
+        border-bottom: double #cba6f7;
+        align: center middle;
+        content-align: center middle;
         text-style: bold;
     }
     """
+    def render(self) -> str:
+        return f"⚡ [bold #cba6f7]REVIVE[/] [bold #89b4fa]System Sync Agent[/] [dim]•[/] [#a6adc8]v{__version__}[/]"
 
 
 # ─── Main App ─────────────────────────────────────────────────────────────────
 
-class ReviveApp(App):
+class ReviveApp(App[None]):
     """Revive TUI — agentic chat interface."""
 
     TITLE = "rv"
     CSS = """
     Screen {
+        background: #11111b;
+        color: #cdd6f4;
         layers: base overlay;
-        background: $background;
     }
 
-    #layout {
-        width: 100%;
-        height: 100%;
-        layout: vertical;
-    }
-
-    #transcript {
+    #main-container {
+        layout: horizontal;
         height: 1fr;
+    }
+
+    #sidebar {
+        width: 35;
+        height: 100%;
+        background: #1e1e2e;
+        border-right: thin #313244;
+        padding: 1 1;
+    }
+
+    #sidebar-logo {
+        height: 3;
+        content-align: center middle;
+        text-style: bold;
+        border-bottom: thin #313244;
+        margin-bottom: 1;
+    }
+
+    #right-pane {
+        width: 1fr;
+        height: 100%;
+        background: #11111b;
+    }
+
+    TabbedContent {
+        height: 1fr;
+        background: #11111b;
+    }
+
+    TabPane {
+        padding: 1 1;
+        background: #11111b;
+    }
+
+    RichLog {
+        background: #11111b;
         border: none;
-        padding: 0 1;
-        background: $background;
         scrollbar-size: 1 1;
+    }
+
+    #doctor-log {
+        background: #11111b;
+        border: none;
+        scrollbar-size: 1 1;
+    }
+
+    DataTable {
+        background: #181825;
+        border: thin #313244;
+        height: 1fr;
+        scrollbar-size: 1 1;
+    }
+
+    #drift-details {
+        height: 4;
+        background: #181825;
+        border: round #313244;
+        margin-top: 1;
+        padding: 0 1;
     }
 
     #input-row {
         height: 3;
-        padding: 0 1;
+        padding: 0 2;
         align: left middle;
+        background: #1e1e2e;
+        border-top: thin #313244;
     }
 
     #prompt-label {
-        width: 4;
-        color: $accent;
+        width: 3;
+        color: #cba6f7;
         text-style: bold;
     }
 
     #cmd-input {
         width: 1fr;
-        border: tall $accent;
-        background: $surface;
-        color: $text;
+        background: #181825;
+        color: #cdd6f4;
+        border: round #313244;
     }
 
     #cmd-input:focus {
-        border: tall $primary;
+        border: round #cba6f7;
     }
 
     #autocomplete {
@@ -453,20 +630,9 @@ class ReviveApp(App):
         offset-y: -4;
         width: 100%;
     }
-
-    SuggestionBar {
-        dock: bottom;
-        height: 1;
-        offset-y: -1;
-    }
-
-    StatusBar {
-        dock: top;
-        height: 1;
-    }
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear_transcript", "Clear"),
         Binding("escape", "hide_autocomplete", "Close"),
@@ -484,17 +650,32 @@ class ReviveApp(App):
     # ── Layout ──────────────────────────────────────────────────────────────
 
     def compose(self) -> ComposeResult:
-        yield StatusBar(self._status_text(), id="statusbar")
-        with Vertical(id="layout"):
-            yield RichLog(id="transcript", highlight=True, markup=True, wrap=True)
-            yield AutocompleteList(id="autocomplete")
-            yield SuggestionBar(id="suggestions")
-            with Horizontal(id="input-row"):
-                yield Label("❯ ", id="prompt-label")
-                yield Input(
-                    placeholder="/help  or  /status base",
-                    id="cmd-input",
-                )
+        yield HeaderBar(id="header")
+        with Horizontal(id="main-container"):
+            # Left Sidebar
+            with Vertical(id="sidebar"):
+                yield WorkspaceDetailsCard(id="ws-details-card")
+                yield ToolsCapabilityCard(id="tools-capability-card")
+                yield ActiveProfileCard(id="profile-card")
+                yield WorkspaceSwitcherCard(id="ws-switcher-card")
+            # Right Area
+            with Vertical(id="right-pane"):
+                with TabbedContent(initial="tab-console", id="tabs"):
+                    with TabPane("Console Chat", id="tab-console"):
+                        yield RichLog(id="transcript", highlight=True, markup=True, wrap=True)
+                    with TabPane("Drift Explorer", id="tab-drift"):
+                        yield DataTable(id="drift-table")
+                        yield Static("[dim]Select an asset row above to inspect details.[/]", id="drift-details")
+                    with TabPane("System Diagnostics", id="tab-doctor"):
+                        yield RichLog(id="doctor-log", highlight=True, markup=True, wrap=True)
+                yield SuggestionBar(id="suggestions")
+                with Horizontal(id="input-row"):
+                    yield Label("❯ ", id="prompt-label")
+                    yield Input(
+                        placeholder="/help  or  /status base",
+                        id="cmd-input",
+                    )
+                yield AutocompleteList(id="autocomplete")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -505,15 +686,77 @@ class ReviveApp(App):
         )
         self._set_context("start")
         self.query_one("#cmd-input").focus()
+        self._refresh_all()
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
-    def _status_text(self) -> str:
-        ws = f"ws:{self.workspace.name}" if self.workspace else "ws:none"
-        return f"rv  {ws}  — /help for commands"
+    def _refresh_all(self) -> None:
+        """Reactive refresh of all sidebar card widgets."""
+        self.query_one("#ws-details-card", WorkspaceDetailsCard).refresh()
+        self.query_one("#ws-switcher-card", WorkspaceSwitcherCard).refresh()
+        
+        profile = "base"
+        self.query_one("#profile-card", ActiveProfileCard).update_stats(profile)
+        self._run_status_in_background(profile)
 
-    def _update_status(self) -> None:
-        self.query_one("#statusbar", StatusBar).update(self._status_text())
+    @work
+    async def _run_status_in_background(self, profile: str) -> None:
+        """Quietly checks sync state in background to update the table."""
+        if not self.workspace:
+            return
+        try:
+            report = StatusService.get_status(self.workspace.path, profile)
+            self.call_from_thread(self._populate_table, report)
+        except Exception:
+            pass
+
+    def _populate_table(self, report: dict[str, Any]) -> None:
+        """Populates Tab 2 DataTable with live drift status."""
+        table = self.query_one("#drift-table", DataTable)
+        table.clear(columns=True)
+        table.cursor_type = "row"
+        table.add_columns("Asset / Secret", "Type", "Target Path", "Status")
+        
+        for item_id, info in report.get("assets", {}).items():
+            status = info["status"]
+            if status == "in_sync":
+                status_str = "[bold #a6e3a1]✓ In Sync[/]"
+            elif status == "modified":
+                status_str = "[bold #f38ba8]✗ Drifted[/]"
+            elif status == "missing":
+                status_str = "[bold #f9e2af]⚠ Missing[/]"
+            else:
+                status_str = f"[bold #f38ba8]⚠ {status}[/]"
+            table.add_row(item_id, str(info["type"]), info["target"], status_str)
+
+    @on(DataTable.RowSelected, "#drift-table")
+    def on_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Update selected details under Table tab when navigating rows."""
+        table = self.query_one("#drift-table", DataTable)
+        try:
+            row = table.get_row(event.row_key)
+            item_id = row[0]
+            details = self.query_one("#drift-details", Static)
+            details.update(
+                f"[bold #89b4fa]Selected ID:[/] [bold]{item_id}[/]\n"
+                f"[dim #a6adc8]Type: {row[1]}  |  Target: {row[2]}[/]\n"
+                f"Status: {row[3]}  |  Run [/][bold cyan]/diff[/][dim] or [/][bold cyan]/restore[/][dim] to apply.[/]"
+            )
+        except Exception:
+            pass
+
+    def action_switch_ws(self, name: str) -> None:
+        """Action handler when clicking workspace links in sidebar switcher."""
+        self._log_sep()
+        self._log_user(f"use workspace {name}")
+        self._run_workspace_use(name)
+
+    def action_select_suggestion(self, command: str) -> None:
+        """Action handler when clicking suggestions pills."""
+        inp = self.query_one("#cmd-input", Input)
+        inp.value = command
+        inp.cursor_position = len(inp.value)
+        inp.focus()
 
     def _log_user(self, text: str) -> None:
         self.query_one("#transcript", RichLog).write(f"[bold cyan]you[/]  {text}")
@@ -677,10 +920,16 @@ class ReviveApp(App):
     @work
     async def _run_status(self, profile: str, identity: str | None) -> None:
         self._log_agent(f"Checking drift — profile [bold]{profile}[/] …")
+        if not self.workspace:
+            return
         try:
             report = StatusService.get_status(self.workspace.path, profile, identity)
             total = len(report["assets"])
             drifted_items = [aid for aid, info in report["assets"].items() if info["status"] != "in_sync"]
+            
+            # Populate our visual DataTable
+            self._populate_table(report)
+            
             if drifted_items:
                 self._log_agent(f"[yellow]Drift detected[/] — {len(drifted_items)}/{total} assets out of sync:")
                 for aid in drifted_items:
@@ -698,6 +947,8 @@ class ReviveApp(App):
     async def _run_restore(self, profile: str, identity: str | None, dry_run: bool) -> None:
         mode = "[yellow]dry-run[/]" if dry_run else "[green]applying[/]"
         self._log_agent(f"Restore {mode} — profile [bold]{profile}[/] …")
+        if not self.workspace:
+            return
         try:
             RestoreService.restore(
                 repo_dir=self.workspace.path,
@@ -706,6 +957,9 @@ class ReviveApp(App):
                 dry_run=dry_run,
                 interactive=False,
             )
+            # Re-read drift status to update cards and table
+            self._refresh_all()
+            
             if dry_run:
                 self._log_agent("Dry-run complete — no files changed. Review output, then run without --dry-run.")
                 self._set_context("restore_dry")
@@ -719,6 +973,8 @@ class ReviveApp(App):
     @work
     async def _run_diff(self, profile: str, identity: str | None, unified: bool) -> None:
         self._log_agent(f"Computing diff — profile [bold]{profile}[/] …")
+        if not self.workspace:
+            return
         try:
             report = StatusService.get_status(self.workspace.path, profile, identity)
             modified = [aid for aid, info in report["assets"].items() if info["status"] == "modified"]
@@ -762,6 +1018,28 @@ class ReviveApp(App):
             for issue in report.get("issues", []):
                 sev = "[red][crit][/]" if issue.get("severity") == "critical" else "[yellow][warn][/]"
                 self._log_agent(f"  {sev} {issue['category']}: {issue['message']}")
+            
+            # Format in detailed Tab 3 diagnostics log
+            doc_log = self.query_one("#doctor-log", RichLog)
+            doc_log.clear()
+            doc_log.write("[bold #cba6f7]System Diagnostics Report[/]\n")
+            doc_log.write(f"Workspace Status: {health}\n")
+            doc_log.write(f"Audited: {report['checks_run']} check points\n")
+            doc_log.write("[dim]─[/]" * 40 + "\n")
+            
+            doc_log.write("[bold #89b4fa]Tools Audit:[/]")
+            for tool, ok in report.get("tools", {}).items():
+                icon = "[#a6e3a1]✓[/]" if ok else "[#f38ba8]✗[/]"
+                doc_log.write(f"  {icon} {tool}")
+                
+            doc_log.write("\n[bold #f9e2af]Discovered Issues:[/]")
+            if not report.get("issues"):
+                doc_log.write("  [#a6e3a1]No configuration or security warnings registered![/]")
+            else:
+                for issue in report.get("issues", []):
+                    sev = "[bold #f38ba8][CRIT][/]" if issue.get("severity") == "critical" else "[bold #f9e2af][WARN][/]"
+                    doc_log.write(f"  {sev} {issue['category']}: {issue['message']}")
+            
             self._set_context("doctor_ok" if report["healthy"] else "doctor_issues")
         except Exception as e:
             self._log_err(f"Doctor failed: {e}")
@@ -828,6 +1106,8 @@ class ReviveApp(App):
         profile: str,
         recipient: str | None,
     ) -> None:
+        if not self.workspace:
+            return
         abs_src = os.path.abspath(os.path.expanduser(source_path))
         if not os.path.isfile(abs_src):
             raise ValueError(f"Not a file: {abs_src}")
@@ -840,11 +1120,22 @@ class ReviveApp(App):
         if profile not in manifest.profiles:
             raise ValueError(f"Profile not defined: {profile}")
         if is_secret:
+            assert recipient is not None  # noqa: S101
             dest_rel = os.path.join("secrets", f"{item_id}.age")
             dest_abs = os.path.join(self.workspace.path, dest_rel)
             os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
             AgeEncryptor.encrypt_file(abs_src, dest_abs, [recipient])
-            manifest.secrets.append(Secret(id=item_id, source=dest_rel, target=target))
+            manifest.secrets.append(
+                Secret(
+                    id=item_id,
+                    type=AssetType.SECRET,
+                    source=dest_rel,
+                    target=target,
+                    permissions="0600",
+                    owner=None,
+                    encrypted=True,
+                )
+            )
             manifest.profiles[profile].secrets.append(item_id)
             kind = "secret"
         else:
@@ -852,18 +1143,33 @@ class ReviveApp(App):
             dest_abs = os.path.join(self.workspace.path, dest_rel)
             os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
             shutil.copy2(abs_src, dest_abs)
-            manifest.assets.append(Asset(id=item_id, type=AssetType.COPY, source=dest_rel, target=target))
+            manifest.assets.append(
+                Asset(
+                    id=item_id,
+                    type=AssetType.COPY,
+                    source=dest_rel,
+                    target=target,
+                    permissions=None,
+                    owner=None,
+                    conflict_strategy=ConflictStrategy.PROMPT,
+                    encrypted=False,
+                    template_vars=None,
+                )
+            )
             manifest.profiles[profile].assets.append(item_id)
             kind = "asset"
         self._save_manifest(manifest_path, manifest)
         self._log_agent(f"[green]✓ Imported[/] {kind} [bold]{item_id}[/] into profile [bold]{profile}[/].")
         self._set_context("asset")
+        self._refresh_all()
 
     @work
     async def _run_asset_export(self, parsed: ParsedCommand) -> None:
         if not parsed.args:
             self._log_err(f"Usage: {COMMANDS['/asset export'].usage}")
             self._set_context("asset")
+            return
+        if not self.workspace:
             return
         item_id = parsed.args[0]
         output = parsed.args[1] if len(parsed.args) > 1 else os.path.join(os.getcwd(), item_id)
@@ -975,7 +1281,7 @@ class ReviveApp(App):
         abs_path = os.path.abspath(os.path.expanduser(path))
         ws = WorkspaceService.register_workspace(abs_path, name)
         self.workspace = ws
-        self._update_status()
+        self._refresh_all()
         self._log_agent(f"[green]✓ Registered[/] workspace [bold]{ws.name}[/]  ({ws.path})")
         self._set_context("workspace")
 
@@ -986,7 +1292,7 @@ class ReviveApp(App):
         for ws in WorkspaceService.list_workspaces():
             if ws.name == name:
                 self.workspace = WorkspaceService.register_workspace(ws.path)
-                self._update_status()
+                self._refresh_all()
                 self._log_agent(f"[green]✓ Switched[/] to workspace [bold]{ws.name}[/].")
                 self._set_context("workspace")
                 return
@@ -1000,7 +1306,7 @@ class ReviveApp(App):
         if WorkspaceService.remove_workspace(name):
             if self.workspace and self.workspace.name == name:
                 self.workspace = WorkspaceService.get_current_workspace()
-                self._update_status()
+                self._refresh_all()
             self._log_agent(f"[yellow]Removed[/] workspace [bold]{name}[/].")
         else:
             self._log_err(f"Workspace not found: {name}")
@@ -1042,7 +1348,7 @@ class ReviveApp(App):
 
     # ── Persist ───────────────────────────────────────────────────────────────
 
-    def _save_manifest(self, manifest_path: str, manifest: object) -> None:
+    def _save_manifest(self, manifest_path: str, manifest: Manifest) -> None:
         with open(manifest_path, "w", encoding="utf-8") as f:
             data = manifest.model_dump(mode="json", exclude_none=True)
             yaml.dump(data, f, sort_keys=False)

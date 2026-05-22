@@ -1,10 +1,13 @@
 """Service for managing Revive workspaces."""
 
 import os
-import yaml
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import yaml
+
 from rv.models.workspace import Workspace, WorkspaceConfig
+
 
 class WorkspaceService:
     """Handles discovery, registration, and management of workspaces."""
@@ -20,16 +23,16 @@ class WorkspaceService:
     def load_config(cls) -> WorkspaceConfig:
         """Loads the workspace configuration from disk."""
         if not os.path.exists(cls.CONFIG_PATH):
-            return WorkspaceConfig()
+            return WorkspaceConfig(default_workspace=None)
         
         try:
-            with open(cls.CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(cls.CONFIG_PATH, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
                 if not data:
-                    return WorkspaceConfig()
+                    return WorkspaceConfig(default_workspace=None)
                 return WorkspaceConfig(**data)
         except Exception:
-            return WorkspaceConfig()
+            return WorkspaceConfig(default_workspace=None)
 
     @classmethod
     def save_config(cls, config: WorkspaceConfig) -> None:

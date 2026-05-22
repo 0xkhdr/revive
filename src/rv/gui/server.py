@@ -22,6 +22,7 @@ from rv.services.doctor import DoctorService
 from rv.services.restore import ManifestLoader, ProfileResolver, RestoreService
 from rv.services.status import StatusService
 from rv.services.workspace import WorkspaceService
+from rv.services.recovery import RecoveryService
 
 logger = logging.getLogger("rv.gui.server")
 
@@ -435,6 +436,72 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                         "logs": logs,
                     }
                 )
+
+        elif path == "/api/action/keygen":
+            try:
+                public_key, private_key = AgeEncryptor.generate_keypair()
+                self._send_response_json({
+                    "public_key": public_key,
+                    "private_key": private_key
+                })
+            except Exception as e:
+                self._send_response_json({"error": f"Failed to generate Age keypair: {e}"}, 500)
+
+        elif path == "/api/action/recovery/list":
+            try:
+                journals = RecoveryService.list_incomplete_journals()
+                serialized = []
+                for j in journals:
+                    serialized.append({
+                        "tx_id": j.tx_id,
+                        "timestamp": j.timestamp,
+                        "status": j.status,
+                        "entries": [
+                            {
+                                "op": entry.op,
+                                "target": entry.target,
+                                "src_backup": entry.src_backup
+                            }
+                            for entry in j.entries
+                        ]
+                    })
+                self._send_response_json({"journals": serialized})
+            except Exception as e:
+                self._send_response_json({"error": f"Failed to list incomplete journals: {e}"}, 500)
+
+        elif path == "/api/action/recovery/rollback":
+            tx_id = payload.get("tx_id")
+            if not tx_id:
+                self._send_response_json({"error": "tx_id is required"}, 400)
+                return
+            try:
+                journals = RecoveryService.list_incomplete_journals()
+                target_journal = next((j for j in journals if j.tx_id == tx_id), None)
+                if not target_journal:
+                    self._send_response_json({"error": f"Incomplete transaction {tx_id} not found"}, 404)
+                    return
+                
+                RecoveryService.rollback_journal(target_journal)
+                self._send_response_json({"success": True, "message": f"Successfully rolled back transaction {tx_id}"})
+            except Exception as e:
+                self._send_response_json({"error": f"Failed to roll back transaction: {e}"}, 500)
+
+        elif path == "/api/action/recovery/discard":
+            tx_id = payload.get("tx_id")
+            if not tx_id:
+                self._send_response_json({"error": "tx_id is required"}, 400)
+                return
+            try:
+                journals = RecoveryService.list_incomplete_journals()
+                target_journal = next((j for j in journals if j.tx_id == tx_id), None)
+                if not target_journal:
+                    self._send_response_json({"error": f"Incomplete transaction {tx_id} not found"}, 404)
+                    return
+                
+                RecoveryService.discard_journal(target_journal)
+                self._send_response_json({"success": True, "message": f"Successfully discarded journal for {tx_id}"})
+            except Exception as e:
+                self._send_response_json({"error": f"Failed to discard journal: {e}"}, 500)
 
         else:
             self.send_error(404, "Not Found")

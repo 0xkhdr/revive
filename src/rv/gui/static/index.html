@@ -33,6 +33,29 @@
                 </div>
             </div>
 
+            <!-- Navigation Hub Section -->
+            <section class="sidebar-section">
+                <h2 class="section-title">Navigation Hub</h2>
+                <nav class="sidebar-nav">
+                    <button class="nav-tab active" data-tab="overview">
+                        <span class="nav-icon">🌌</span>
+                        <span>Overview</span>
+                    </button>
+                    <button class="nav-tab" data-tab="assets">
+                        <span class="nav-icon">📁</span>
+                        <span>Assets & Packages</span>
+                    </button>
+                    <button class="nav-tab" data-tab="keys">
+                        <span class="nav-icon">🔑</span>
+                        <span>Secrets Vault</span>
+                    </button>
+                    <button class="nav-tab" data-tab="recovery">
+                        <span class="nav-icon">🛡️</span>
+                        <span>Disaster Recovery</span>
+                    </button>
+                </nav>
+            </section>
+
             <!-- Workspace Section -->
             <section class="sidebar-section">
                 <h2 class="section-title">Global Workspaces</h2>
@@ -105,50 +128,68 @@
                 </div>
             </header>
 
-            <!-- Profile Inheritance and Visual Overview Map -->
-            <section class="hub-card glass-panel" id="inheritance-map-card">
-                <div class="card-header">
-                    <h3>Profile Hierarchy & Inheritance Flow</h3>
+            <!-- ─── Tab Content Containers ─── -->
+
+            <!-- Tab 1: Overview -->
+            <div class="tab-content" id="tab-overview">
+                <div class="content-split-grid">
+                    <!-- Profile Inheritance and Visual Overview Map -->
+                    <section class="hub-card glass-panel flex-grow" id="inheritance-map-card">
+                        <div class="card-header">
+                            <h3>Profile Hierarchy & Inheritance Flow</h3>
+                        </div>
+                        <div class="inheritance-container" id="inheritance-flow-container">
+                            <!-- Flow diagram populated dynamically -->
+                            <div class="flow-placeholder">Select a profile to view inheritance path.</div>
+                        </div>
+                    </section>
+
+                    <!-- Packages Configuration Checklist -->
+                    <section class="hub-card glass-panel">
+                        <div class="card-header">
+                            <h3>Native Packages Checklist</h3>
+                        </div>
+                        <div class="packages-summary" id="packages-summary-panel">
+                            <div class="pkg-list-container">
+                                <!-- Loaded dynamically based on active profile manifest -->
+                                <p class="text-dim">No package requirements listed in profile.</p>
+                            </div>
+                        </div>
+                    </section>
                 </div>
-                <div class="inheritance-container" id="inheritance-flow-container">
-                    <!-- Flow diagram populated dynamically -->
-                    <div class="flow-placeholder">Select a profile to view inheritance path.</div>
-                </div>
-            </section>
+            </div>
 
-            <!-- Drift Check & Asset List Area -->
-            <div class="content-split-grid">
-                
-                <!-- Left panel: Assets and Secrets Orchestrator -->
-                <section class="hub-card glass-panel flex-grow">
-                    <div class="card-header flex-between">
-                        <h3>Configured Assets & Secrets</h3>
-                        <span class="badge" id="assets-count-badge">0 Assets</span>
-                    </div>
+            <!-- Tab 2: Assets & Orchestration -->
+            <div class="tab-content hidden" id="tab-assets">
+                <div class="content-split-grid">
+                    <!-- Configured Assets and Secrets Orchestrator -->
+                    <section class="hub-card glass-panel flex-grow">
+                        <div class="card-header flex-between">
+                            <h3>Configured Assets & Secrets</h3>
+                            <span class="badge" id="assets-count-badge">0 Assets</span>
+                        </div>
 
-                    <div class="table-container">
-                        <table class="cyber-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Orchestration Type</th>
-                                    <th>Source Path</th>
-                                    <th>Target Path</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="assets-table-body">
-                                <tr>
-                                    <td colspan="6" class="center-text text-dim">Please run "Check Environment Drift" to audit target file synchronizations.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
+                        <div class="table-container">
+                            <table class="cyber-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Orchestration Type</th>
+                                        <th>Source Path</th>
+                                        <th>Target Path</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="assets-table-body">
+                                    <tr>
+                                        <td colspan="6" class="center-text text-dim">Please run "Check Environment Drift" to audit target file synchronizations.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
 
-                <!-- Right panel: Quick Import Form & Packages Checklist -->
-                <div class="side-form-stack">
                     <!-- Import Station -->
                     <section class="hub-card glass-panel">
                         <div class="card-header">
@@ -191,21 +232,116 @@
                             </button>
                         </form>
                     </section>
+                </div>
+            </div>
 
-                    <!-- Packages Configuration Checklist -->
+            <!-- Tab 3: Secrets Vault & Keys -->
+            <div class="tab-content hidden" id="tab-keys">
+                <div class="content-split-grid">
+                    <!-- Key Gen Card -->
+                    <section class="hub-card glass-panel flex-grow">
+                        <div class="card-header">
+                            <h3>🔑 Age Cryptographic Key Station</h3>
+                        </div>
+                        <div class="card-body-panel" style="display: flex; flex-direction: column; gap: 20px;">
+                            <p class="text-dim">Generate secure Age keypairs atomically. Revive uses these keys to encrypt sensitive configurations, environment files, and credentials under Age recipient protection.</p>
+                            
+                            <div class="key-gen-controls">
+                                <button class="cyber-btn purple glow" id="btn-generate-keys" type="button">
+                                    <span>Generate Secure Keypair</span>
+                                </button>
+                            </div>
+
+                            <div class="keypair-display hidden" id="keypair-display" style="display: flex; flex-direction: column; gap: 20px;">
+                                <div class="form-group">
+                                    <label for="display-pubkey">Public Recipient Key (Safe to share/commit)</label>
+                                    <div class="copy-input-row" style="display: flex; gap: 10px;">
+                                        <input type="text" id="display-pubkey" readonly style="flex-grow: 1;">
+                                        <button class="cyber-btn sm cyan border" id="btn-copy-pubkey" type="button"><span>Copy</span></button>
+                                    </div>
+                                    <span class="help-text">Add this to recipient parameters or public configuration manifests.</span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="display-privkey">Private Identity Key (KEEP SECRET! Never commit!)</label>
+                                    <div class="copy-input-row" style="display: flex; gap: 10px; align-items: flex-start;">
+                                        <textarea id="display-privkey" rows="4" readonly style="flex-grow: 1; font-family: var(--font-mono); font-size: 0.8rem; resize: none; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius-sm); color: #fff; padding: 12px 16px;"></textarea>
+                                        <button class="cyber-btn sm purple border" id="btn-copy-privkey" type="button" style="margin-top: 5px;"><span>Copy</span></button>
+                                    </div>
+                                    <span class="help-text text-danger" style="color: var(--accent-red);">IMPORTANT: Save this private key strictly to <code>~/.config/rv/identity.txt</code> to automatically decrypt your secrets during system restores.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Vault Details / Help Card -->
                     <section class="hub-card glass-panel">
                         <div class="card-header">
-                            <h3>Native Packages Checklist</h3>
+                            <h3>🛡️ Security Best Practices</h3>
                         </div>
-                        <div class="packages-summary" id="packages-summary-panel">
-                            <div class="pkg-list-container">
-                                <!-- Loaded dynamically based on active profile manifest -->
-                                <p class="text-dim">No package requirements listed in profile.</p>
+                        <div class="security-guidelines">
+                            <ul class="bullet-list text-dim" style="display: flex; flex-direction: column; gap: 12px; padding-left: 20px;">
+                                <li><strong>Identity File:</strong> Keep your private key in a secure folder outside of git repositories.</li>
+                                <li><strong>Access Permissions:</strong> Revive automatically applies strict octal <code>0600</code> permissions to decrypted secret assets.</li>
+                                <li><strong>Key Rotation:</strong> Rotate active credentials routinely using the CLI <code>rv secret rotate</code> command.</li>
+                            </ul>
+                        </div>
+                    </section>
+                </div>
+            </div>
+
+            <!-- Tab 4: Disaster Recovery -->
+            <div class="tab-content hidden" id="tab-recovery">
+                <div class="content-split-grid">
+                    <!-- Incomplete Journals List -->
+                    <section class="hub-card glass-panel flex-grow">
+                        <div class="card-header flex-between">
+                            <h3>🛡️ Transactional Recovery Console</h3>
+                            <span class="badge" id="journals-count-badge">0 Interrupted</span>
+                        </div>
+                        <div class="journals-description">
+                            <p class="text-dim">Revive uses a unidirectional transaction journal to guarantee atomicity. If a restoration process is interrupted, the transaction journal remains here. You can roll back mutations or discard the journal record.</p>
+                        </div>
+                        <div class="table-container">
+                            <table class="cyber-table">
+                                <thead>
+                                    <tr>
+                                        <th>Tx ID</th>
+                                        <th>Timestamp</th>
+                                        <th>Status</th>
+                                        <th>Mutations</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="journals-table-body">
+                                    <tr>
+                                        <td colspan="5" class="center-text text-dim">No incomplete transactions found. Your system state is perfectly atomic!</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <!-- Integrated Recovery Console -->
+                    <section class="hub-card glass-panel">
+                        <div class="card-header">
+                            <h3>📺 Recovery Execution Logs</h3>
+                        </div>
+                        <div class="terminal-shell" style="margin-top: 0;">
+                            <div class="terminal-header">
+                                <div class="terminal-dots">
+                                    <span class="dot red"></span>
+                                    <span class="dot yellow"></span>
+                                    <span class="dot green"></span>
+                                </div>
+                                <span class="terminal-title">recovery_execution.log</span>
+                                <span class="terminal-loader" id="recovery-terminal-pulse"></span>
+                            </div>
+                            <div class="terminal-body" id="recovery-logs-body" style="height: 250px;">
+                                <div class="terminal-line text-dim">System idle. Awaiting action...</div>
                             </div>
                         </div>
                     </section>
                 </div>
-
             </div>
 
         </main>

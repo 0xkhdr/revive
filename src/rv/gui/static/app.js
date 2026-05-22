@@ -80,6 +80,24 @@ const el = {
 
     // Confetti
     confettiCanvas: document.getElementById("confetti-canvas"),
+
+    // Tabs Navigation Hub
+    navTabs: null,
+    tabContents: null,
+
+    // Cryptographic Key Gen elements
+    btnGenerateKeys: null,
+    keypairDisplay: null,
+    displayPubkey: null,
+    displayPrivkey: null,
+    btnCopyPubkey: null,
+    btnCopyPrivkey: null,
+
+    // Disaster Recovery elements
+    journalsCountBadge: null,
+    journalsTableBody: null,
+    recoveryTerminalPulse: null,
+    recoveryLogsBody: null,
 };
 
 const API_BASE = ""; // Relative to server root
@@ -88,6 +106,40 @@ const API_BASE = ""; // Relative to server root
 document.addEventListener("DOMContentLoaded", () => {
     // API State Loading
     loadWorkspaceStatus();
+
+    // Query active tab navigation elements
+    el.navTabs = document.querySelectorAll(".nav-tab");
+    el.tabContents = document.querySelectorAll(".tab-content");
+    el.navTabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+            const targetTab = tab.getAttribute("data-tab");
+            switchTab(targetTab);
+        });
+    });
+
+    // Query cryptographic Key Generator elements
+    el.btnGenerateKeys = document.getElementById("btn-generate-keys");
+    el.keypairDisplay = document.getElementById("keypair-display");
+    el.displayPubkey = document.getElementById("display-pubkey");
+    el.displayPrivkey = document.getElementById("display-privkey");
+    el.btnCopyPubkey = document.getElementById("btn-copy-pubkey");
+    el.btnCopyPrivkey = document.getElementById("btn-copy-privkey");
+
+    if (el.btnGenerateKeys) {
+        el.btnGenerateKeys.addEventListener("click", handleKeyGeneration);
+    }
+    if (el.btnCopyPubkey) {
+        el.btnCopyPubkey.addEventListener("click", () => copyToClipboard(el.displayPubkey.value, el.btnCopyPubkey));
+    }
+    if (el.btnCopyPrivkey) {
+        el.btnCopyPrivkey.addEventListener("click", () => copyToClipboard(el.displayPrivkey.value, el.btnCopyPrivkey));
+    }
+
+    // Query Disaster Recovery elements
+    el.journalsCountBadge = document.getElementById("journals-count-badge");
+    el.journalsTableBody = document.getElementById("journals-table-body");
+    el.recoveryTerminalPulse = document.getElementById("recovery-terminal-pulse");
+    el.recoveryLogsBody = document.getElementById("recovery-logs-body");
 
     // Event Registration
     el.wsRegisterForm.addEventListener("submit", handleWorkspaceRegister);
@@ -913,5 +965,199 @@ function escapeHtml(str) {
         .replace(/'/g, "&#039;");
 }
 
-// Bind to window to allow call from dynamically rendered table rows
+// ─── 11. Upgraded Dynamic Tabs Navigation Controller ───
+function switchTab(tabId) {
+    if (!el.navTabs || !el.tabContents) return;
+    el.navTabs.forEach(tab => {
+        if (tab.getAttribute("data-tab") === tabId) {
+            tab.classList.add("active");
+        } else {
+            tab.classList.remove("active");
+        }
+    });
+
+    el.tabContents.forEach(content => {
+        if (content.id === `tab-${tabId}`) {
+            content.classList.remove("hidden");
+        } else {
+            content.classList.add("hidden");
+        }
+    });
+
+    // Automatically load data when accessing recovery section
+    if (tabId === "recovery") {
+        loadIncompleteJournals();
+    }
+}
+
+// ─── 12. Age Keypair Generator Handler ───
+async function handleKeyGeneration() {
+    if (!el.btnGenerateKeys) return;
+    el.btnGenerateKeys.disabled = true;
+    el.btnGenerateKeys.innerHTML = "<span>Generating Cryptographic Keypair...</span>";
+    
+    try {
+        const res = await apiRequest("/api/action/keygen", { method: "POST" });
+        if (el.displayPubkey && el.displayPrivkey && el.keypairDisplay) {
+            el.displayPubkey.value = res.public_key;
+            el.displayPrivkey.value = res.private_key;
+            el.keypairDisplay.classList.remove("hidden");
+            
+            // Auto fill in recipient public key in import forms for best-in-class UX flow!
+            const importRecipient = document.getElementById("import-recipient");
+            if (importRecipient) {
+                importRecipient.value = res.public_key;
+            }
+        }
+    } catch (err) {
+        console.error("Failed to generate Age keys:", err);
+    } finally {
+        el.btnGenerateKeys.disabled = false;
+        el.btnGenerateKeys.innerHTML = "<span>Generate Secure Keypair</span>";
+    }
+}
+
+function copyToClipboard(text, buttonEl) {
+    if (!text || !buttonEl) return;
+    navigator.clipboard.writeText(text).then(() => {
+        const origText = buttonEl.innerHTML;
+        buttonEl.innerHTML = "<span>Copied!</span>";
+        buttonEl.classList.add("copy-success");
+        setTimeout(() => {
+            buttonEl.innerHTML = origText;
+            buttonEl.classList.remove("copy-success");
+        }, 2000);
+    }).catch(err => {
+        console.error("Clipboard copy failed:", err);
+    });
+}
+
+// ─── 13. Transaction Journal Disaster Recovery Handlers ───
+async function loadIncompleteJournals() {
+    if (!el.journalsTableBody) return;
+    
+    try {
+        const res = await apiRequest("/api/action/recovery/list", { method: "POST" });
+        const journals = res.journals || [];
+        
+        if (el.journalsCountBadge) {
+            el.journalsCountBadge.textContent = `${journals.length} Interrupted`;
+        }
+
+        if (journals.length === 0) {
+            el.journalsTableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="center-text text-dim">No incomplete transactions found. Your system state is perfectly atomic!</td>
+                </tr>
+            `;
+            return;
+        }
+
+        el.journalsTableBody.innerHTML = "";
+        journals.forEach(journal => {
+            const tr = document.createElement("tr");
+            
+            // Format timestamp nicely
+            const date = new Date(journal.timestamp * 1000).toLocaleString();
+            
+            // Mutations details list
+            const mutationsSummary = journal.entries.map(entry => {
+                const parts = entry.target.split(/[/\\]/);
+                const basename = parts[parts.length - 1] || entry.target;
+                const opClass = entry.op.toLowerCase();
+                return `<span class="journal-op-badge ${opClass}">${escapeHtml(entry.op)}</span> <code>${escapeHtml(basename)}</code>`;
+            }).join("<br>");
+
+            tr.innerHTML = `
+                <td><code>${escapeHtml(journal.tx_id.substring(0, 8))}...</code></td>
+                <td><span class="text-dim" style="font-size: 0.8rem;">${date}</span></td>
+                <td><span class="status-badge drifted" style="text-transform: capitalize;">${escapeHtml(journal.status)}</span></td>
+                <td><div style="max-height: 80px; overflow-y: auto; text-align: left; padding: 4px 0; line-height: 1.6;">${mutationsSummary}</div></td>
+                <td>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="cyber-btn sm green" onclick="triggerJournalRollback('${journal.tx_id}')">
+                            <span>Rollback</span>
+                        </button>
+                        <button class="cyber-btn sm border" onclick="triggerJournalDiscard('${journal.tx_id}')">
+                            <span>Discard</span>
+                        </button>
+                    </div>
+                </td>
+            `;
+            el.journalsTableBody.appendChild(tr);
+        });
+    } catch (err) {
+        console.error("Failed to load recovery journals:", err);
+    }
+}
+
+async function triggerJournalRollback(txId) {
+    if (!confirm(`Are you absolutely sure you want to perform a rollback on transaction ${txId}? This will restore all mutated files to their original pre-mutation backup state.`)) {
+        return;
+    }
+
+    if (el.recoveryTerminalPulse) el.recoveryTerminalPulse.classList.add("active");
+    logRecoveryLine(`[recovery] Initiating transaction rollback for ${txId}...`, "warning");
+
+    try {
+        const res = await apiRequest("/api/action/recovery/rollback", {
+            method: "POST",
+            body: JSON.stringify({ tx_id: txId })
+        });
+        
+        if (res.success) {
+            logRecoveryLine(`✓ Success: Transaction ${txId} has been successfully rolled back.`, "success");
+            logRecoveryLine(`[recovery] Pre-mutation filesystem backups restored and locked directories synchronized.`, "success");
+            triggerCelebrationConfetti();
+        } else {
+            logRecoveryLine(`⚠ Error: ${res.error || "Rollback process failed"}`, "error");
+        }
+    } catch (err) {
+        logRecoveryLine(`⚠ Fatal Connection Crash: ${err.message}`, "error");
+    } finally {
+        if (el.recoveryTerminalPulse) el.recoveryTerminalPulse.classList.remove("active");
+        loadIncompleteJournals();
+    }
+}
+
+async function triggerJournalDiscard(txId) {
+    if (!confirm(`Are you sure you want to discard the journal for transaction ${txId}? This will remove the transaction backup files and journal log WITHOUT changing any files on your system. This operation cannot be undone.`)) {
+        return;
+    }
+
+    if (el.recoveryTerminalPulse) el.recoveryTerminalPulse.classList.add("active");
+    logRecoveryLine(`[recovery] Discarding journal metadata for transaction ${txId}...`, "warning");
+
+    try {
+        const res = await apiRequest("/api/action/recovery/discard", {
+            method: "POST",
+            body: JSON.stringify({ tx_id: txId })
+        });
+        
+        if (res.success) {
+            logRecoveryLine(`[recovery] Transaction journal and rollback entries for ${txId} successfully discarded.`, "success");
+        } else {
+            logRecoveryLine(`⚠ Error: ${res.error || "Discard operation failed"}`, "error");
+        }
+    } catch (err) {
+        logRecoveryLine(`⚠ Fatal Connection Crash: ${err.message}`, "error");
+    } finally {
+        if (el.recoveryTerminalPulse) el.recoveryTerminalPulse.classList.remove("active");
+        loadIncompleteJournals();
+    }
+}
+
+function logRecoveryLine(text, type = "") {
+    if (!el.recoveryLogsBody) return;
+    const line = document.createElement("div");
+    line.className = "terminal-line";
+    if (type) line.className += ` ${type}`;
+    line.textContent = text;
+    el.recoveryLogsBody.appendChild(line);
+    el.recoveryLogsBody.scrollTop = el.recoveryLogsBody.scrollHeight;
+}
+
+// Bind to window to allow call from dynamically rendered elements
 window.viewAssetDiff = viewAssetDiff;
+window.triggerJournalRollback = triggerJournalRollback;
+window.triggerJournalDiscard = triggerJournalDiscard;

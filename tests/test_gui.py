@@ -139,3 +139,26 @@ def test_api_doctor_health(gui_server):
         data = json.loads(resp.read().decode("utf-8"))
         assert "checks_run" in data
         assert "issues" in data
+
+
+def test_api_keygen(gui_server):
+    """Verify that posting to keygen returns a valid public and private Age keypair."""
+    url = f"{gui_server}/api/action/keygen"
+    req = urllib.request.Request(url, data=b"{}", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+        data = json.loads(resp.read().decode("utf-8"))
+        assert "public_key" in data
+        assert "private_key" in data
+        assert data["public_key"].startswith("age1")
+        assert "AGE-SECRET-KEY-1" in data["private_key"]
+
+
+def test_api_recovery_list(gui_server):
+    """Verify that recovery listing works and returns a list of journals."""
+    url = f"{gui_server}/api/action/recovery/list"
+    req = urllib.request.Request(url, data=b"{}", headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+        data = json.loads(resp.read().decode("utf-8"))
+        assert "journals" in data

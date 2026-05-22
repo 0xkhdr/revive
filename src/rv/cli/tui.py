@@ -9,7 +9,7 @@ from pathlib import Path
 import yaml
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Grid, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -66,6 +66,26 @@ COMMANDS: dict[str, AgentCommand] = {
         description="Create a new age identity and recipient key. Usage: /secret keygen",
         requires_workspace=False,
     ),
+    "/asset list": AgentCommand(
+        path="/asset list",
+        title="List manifest assets",
+        description="Show assets and secrets in the active workspace. Usage: /asset list",
+    ),
+    "/asset import": AgentCommand(
+        path="/asset import",
+        title="Import file asset",
+        description="Copy a file into assets/ and add it to a profile. Usage: /asset import [path] [--target path] [--profile base] [--id name]",
+    ),
+    "/asset import-secret": AgentCommand(
+        path="/asset import-secret",
+        title="Import encrypted secret",
+        description="Encrypt a file into secrets/ and add it to a profile. Usage: /asset import-secret [path] --recipient age1... [--target path]",
+    ),
+    "/asset export": AgentCommand(
+        path="/asset export",
+        title="Export asset",
+        description="Copy an asset source out of the workspace. Usage: /asset export <id> [output] [--identity path]",
+    ),
     "/workspace list": AgentCommand(
         path="/workspace list",
         title="List workspaces",
@@ -76,6 +96,12 @@ COMMANDS: dict[str, AgentCommand] = {
         path="/workspace add",
         title="Register workspace",
         description="Register a workspace path. Usage: /workspace add [path]",
+        requires_workspace=False,
+    ),
+    "/workspace use": AgentCommand(
+        path="/workspace use",
+        title="Switch workspace",
+        description="Switch the active TUI context. Usage: /workspace use <name>",
         requires_workspace=False,
     ),
     "/help": AgentCommand(
@@ -190,19 +216,29 @@ class ReviveApp(App):
 
     CSS = """
     Screen {
-        background: $surface;
+        background: #101318;
+        color: #d7dde8;
     }
 
     #main_container {
         width: 100%;
         height: 100%;
+        background: #101318;
+    }
+
+    #workspace_strip {
+        height: 4;
+        padding: 0 1;
+        background: #171b22;
+        border-bottom: tall #3b82f6;
+        color: #d7dde8;
     }
 
     #modal_container {
         width: 60%;
         height: 70%;
-        border: thick $primary;
-        background: $surface;
+        border: thick #3b82f6;
+        background: #171b22;
         padding: 1;
     }
 
@@ -224,55 +260,91 @@ class ReviveApp(App):
     }
 
     OptionList {
-        border: solid $primary;
-        margin: 1;
+        border: none;
+        margin: 0 1 1 1;
         height: 1fr;
+        background: #171b22;
+        color: #d7dde8;
     }
 
     #sidebar {
-        width: 36;
-        min-width: 32;
+        width: 40;
+        min-width: 36;
         height: 100%;
-        border-right: solid $primary;
+        background: #171b22;
+        border-right: tall #2f3541;
     }
 
     #agent_view {
         width: 1fr;
         height: 100%;
+        background: #101318;
+    }
+
+    #session_grid {
+        height: 6;
+        margin: 1 1 0 1;
+        grid-size: 3 1;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 1;
+    }
+
+    .metric {
+        height: 100%;
+        padding: 1;
+        background: #171b22;
+        border: solid #2f3541;
+        color: #d7dde8;
+    }
+
+    .metric-title {
+        color: #8b95a7;
     }
 
     .header-panel {
-        background: $primary;
-        color: white;
+        background: #3b82f6;
+        color: #ffffff;
         padding: 1;
-        text-align: center;
+        text-align: left;
         text-style: bold;
     }
 
     #status_log {
         height: 1fr;
-        border: double $primary;
+        border: solid #2f3541;
         margin: 1;
-        background: $surface;
+        background: #0b0d11;
+        color: #d7dde8;
     }
 
     #suggestion_bar {
         height: 5;
         margin: 0 1;
         padding: 0 1;
-        border: solid $secondary;
-        color: $text-muted;
+        border: solid #22c55e;
+        background: #121a17;
+        color: #a7f3d0;
     }
 
     #command_input {
         margin: 0 1 1 1;
-        border: solid $secondary;
+        border: tall #3b82f6;
+        background: #0b0d11;
+        color: #ffffff;
     }
 
     .info-label {
-        margin-left: 2;
-        color: $secondary;
+        margin: 1 1 0 1;
+        color: #8b95a7;
         text-style: bold;
+    }
+
+    TabbedContent {
+        background: #171b22;
+    }
+
+    TabPane {
+        background: #171b22;
     }
     """
 
@@ -290,27 +362,33 @@ class ReviveApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Container(id="main_container"):
-            yield Static(id="header_text", classes="header-panel")
+            yield Static(id="workspace_strip", classes="header-panel")
             with Horizontal():
                 with Vertical(id="sidebar", name="Navigation"):
                     with TabbedContent():
                         with TabPane("Commands", id="tab_commands"):
-                            yield Label("Slash Command Center", classes="info-label")
+                            yield Label("Command Deck", classes="info-label")
                             yield OptionList(
                                 Option("/status  Analyze drift", id="/status"),
                                 Option("/restore  Restore profile", id="/restore"),
                                 Option("/doctor  Diagnose setup", id="/doctor"),
+                                Option("/asset list  Show assets", id="/asset list"),
+                                Option("/asset import  Import file", id="/asset import"),
+                                Option("/asset import-secret  Encrypt secret", id="/asset import-secret"),
+                                Option("/asset export  Export item", id="/asset export"),
                                 Option("/secret keygen  Generate keys", id="/secret keygen"),
                                 Option("/workspace list  Show workspaces", id="/workspace list"),
                                 Option("/workspace add  Register cwd", id="/workspace add"),
+                                Option("/workspace use  Switch workspace", id="/workspace use"),
                                 id="command_palette",
                             )
                         with TabPane("Assets", id="tab_assets"):
-                            yield Label("Management", classes="info-label")
+                            yield Label("Asset Commands", classes="info-label")
                             yield OptionList(
-                                Option("Import Asset (File)", id="import_file"),
-                                Option("Import Secret", id="import_secret"),
-                                Option("Export Asset/Secret", id="export"),
+                                Option("/asset list", id="/asset list"),
+                                Option("/asset import", id="/asset import"),
+                                Option("/asset import-secret", id="/asset import-secret"),
+                                Option("/asset export", id="/asset export"),
                                 id="asset_actions"
                             )
                         with TabPane("Workspaces", id="tab_workspaces"):
@@ -319,10 +397,14 @@ class ReviveApp(App):
                             yield Button("Register Current Dir", id="register_ws")
 
                 with Vertical(id="agent_view"):
+                    with Grid(id="session_grid"):
+                        yield Static("Workspace\n-", id="metric_workspace", classes="metric")
+                        yield Static("Mode\ncommand", id="metric_mode", classes="metric")
+                        yield Static("Profile\nbase", id="metric_profile", classes="metric")
                     yield Label("Agent Transcript", classes="info-label")
                     yield RichLog(id="status_log", highlight=True, markup=True)
                     yield Static(id="suggestion_bar")
-                    yield Input(placeholder="Type /help, /status, /restore --dry-run, or choose a command", id="command_input")
+                    yield Input(placeholder="/help, /status, /asset import, /restore --dry-run", id="command_input")
 
         yield Footer()
 
@@ -334,9 +416,11 @@ class ReviveApp(App):
 
     def update_header(self) -> None:
         if self.workspace:
-            self.query_one("#header_text").update(f"Revive Agent | Active: {self.workspace.name} ({self.workspace.path})")
+            self.query_one("#workspace_strip").update(f"Revive Agent | Active: {self.workspace.name} | {self.workspace.path}")
+            self.query_one("#metric_workspace", Static).update(f"Workspace\n{self.workspace.name}")
         else:
-            self.query_one("#header_text").update("Revive Agent | No Workspace Detected")
+            self.query_one("#workspace_strip").update("Revive Agent | No Workspace Detected")
+            self.query_one("#metric_workspace", Static).update("Workspace\nnone")
 
     def log_status(self, message: str) -> None:
         log = self.query_one("#status_log", RichLog)
@@ -359,25 +443,25 @@ class ReviveApp(App):
             option_list.add_option(Option(f"{ws.name}", id=f"ws_{ws.name}"))
 
     @on(Input.Submitted, "#command_input")
-    def handle_command(self, event: Input.Submitted) -> None:
+    async def handle_command(self, event: Input.Submitted) -> None:
         command = event.value.strip()
         if not command:
             return
 
         self.log_status(f"[bold cyan]user[/] {command}")
         event.input.value = ""
-        self.dispatch_agent_command(command)
+        await self.dispatch_agent_command(command)
 
     @on(OptionList.OptionSelected, "#command_palette")
-    def handle_command_palette(self, event: OptionList.OptionSelected) -> None:
+    async def handle_command_palette(self, event: OptionList.OptionSelected) -> None:
         command = str(event.option.id)
         if command == "/workspace add":
             command = f"{command} {shlex.quote(os.getcwd())}"
         self.query_one("#command_input", Input).value = command
         self.log_status(f"[bold cyan]user[/] {command}")
-        self.dispatch_agent_command(command)
+        await self.dispatch_agent_command(command)
 
-    def dispatch_agent_command(self, raw_command: str) -> None:
+    async def dispatch_agent_command(self, raw_command: str) -> None:
         try:
             parsed = parse_agent_command(raw_command)
         except ValueError as e:
@@ -386,23 +470,37 @@ class ReviveApp(App):
             return
 
         command = COMMANDS[parsed.path]
+        self.query_one("#metric_mode", Static).update(f"Mode\n{command.title}")
         if command.requires_workspace and not self.workspace:
             self.log_status("[bold red]agent[/] No workspace selected. Run /workspace add [path] first.")
             self.suggest_next_steps("no_workspace")
             return
 
         if parsed.path == "/status":
+            self.query_one("#metric_profile", Static).update(f"Profile\n{self._profile_from(parsed)}")
             self.run_status(self._profile_from(parsed), self._identity_from(parsed))
         elif parsed.path == "/restore":
+            self.query_one("#metric_profile", Static).update(f"Profile\n{self._profile_from(parsed)}")
             self.run_restore(self._profile_from(parsed), self._identity_from(parsed), bool(parsed.flags.get("dry_run")))
         elif parsed.path == "/doctor":
+            self.query_one("#metric_profile", Static).update(f"Profile\n{self._profile_from(parsed)}")
             self.run_doctor(self._profile_from(parsed))
+        elif parsed.path == "/asset list":
+            self.run_asset_list()
+        elif parsed.path == "/asset import":
+            await self.run_asset_import(parsed, is_secret=False)
+        elif parsed.path == "/asset import-secret":
+            await self.run_asset_import(parsed, is_secret=True)
+        elif parsed.path == "/asset export":
+            self.run_asset_export(parsed)
         elif parsed.path == "/secret keygen":
             self.run_keygen()
         elif parsed.path == "/workspace list":
             self.run_workspace_list()
         elif parsed.path == "/workspace add":
             self.run_workspace_add(parsed.args[0] if parsed.args else os.getcwd())
+        elif parsed.path == "/workspace use":
+            self.run_workspace_use(parsed.args[0] if parsed.args else "")
         elif parsed.path == "/help":
             self.run_help(parsed.args[0] if parsed.args else "")
         elif parsed.path == "/clear":
@@ -421,31 +519,18 @@ class ReviveApp(App):
 
     def suggest_next_steps(self, context: str) -> None:
         suggestions = {
-            "start": "/status base  |  /doctor  |  /workspace list",
+            "start": "/status base  |  /asset list  |  /doctor",
             "status_clean": "/doctor  |  /restore base --dry-run",
             "status_drift": "/restore base --dry-run  |  /restore base",
             "restore": "/status base  |  /doctor",
             "doctor": "/status base  |  /workspace list",
             "no_workspace": "/workspace list  |  /workspace add .",
-            "unknown": "/help  |  /status base  |  /doctor",
-            "workspace": "/status base  |  /doctor",
-            "secret": "Set REVIVE_PUBKEY for imports  |  /status base",
+            "unknown": "/help  |  /asset list  |  /doctor",
+            "workspace": "/status base  |  /asset list  |  /doctor",
+            "asset": "/asset list  |  /status base  |  /restore base --dry-run",
+            "secret": "/asset import-secret --recipient age1...  |  /status base",
         }
         self.query_one("#suggestion_bar", Static).update(f"Next: {suggestions.get(context, suggestions['start'])}")
-
-    @on(OptionList.OptionSelected, "#workspace_actions")
-    def handle_workspace_action(self, event: OptionList.OptionSelected) -> None:
-        if not self.workspace:
-            self.notify("No workspace selected", severity="error")
-            return
-
-        action_id = event.option.id
-        if action_id == "status":
-            self.run_status("base")
-        elif action_id == "restore":
-            self.run_restore("base")
-        elif action_id == "doctor":
-            self.run_doctor("base")
 
     @on(OptionList.OptionSelected, "#asset_actions")
     async def handle_asset_action(self, event: OptionList.OptionSelected) -> None:
@@ -453,27 +538,18 @@ class ReviveApp(App):
             self.notify("No workspace selected", severity="error")
             return
 
-        action_id = event.option.id
-        if action_id == "import_file":
-            await self.action_import_asset(is_secret=False)
-        elif action_id == "import_secret":
-            await self.action_import_asset(is_secret=True)
-        elif action_id == "export":
-            await self.action_export_asset()
+        command = str(event.option.id)
+        self.query_one("#command_input", Input).value = command
+        self.log_status(f"[bold cyan]user[/] {command}")
+        await self.dispatch_agent_command(command)
 
     @on(OptionList.OptionSelected, "#workspace_list")
-    def handle_workspace_select(self, event: OptionList.OptionSelected) -> None:
+    async def handle_workspace_select(self, event: OptionList.OptionSelected) -> None:
         ws_name = event.option.id.replace("ws_", "")
-        workspaces = WorkspaceService.list_workspaces()
-        for ws in workspaces:
-            if ws.name == ws_name:
-                self.workspace = ws
-                WorkspaceService.register_workspace(ws.path) 
-                self.update_header()
-                self.notify(f"Switched to workspace: {ws_name}")
-                self.log_status(f"Agent context switched to: [bold]{ws_name}[/]")
-                self.suggest_next_steps("workspace")
-                break
+        command = f"/workspace use {shlex.quote(ws_name)}"
+        self.query_one("#command_input", Input).value = command
+        self.log_status(f"[bold cyan]user[/] {command}")
+        await self.dispatch_agent_command(command)
 
     @on(Button.Pressed, "#register_ws")
     def handle_register_ws(self) -> None:
@@ -561,6 +637,22 @@ class ReviveApp(App):
         self.log_status(f"[bold cyan]agent[/] Workspace registered and selected: [bold]{ws.name}[/] ({ws.path})")
         self.suggest_next_steps("workspace")
 
+    def run_workspace_use(self, name: str) -> None:
+        if not name:
+            self.log_status("[yellow]agent[/] Usage: /workspace use <name>")
+            self.suggest_next_steps("workspace")
+            return
+        for ws in WorkspaceService.list_workspaces():
+            if ws.name == name:
+                self.workspace = WorkspaceService.register_workspace(ws.path)
+                self.update_header()
+                self.notify(f"Switched to workspace: {ws.name}")
+                self.log_status(f"[bold cyan]agent[/] Workspace context switched to [bold]{ws.name}[/].")
+                self.suggest_next_steps("workspace")
+                return
+        self.log_status(f"[bold red]agent[/] Workspace not found: {name}")
+        self.suggest_next_steps("workspace")
+
     def run_help(self, prefix: str = "") -> None:
         commands = suggest_commands(prefix)
         if not commands:
@@ -572,63 +664,164 @@ class ReviveApp(App):
             self.log_status(f" - [bold]{command.path}[/] - {command.description}")
         self.suggest_next_steps("start")
 
-    async def action_import_asset(self, is_secret: bool) -> None:
-        path = await self.push_screen_wait(FileSelectorModal(title=f"Select {'Secret' if is_secret else 'Asset'} to Import"))
-        if not path:
-            return
-
-        asset_id = os.path.basename(path)
-        target_path = f"~/.config/revive_imported/{asset_id}"
-
-        self.log_status(f"Agent importing {path} as {'secret' if is_secret else 'asset'}...")
-
+    def run_asset_list(self) -> None:
         manifest_path = os.path.join(self.workspace.path, "manifest.yaml")
         try:
             manifest = ManifestLoader.load(manifest_path)
         except Exception as e:
-            self.notify(f"Failed to load manifest: {e}", severity="error")
+            self.log_status(f"[bold red]agent[/] Failed to load manifest: {e}")
+            self.suggest_next_steps("doctor")
             return
 
+        if not manifest.assets and not manifest.secrets:
+            self.log_status("[yellow]agent[/] Manifest has no assets or secrets yet.")
+            self.suggest_next_steps("asset")
+            return
+
+        self.log_status("[bold cyan]agent[/] Manifest inventory:")
+        for asset in manifest.assets:
+            self.log_status(f" - [bold]{asset.id}[/] asset:{asset.type.value} {asset.source} -> {asset.target}")
+        for secret in manifest.secrets:
+            self.log_status(f" - [bold]{secret.id}[/] secret {secret.source} -> {secret.target}")
+        self.suggest_next_steps("asset")
+
+    async def run_asset_import(self, parsed: ParsedCommand, is_secret: bool) -> None:
+        path = parsed.args[0] if parsed.args else None
+        if not path:
+            title = "Select Secret to Import" if is_secret else "Select Asset to Import"
+            selected_path = await self.push_screen_wait(FileSelectorModal(title=title))
+            if not selected_path:
+                self.log_status("[yellow]agent[/] Import cancelled.")
+                self.suggest_next_steps("asset")
+                return
+            path = str(selected_path)
+
+        recipient = parsed.flags.get("recipient")
+        if is_secret and not isinstance(recipient, str):
+            env_recipient = os.environ.get("REVIVE_PUBKEY")
+            recipient = env_recipient if env_recipient else None
+
+        if is_secret and not recipient:
+            self.log_status("[bold red]agent[/] Secret import needs --recipient age1... or REVIVE_PUBKEY.")
+            self.suggest_next_steps("secret")
+            return
+
+        asset_id = parsed.flags.get("id")
+        target = parsed.flags.get("target")
+        profile = parsed.flags.get("profile")
         try:
-            if is_secret:
-                recipient = os.environ.get("REVIVE_PUBKEY", "age1...") 
-                if recipient == "age1...":
-                    self.log_status("[yellow]Warning: Using placeholder recipient. Set REVIVE_PUBKEY env var.[/]")
-
-                dest_rel = os.path.join("secrets", f"{asset_id}.age")
-                dest_abs = os.path.join(self.workspace.path, dest_rel)
-                os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
-                
-                AgeEncryptor.encrypt_file(str(path), dest_abs, [recipient])
-                
-                new_secret = Secret(id=asset_id, source=dest_rel, target=target_path)
-                manifest.secrets.append(new_secret)
-                if "base" in manifest.profiles:
-                    manifest.profiles["base"].secrets.append(asset_id)
-            else:
-                dest_rel = os.path.join("assets", asset_id)
-                dest_abs = os.path.join(self.workspace.path, dest_rel)
-                os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
-                shutil.copy2(path, dest_abs)
-                
-                new_asset = Asset(id=asset_id, type=AssetType.COPY, source=dest_rel, target=target_path)
-                manifest.assets.append(new_asset)
-                if "base" in manifest.profiles:
-                    manifest.profiles["base"].assets.append(asset_id)
-
-            with open(manifest_path, "w", encoding="utf-8") as f:
-                data = manifest.model_dump(mode="json", exclude_none=True)
-                yaml.dump(data, f, sort_keys=False)
-
-            self.notify(f"Imported {asset_id}")
-            self.log_status(f"[green]Successfully ingested {asset_id} into workspace manifest.[/]")
+            self.import_manifest_item(
+                source_path=path,
+                is_secret=is_secret,
+                asset_id=asset_id if isinstance(asset_id, str) else None,
+                target_path=target if isinstance(target, str) else None,
+                profile=profile if isinstance(profile, str) else "base",
+                recipient=recipient if isinstance(recipient, str) else None,
+            )
         except Exception as e:
             self.notify(f"Import failed: {e}", severity="error")
-            self.log_status(f"[bold red]Import operation failed:[/] {e}")
+            self.log_status(f"[bold red]agent[/] Import failed: {e}")
+            self.suggest_next_steps("asset")
 
-    async def action_export_asset(self) -> None:
-        self.notify("Export asset logic triggered")
+    def import_manifest_item(
+        self,
+        source_path: str,
+        is_secret: bool,
+        asset_id: str | None = None,
+        target_path: str | None = None,
+        profile: str = "base",
+        recipient: str | None = None,
+    ) -> None:
+        abs_source = os.path.abspath(os.path.expanduser(source_path))
+        if not os.path.isfile(abs_source):
+            raise ValueError(f"Import source is not a file: {abs_source}")
 
+        item_id = asset_id or os.path.basename(abs_source)
+        target = target_path or f"~/.config/revive_imported/{item_id}"
+        manifest_path = os.path.join(self.workspace.path, "manifest.yaml")
+        manifest = ManifestLoader.load(manifest_path)
+
+        if any(asset.id == item_id for asset in manifest.assets) or any(secret.id == item_id for secret in manifest.secrets):
+            raise ValueError(f"Manifest item already exists: {item_id}")
+        if profile not in manifest.profiles:
+            raise ValueError(f"Profile is not defined: {profile}")
+
+        if is_secret:
+            if not recipient:
+                raise ValueError("Secret import requires a recipient")
+            dest_rel = os.path.join("secrets", f"{item_id}.age")
+            dest_abs = os.path.join(self.workspace.path, dest_rel)
+            os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
+            AgeEncryptor.encrypt_file(abs_source, dest_abs, [recipient])
+            manifest.secrets.append(Secret(id=item_id, source=dest_rel, target=target))
+            manifest.profiles[profile].secrets.append(item_id)
+            item_kind = "secret"
+        else:
+            dest_rel = os.path.join("assets", item_id)
+            dest_abs = os.path.join(self.workspace.path, dest_rel)
+            os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
+            shutil.copy2(abs_source, dest_abs)
+            manifest.assets.append(Asset(id=item_id, type=AssetType.COPY, source=dest_rel, target=target))
+            manifest.profiles[profile].assets.append(item_id)
+            item_kind = "asset"
+
+        self.save_manifest(manifest_path, manifest)
+        self.notify(f"Imported {item_id}")
+        self.log_status(f"[bold green]agent[/] Imported {item_kind} [bold]{item_id}[/] into profile [bold]{profile}[/].")
+        self.suggest_next_steps("asset")
+
+    def run_asset_export(self, parsed: ParsedCommand) -> None:
+        if not parsed.args:
+            self.log_status("[yellow]agent[/] Usage: /asset export <id> [output] [--identity path]")
+            self.suggest_next_steps("asset")
+            return
+
+        item_id = parsed.args[0]
+        output_path = parsed.args[1] if len(parsed.args) > 1 else os.path.join(os.getcwd(), item_id)
+        identity = self._identity_from(parsed)
+        try:
+            self.export_manifest_item(item_id, output_path, identity)
+        except Exception as e:
+            self.notify(f"Export failed: {e}", severity="error")
+            self.log_status(f"[bold red]agent[/] Export failed: {e}")
+            self.suggest_next_steps("asset")
+
+    def export_manifest_item(self, item_id: str, output_path: str, identity: str | None = None) -> None:
+        manifest_path = os.path.join(self.workspace.path, "manifest.yaml")
+        manifest = ManifestLoader.load(manifest_path)
+        assets = {asset.id: asset for asset in manifest.assets}
+        secrets = {secret.id: secret for secret in manifest.secrets}
+
+        output_abs = os.path.abspath(os.path.expanduser(output_path))
+        os.makedirs(os.path.dirname(output_abs) or ".", exist_ok=True)
+
+        if item_id in assets:
+            asset = assets[item_id]
+            source_abs = os.path.join(self.workspace.path, asset.source)
+            if not os.path.exists(source_abs):
+                raise FileNotFoundError(f"Asset source is missing: {source_abs}")
+            if os.path.isdir(source_abs):
+                shutil.copytree(source_abs, output_abs, dirs_exist_ok=True)
+            else:
+                shutil.copy2(source_abs, output_abs)
+            self.log_status(f"[bold green]agent[/] Exported asset [bold]{item_id}[/] to {output_abs}.")
+        elif item_id in secrets:
+            if not identity:
+                raise ValueError("Secret export requires --identity path")
+            secret = secrets[item_id]
+            source_abs = os.path.join(self.workspace.path, secret.source)
+            AgeEncryptor.decrypt_file(source_abs, output_abs, identity)
+            self.log_status(f"[bold green]agent[/] Decrypted secret [bold]{item_id}[/] to {output_abs}.")
+        else:
+            raise ValueError(f"Manifest item not found: {item_id}")
+
+        self.notify(f"Exported {item_id}")
+        self.suggest_next_steps("asset")
+
+    def save_manifest(self, manifest_path: str, manifest: object) -> None:
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            data = manifest.model_dump(mode="json", exclude_none=True)
+            yaml.dump(data, f, sort_keys=False)
 
 def start_tui() -> None:
     """Entry point for the TUI."""

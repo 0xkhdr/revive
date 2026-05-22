@@ -21,6 +21,14 @@ def test_parse_agent_command_supports_subcommands_and_boolean_flags() -> None:
     assert parsed.flags == {"dry_run": True}
 
 
+def test_parse_agent_command_supports_asset_commands() -> None:
+    parsed = parse_agent_command('/asset import-secret "./token.txt" --recipient age1abc --target ~/.token')
+
+    assert parsed.path == "/asset import-secret"
+    assert parsed.args == ("./token.txt",)
+    assert parsed.flags == {"recipient": "age1abc", "target": "~/.token"}
+
+
 def test_parse_agent_command_rejects_unknown_commands() -> None:
     with pytest.raises(ValueError, match="Unknown command"):
         parse_agent_command("/missing")
@@ -29,4 +37,4 @@ def test_parse_agent_command_rejects_unknown_commands() -> None:
 def test_suggest_commands_filters_by_prefix() -> None:
     suggestions = suggest_commands("/workspace")
 
-    assert [command.path for command in suggestions] == ["/workspace list", "/workspace add"]
+    assert [command.path for command in suggestions] == ["/workspace list", "/workspace add", "/workspace use"]

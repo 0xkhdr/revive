@@ -30,6 +30,21 @@ graph TD
     style C6 fill:#1c1c1e,stroke:#58a6ff,stroke-width:2px;
 ```
 
+## Phase 0: Bootstrap the `rv` CLI Tool (Current Machine)
+
+Before managing configurations, bootstrap the global `rv` command wrapper on your current machine to run standard commands globally:
+
+```bash
+# From within your local revive repository on your current machine:
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/python -m rv self-install
+```
+
+> [!NOTE]
+> If `~/.local/bin` is not currently in your system PATH, add it to your shell configuration (e.g., `~/.bashrc` or `~/.zshrc`):
+> `export PATH="$HOME/.local/bin:$PATH"`
+
 ---
 
 ## Phase 1: Cryptographic Identity Generation (Age Keys)
@@ -45,7 +60,7 @@ mkdir -p ~/.config/rv/keys
 chmod 700 ~/.config/rv/keys
 
 # Generate the identity (private key) natively
-python3 -m rv secret keygen -o ~/.config/rv/keys/identity.txt
+rv secret keygen -o ~/.config/rv/keys/identity.txt
 ```
 
 > [!IMPORTANT]
@@ -79,7 +94,7 @@ In a dedicated project directory (e.g., `~/workspace/my-revive-backup`), initial
 ```bash
 mkdir -p ~/workspace/my-revive-backup
 cd ~/workspace/my-revive-backup
-python3 -m rv init
+rv init
 ```
 
 This scaffolds the following layout:
@@ -114,14 +129,14 @@ Secrets such as SSH private keys, API keys, or database credentials must be encr
 #### A. Encrypt an SSH Private Key:
 Use the recipient key generated in Phase 1:
 ```bash
-python3 -m rv secret encrypt ~/.ssh/id_ed25519 -o secrets/id_ed25519.age -r age1f3sw...
+rv secret encrypt ~/.ssh/id_ed25519 -o secrets/id_ed25519.age -r age1f3sw...
 ```
 
 #### B. Encrypt AI API Tokens:
 ```bash
 # Save your API token to a temp file, encrypt, then wipe the temp file
 echo "your-anthropic-api-key" > /tmp/key.txt
-python3 -m rv secret encrypt /tmp/key.txt -o secrets/anthropic_key.age -r age1f3sw...
+rv secret encrypt /tmp/key.txt -o secrets/anthropic_key.age -r age1f3sw...
 rm -f /tmp/key.txt
 ```
 
@@ -393,8 +408,7 @@ Now, execute the restore process.
 Before making any changes to your new Elementary OS filesystem, perform a Dry Run to validate that the changes look correct:
 
 ```bash
-# If using the virtual environment:
-.venv/bin/python -m rv restore base --dry-run -i ~/.config/rv/keys/identity.txt
+rv restore base --dry-run -i ~/.config/rv/keys/identity.txt
 ```
 
 Revive will plan the transaction, validate the manifest schema, verify path boundaries, decrypt secrets in memory, and list all file system mutations and package installations without modifying the system.
@@ -403,7 +417,7 @@ Revive will plan the transaction, validate the manifest schema, verify path boun
 Once you have verified the dry run output, execute the actual restoration:
 
 ```bash
-.venv/bin/python -m rv restore base -i ~/.config/rv/keys/identity.txt
+rv restore base -i ~/.config/rv/keys/identity.txt
 ```
 
 Revive will orchestrate the entire restore process sequentially:
@@ -419,7 +433,7 @@ Revive will orchestrate the entire restore process sequentially:
 Check the synchronization status to verify everything is aligned correctly and check for drift:
 
 ```bash
-.venv/bin/python -m rv status --profile base -i ~/.config/rv/keys/identity.txt
+rv status --profile base -i ~/.config/rv/keys/identity.txt
 ```
 
 You should see:

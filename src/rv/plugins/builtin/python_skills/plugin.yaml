@@ -1,0 +1,10 @@
+name: "python-skills"
+version: "1.0.0"
+entrypoint: "python_skills.py"
+permissions:
+  network: false
+  shell: false
+  allowed_paths:
+    - "~/.config/rv/skills"
+hooks:
+  - post-restore

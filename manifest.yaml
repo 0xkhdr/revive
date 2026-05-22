@@ -1,0 +1,30 @@
+# Revive Configuration Manifest
+version: 2
+
+assets:
+  - id: example_zshrc
+    type: symlink
+    source: assets/example_zshrc
+    target: ~/.zshrc
+    permissions: "0644"
+    conflict_strategy: prompt
+
+secrets: []
+
+packages:
+  brew: []
+  apt: []
+  flatpak: []
+  snap: []
+  docker:
+    images: []
+  node:
+    version_file: .nvmrc
+
+profiles:
+  base:
+    assets:
+      - example_zshrc
+    secrets: []
+    packages:
+      - brew

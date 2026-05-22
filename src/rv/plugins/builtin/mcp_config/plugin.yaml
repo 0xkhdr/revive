@@ -1,0 +1,11 @@
+name: "mcp-config"
+version: "1.0.0"
+entrypoint: "mcp_config.py"
+permissions:
+  network: false
+  shell: false
+  allowed_paths:
+    - "~/.config/Claude"
+    - "~/Library/Application Support/Claude"
+hooks:
+  - post-restore

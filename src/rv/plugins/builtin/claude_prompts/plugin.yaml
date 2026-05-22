@@ -1,0 +1,11 @@
+name: "claude-prompts"
+version: "1.0.0"
+entrypoint: "claude_prompts.py"
+permissions:
+  network: false
+  shell: false
+  allowed_paths:
+    - "~/.config/ClaudeCode"
+    - "~/Library/Application Support/ClaudeCode"
+hooks:
+  - post-restore

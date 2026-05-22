@@ -4,9 +4,12 @@ set -eu
 APP_NAME="rv"
 PACKAGE_NAME="revive-cli"
 REQUIRED_PYTHON="3.11"
+SOURCE_URL="${REVIVE_SOURCE_URL:-https://github.com/0xkhdr/revive.git}"
+SOURCE_REF="${REVIVE_SOURCE_REF:-main}"
 
 REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 INSTALL_ROOT="${REVIVE_INSTALL_DIR:-"$HOME/.local/share/rv"}"
+SOURCE_DIR="$INSTALL_ROOT/source"
 VENV_DIR="$INSTALL_ROOT/venv"
 BIN_DIR="${REVIVE_BIN_DIR:-"$HOME/.local/bin"}"
 WRAPPER_PATH="$BIN_DIR/$APP_NAME"
@@ -36,6 +39,9 @@ Options:
 Environment:
   REVIVE_INSTALL_DIR    Install root. Default: ~/.local/share/rv
   REVIVE_BIN_DIR        Wrapper directory. Default: ~/.local/bin
+  REVIVE_SOURCE_URL     Git repository URL for streamed installs.
+                        Default: https://github.com/0xkhdr/revive.git
+  REVIVE_SOURCE_REF     Git branch/tag/ref for streamed installs. Default: main
   PYTHON                Python executable to use. Must be Python 3.11+.
 EOF
 }
@@ -120,6 +126,38 @@ find_python() {
     return 1
 }
 
+is_package_source() {
+    [ -f "$1/pyproject.toml" ] && [ -d "$1/src/rv" ]
+}
+
+ensure_package_source() {
+    if is_package_source "$REPO_DIR"; then
+        printf '%s\n' "$REPO_DIR"
+        return
+    fi
+
+    if ! command_exists git; then
+        die "git is required for curl installs. Re-run with --system-deps or install git manually."
+    fi
+
+    if [ -d "$SOURCE_DIR" ] && [ "$FORCE" = "1" ]; then
+        rm -rf "$SOURCE_DIR"
+    fi
+
+    if [ ! -d "$SOURCE_DIR/.git" ]; then
+        log "Downloading Revive source from $SOURCE_URL ($SOURCE_REF)..." >&2
+        mkdir -p "$INSTALL_ROOT"
+        git clone --depth 1 --branch "$SOURCE_REF" "$SOURCE_URL" "$SOURCE_DIR"
+    else
+        log "Updating Revive source at $SOURCE_DIR..." >&2
+        git -C "$SOURCE_DIR" fetch --depth 1 origin "$SOURCE_REF"
+        git -C "$SOURCE_DIR" checkout --force FETCH_HEAD
+    fi
+
+    is_package_source "$SOURCE_DIR" || die "Downloaded source is not a valid Revive package"
+    printf '%s\n' "$SOURCE_DIR"
+}
+
 if [ "$(uname -s)" != "Linux" ]; then
     die "This installer targets Linux. Use pip install -e . or PyInstaller on other platforms."
 fi
@@ -137,6 +175,8 @@ if [ -e "$WRAPPER_PATH" ] && [ "$FORCE" != "1" ]; then
     die "$WRAPPER_PATH already exists. Re-run with --force to overwrite it."
 fi
 
+PACKAGE_SOURCE=$(ensure_package_source)
+
 if [ -d "$VENV_DIR" ] && [ "$FORCE" = "1" ]; then
     rm -rf "$VENV_DIR"
 fi
@@ -146,14 +186,14 @@ mkdir -p "$INSTALL_ROOT" "$BIN_DIR"
 log "Creating virtual environment at $VENV_DIR..."
 "$PYTHON_BIN" -m venv "$VENV_DIR" || die "Failed to create venv. Install the Python venv package and retry."
 
-log "Installing $PACKAGE_NAME from $REPO_DIR..."
+log "Installing $PACKAGE_NAME from $PACKAGE_SOURCE..."
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
-"$VENV_DIR/bin/python" -m pip install --upgrade "$REPO_DIR"
+"$VENV_DIR/bin/python" -m pip install --upgrade "$PACKAGE_SOURCE"
 
 cat > "$WRAPPER_PATH" <<EOF
 #!/usr/bin/env sh
 # Revive CLI Installer Wrapper
-# Managed by $REPO_DIR/scripts/install.sh
+# Managed by $PACKAGE_SOURCE/scripts/install.sh
 exec "$VENV_DIR/bin/python" -m rv "\$@"
 EOF
 chmod 0755 "$WRAPPER_PATH"

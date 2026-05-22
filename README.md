@@ -21,10 +21,10 @@ Revive features a rigorous transactional execution lifecycle (Plan, Validate, Sn
 
 ### Installation
 
-Install `rv` on Linux from the repository root with one command:
+Install `rv` on any Linux machine with one command:
 
 ```bash
-./scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/0xkhdr/revive/main/scripts/install.sh | sh
 ```
 
 This creates an isolated user install at `~/.local/share/rv`, installs the package into its own virtual environment, and writes the global wrapper to `~/.local/bin/rv`.
@@ -32,10 +32,28 @@ This creates an isolated user install at `~/.local/share/rv`, installs the packa
 If the machine is missing common prerequisites, run the same installer with best-effort system dependency bootstrapping:
 
 ```bash
-./scripts/install.sh --system-deps
+curl -fsSL https://raw.githubusercontent.com/0xkhdr/revive/main/scripts/install.sh | sh -s -- --system-deps
 ```
 
 To reinstall over an existing local wrapper:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xkhdr/revive/main/scripts/install.sh | sh -s -- --force
+```
+
+When working from a checked-out repository, run:
+
+```bash
+./scripts/install.sh
+```
+
+For local prerequisite bootstrapping:
+
+```bash
+./scripts/install.sh --system-deps
+```
+
+For local reinstall:
 
 ```bash
 ./scripts/install.sh --force

@@ -1,15 +1,16 @@
 """High-end Agentic Textual-based TUI for Revive."""
 
 import os
+import shlex
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import yaml
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
-from textual.screen import ModalScreen, Screen
+from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
     DirectoryTree,
@@ -17,8 +18,6 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    ListItem,
-    ListView,
     OptionList,
     RichLog,
     Static,
@@ -33,6 +32,121 @@ from rv.services.doctor import DoctorService
 from rv.services.restore import ManifestLoader, RestoreService
 from rv.services.status import StatusService
 from rv.services.workspace import WorkspaceService
+
+
+@dataclass(frozen=True)
+class AgentCommand:
+    """A slash command exposed by the TUI command center."""
+
+    path: str
+    title: str
+    description: str
+    requires_workspace: bool = True
+
+
+COMMANDS: dict[str, AgentCommand] = {
+    "/status": AgentCommand(
+        path="/status",
+        title="Analyze drift",
+        description="Check the active workspace against a profile. Usage: /status [profile] [--identity path]",
+    ),
+    "/restore": AgentCommand(
+        path="/restore",
+        title="Restore environment",
+        description="Apply a profile to the machine. Usage: /restore [profile] [--dry-run] [--identity path]",
+    ),
+    "/doctor": AgentCommand(
+        path="/doctor",
+        title="Run diagnostics",
+        description="Inspect repository health and local tool availability. Usage: /doctor [profile]",
+    ),
+    "/secret keygen": AgentCommand(
+        path="/secret keygen",
+        title="Generate age keypair",
+        description="Create a new age identity and recipient key. Usage: /secret keygen",
+        requires_workspace=False,
+    ),
+    "/workspace list": AgentCommand(
+        path="/workspace list",
+        title="List workspaces",
+        description="Show registered Revive workspaces. Usage: /workspace list",
+        requires_workspace=False,
+    ),
+    "/workspace add": AgentCommand(
+        path="/workspace add",
+        title="Register workspace",
+        description="Register a workspace path. Usage: /workspace add [path]",
+        requires_workspace=False,
+    ),
+    "/help": AgentCommand(
+        path="/help",
+        title="Show commands",
+        description="List slash commands and suggested next steps. Usage: /help [prefix]",
+        requires_workspace=False,
+    ),
+    "/clear": AgentCommand(
+        path="/clear",
+        title="Clear transcript",
+        description="Clear the agent transcript. Usage: /clear",
+        requires_workspace=False,
+    ),
+}
+
+
+@dataclass(frozen=True)
+class ParsedCommand:
+    """A parsed slash command with positional args and flags."""
+
+    path: str
+    args: tuple[str, ...]
+    flags: dict[str, str | bool]
+
+
+def parse_agent_command(raw_command: str) -> ParsedCommand:
+    """Parse a TUI slash command, including subcommands and simple flags."""
+    tokens = shlex.split(raw_command.strip())
+    if not tokens:
+        raise ValueError("Type /help to see available commands.")
+
+    if not tokens[0].startswith("/"):
+        tokens[0] = f"/{tokens[0]}"
+
+    if len(tokens) > 1 and f"{tokens[0]} {tokens[1]}" in COMMANDS:
+        path = f"{tokens[0]} {tokens[1]}"
+        tail = tokens[2:]
+    else:
+        path = tokens[0]
+        tail = tokens[1:]
+
+    if path not in COMMANDS:
+        raise ValueError(f"Unknown command: {path}")
+
+    args: list[str] = []
+    flags: dict[str, str | bool] = {}
+    index = 0
+    while index < len(tail):
+        token = tail[index]
+        if token.startswith("--"):
+            key = token[2:].replace("-", "_")
+            if index + 1 < len(tail) and not tail[index + 1].startswith("--"):
+                flags[key] = tail[index + 1]
+                index += 2
+            else:
+                flags[key] = True
+                index += 1
+        else:
+            args.append(token)
+            index += 1
+
+    return ParsedCommand(path=path, args=tuple(args), flags=flags)
+
+
+def suggest_commands(prefix: str = "") -> list[AgentCommand]:
+    """Return commands matching a slash prefix or plain text fragment."""
+    normalized = prefix.strip().lower()
+    if normalized and not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+    return [command for path, command in COMMANDS.items() if path.startswith(normalized)]
 
 
 class FileSelectorModal(ModalScreen[Path]):
@@ -76,7 +190,7 @@ class ReviveApp(App):
 
     CSS = """
     Screen {
-        align: center middle;
+        background: $surface;
     }
 
     #main_container {
@@ -110,9 +224,21 @@ class ReviveApp(App):
     }
 
     OptionList {
-        border: solid $accent;
+        border: solid $primary;
         margin: 1;
-        height: 12;
+        height: 1fr;
+    }
+
+    #sidebar {
+        width: 36;
+        min-width: 32;
+        height: 100%;
+        border-right: solid $primary;
+    }
+
+    #agent_view {
+        width: 1fr;
+        height: 100%;
     }
 
     .header-panel {
@@ -130,6 +256,14 @@ class ReviveApp(App):
         background: $surface;
     }
 
+    #suggestion_bar {
+        height: 5;
+        margin: 0 1;
+        padding: 0 1;
+        border: solid $secondary;
+        color: $text-muted;
+    }
+
     #command_input {
         margin: 0 1 1 1;
         border: solid $secondary;
@@ -145,7 +279,8 @@ class ReviveApp(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("r", "refresh", "Refresh"),
-        ("c", "focus_input", "Focus Command"),
+        ("c", "focus_input", "Command"),
+        ("/", "slash_command", "Slash"),
     ]
 
     def __init__(self):
@@ -159,13 +294,16 @@ class ReviveApp(App):
             with Horizontal():
                 with Vertical(id="sidebar", name="Navigation"):
                     with TabbedContent():
-                        with TabPane("Dashboard", id="tab_dashboard"):
-                            yield Label("Actions", classes="info-label")
+                        with TabPane("Commands", id="tab_commands"):
+                            yield Label("Slash Command Center", classes="info-label")
                             yield OptionList(
-                                Option("Status Analysis", id="status"),
-                                Option("Restore Environment", id="restore"),
-                                Option("Run System Doctor", id="doctor"),
-                                id="workspace_actions"
+                                Option("/status  Analyze drift", id="/status"),
+                                Option("/restore  Restore profile", id="/restore"),
+                                Option("/doctor  Diagnose setup", id="/doctor"),
+                                Option("/secret keygen  Generate keys", id="/secret keygen"),
+                                Option("/workspace list  Show workspaces", id="/workspace list"),
+                                Option("/workspace add  Register cwd", id="/workspace add"),
+                                id="command_palette",
                             )
                         with TabPane("Assets", id="tab_assets"):
                             yield Label("Management", classes="info-label")
@@ -181,16 +319,18 @@ class ReviveApp(App):
                             yield Button("Register Current Dir", id="register_ws")
 
                 with Vertical(id="agent_view"):
-                    yield Label("Agent Logs & Process", classes="info-label")
+                    yield Label("Agent Transcript", classes="info-label")
                     yield RichLog(id="status_log", highlight=True, markup=True)
-                    yield Input(placeholder="Ask the agent or type a command...", id="command_input")
+                    yield Static(id="suggestion_bar")
+                    yield Input(placeholder="Type /help, /status, /restore --dry-run, or choose a command", id="command_input")
 
         yield Footer()
 
     def on_mount(self) -> None:
         self.update_header()
         self.refresh_workspace_list()
-        self.log_status("[bold green]Agent initialized.[/] Ready for commands or selections.")
+        self.log_status("[bold green]Revive agent online.[/] Choose a slash command or type /help.")
+        self.suggest_next_steps("start")
 
     def update_header(self) -> None:
         if self.workspace:
@@ -205,6 +345,12 @@ class ReviveApp(App):
     def action_focus_input(self) -> None:
         self.query_one("#command_input").focus()
 
+    def action_slash_command(self) -> None:
+        command_input = self.query_one("#command_input", Input)
+        if not command_input.value.startswith("/"):
+            command_input.value = "/"
+        command_input.focus()
+
     def refresh_workspace_list(self) -> None:
         workspaces = WorkspaceService.list_workspaces()
         option_list = self.query_one("#workspace_list", OptionList)
@@ -214,24 +360,78 @@ class ReviveApp(App):
 
     @on(Input.Submitted, "#command_input")
     def handle_command(self, event: Input.Submitted) -> None:
-        command = event.value.strip().lower()
-        self.log_status(f"[bold cyan]> {command}[/]")
-        event.input.value = ""
+        command = event.value.strip()
+        if not command:
+            return
 
-        if command in ["status", "check"]:
-            self.run_status()
-        elif command in ["restore", "fix"]:
-            self.run_restore()
-        elif command in ["doctor", "health"]:
-            self.run_doctor()
-        elif command == "help":
-            self.log_status("Available commands: status, restore, doctor, keygen, clear")
-        elif command == "keygen":
+        self.log_status(f"[bold cyan]user[/] {command}")
+        event.input.value = ""
+        self.dispatch_agent_command(command)
+
+    @on(OptionList.OptionSelected, "#command_palette")
+    def handle_command_palette(self, event: OptionList.OptionSelected) -> None:
+        command = str(event.option.id)
+        if command == "/workspace add":
+            command = f"{command} {shlex.quote(os.getcwd())}"
+        self.query_one("#command_input", Input).value = command
+        self.log_status(f"[bold cyan]user[/] {command}")
+        self.dispatch_agent_command(command)
+
+    def dispatch_agent_command(self, raw_command: str) -> None:
+        try:
+            parsed = parse_agent_command(raw_command)
+        except ValueError as e:
+            self.log_status(f"[bold red]agent[/] {e}")
+            self.suggest_next_steps("unknown")
+            return
+
+        command = COMMANDS[parsed.path]
+        if command.requires_workspace and not self.workspace:
+            self.log_status("[bold red]agent[/] No workspace selected. Run /workspace add [path] first.")
+            self.suggest_next_steps("no_workspace")
+            return
+
+        if parsed.path == "/status":
+            self.run_status(self._profile_from(parsed), self._identity_from(parsed))
+        elif parsed.path == "/restore":
+            self.run_restore(self._profile_from(parsed), self._identity_from(parsed), bool(parsed.flags.get("dry_run")))
+        elif parsed.path == "/doctor":
+            self.run_doctor(self._profile_from(parsed))
+        elif parsed.path == "/secret keygen":
             self.run_keygen()
-        elif command == "clear":
+        elif parsed.path == "/workspace list":
+            self.run_workspace_list()
+        elif parsed.path == "/workspace add":
+            self.run_workspace_add(parsed.args[0] if parsed.args else os.getcwd())
+        elif parsed.path == "/help":
+            self.run_help(parsed.args[0] if parsed.args else "")
+        elif parsed.path == "/clear":
             self.query_one("#status_log", RichLog).clear()
-        else:
-            self.log_status(f"[red]Unknown command:[/red] {command}")
+            self.suggest_next_steps("start")
+
+    def _profile_from(self, parsed: ParsedCommand) -> str:
+        profile = parsed.flags.get("profile")
+        if isinstance(profile, str):
+            return profile
+        return parsed.args[0] if parsed.args else "base"
+
+    def _identity_from(self, parsed: ParsedCommand) -> str | None:
+        identity = parsed.flags.get("identity")
+        return identity if isinstance(identity, str) else None
+
+    def suggest_next_steps(self, context: str) -> None:
+        suggestions = {
+            "start": "/status base  |  /doctor  |  /workspace list",
+            "status_clean": "/doctor  |  /restore base --dry-run",
+            "status_drift": "/restore base --dry-run  |  /restore base",
+            "restore": "/status base  |  /doctor",
+            "doctor": "/status base  |  /workspace list",
+            "no_workspace": "/workspace list  |  /workspace add .",
+            "unknown": "/help  |  /status base  |  /doctor",
+            "workspace": "/status base  |  /doctor",
+            "secret": "Set REVIVE_PUBKEY for imports  |  /status base",
+        }
+        self.query_one("#suggestion_bar", Static).update(f"Next: {suggestions.get(context, suggestions['start'])}")
 
     @on(OptionList.OptionSelected, "#workspace_actions")
     def handle_workspace_action(self, event: OptionList.OptionSelected) -> None:
@@ -241,11 +441,11 @@ class ReviveApp(App):
 
         action_id = event.option.id
         if action_id == "status":
-            self.run_status()
+            self.run_status("base")
         elif action_id == "restore":
-            self.run_restore()
+            self.run_restore("base")
         elif action_id == "doctor":
-            self.run_doctor()
+            self.run_doctor("base")
 
     @on(OptionList.OptionSelected, "#asset_actions")
     async def handle_asset_action(self, event: OptionList.OptionSelected) -> None:
@@ -272,63 +472,105 @@ class ReviveApp(App):
                 self.update_header()
                 self.notify(f"Switched to workspace: {ws_name}")
                 self.log_status(f"Agent context switched to: [bold]{ws_name}[/]")
+                self.suggest_next_steps("workspace")
                 break
 
     @on(Button.Pressed, "#register_ws")
     def handle_register_ws(self) -> None:
-        ws = WorkspaceService.register_workspace(os.getcwd())
-        self.workspace = ws
-        self.update_header()
-        self.refresh_workspace_list()
-        self.notify(f"Registered: {ws.name}")
-        self.log_status(f"Agent registered new workspace at: {os.getcwd()}")
+        self.run_workspace_add(os.getcwd())
 
     @work
-    async def run_status(self) -> None:
-        self.log_status("[bold blue]Agent identifying system drift...[/]")
+    async def run_status(self, profile: str = "base", identity: str | None = None) -> None:
+        self.log_status(f"[bold blue]agent[/] Analyzing drift for profile [bold]{profile}[/]...")
         try:
-            report = StatusService.get_status(self.workspace.path, "base")
-            self.log_status(f"Drift Analysis for 'base': [bold]{len(report['assets'])}[/] assets checked.")
+            report = StatusService.get_status(self.workspace.path, profile, identity)
+            self.log_status(f"Checked [bold]{len(report['assets'])}[/] assets. Drift: [bold]{report['drifted']}[/]")
             for aid, info in report["assets"].items():
                 status_style = "green" if info['status'] == "in_sync" else "red"
                 self.log_status(f" - {aid}: [{status_style}]{info['status']}[/]")
+            self.suggest_next_steps("status_drift" if report["drifted"] else "status_clean")
         except Exception as e:
-            self.log_status(f"[bold red]Analysis failed:[/] {e}")
+            self.log_status(f"[bold red]agent[/] Analysis failed: {e}")
+            self.suggest_next_steps("doctor")
 
     @work
-    async def run_restore(self) -> None:
-        self.log_status("[bold green]Agent initiating environment restoration...[/]")
+    async def run_restore(
+        self, profile: str = "base", identity: str | None = None, dry_run: bool = False
+    ) -> None:
+        mode = "planning" if dry_run else "applying"
+        self.log_status(f"[bold green]agent[/] {mode.title()} restore for profile [bold]{profile}[/]...")
         try:
             RestoreService.restore(
                 repo_dir=self.workspace.path,
-                profile_name="base",
-                dry_run=False,
-                interactive=False
+                profile_name=profile,
+                identity_path=identity,
+                dry_run=dry_run,
+                interactive=False,
             )
-            self.log_status("[bold green]System successfully restored to manifest state![/]")
+            if dry_run:
+                self.log_status("[bold green]agent[/] Dry-run completed. No files were changed.")
+            else:
+                self.log_status("[bold green]agent[/] System restored to manifest state.")
+            self.suggest_next_steps("restore")
         except Exception as e:
-            self.log_status(f"[bold red]Restoration failed:[/] {e}")
+            self.log_status(f"[bold red]agent[/] Restoration failed: {e}")
+            self.suggest_next_steps("doctor")
 
     @work
-    async def run_doctor(self) -> None:
-        self.log_status("[bold cyan]Agent performing system diagnostics...[/]")
+    async def run_doctor(self, profile: str | None = None) -> None:
+        self.log_status("[bold cyan]agent[/] Running system diagnostics...")
         try:
-            report = DoctorService.check_health(self.workspace.path)
+            report = DoctorService.check_health(self.workspace.path if self.workspace else os.getcwd(), profile)
             health_color = "green" if report['healthy'] else "red"
             self.log_status(f"System Health: [{health_color}]{'HEALTHY' if report['healthy'] else 'ISSUES FOUND'}[/]")
             for issue in report["issues"]:
                 self.log_status(f" [yellow]![/] {issue['message']}")
+            self.suggest_next_steps("doctor")
         except Exception as e:
-            self.log_status(f"[bold red]Doctor diagnostic failed:[/] {e}")
+            self.log_status(f"[bold red]agent[/] Doctor diagnostic failed: {e}")
+            self.suggest_next_steps("unknown")
 
     def run_keygen(self) -> None:
         try:
-            self.log_status("[bold magenta]Agent generating new cryptographic identity...[/]")
+            self.log_status("[bold magenta]agent[/] Generating new cryptographic identity...")
             pub, priv = AgeEncryptor.generate_keypair()
             self.log_status(f"Generated Keypair:\nPublic: [yellow]{pub}[/]\nPrivate: [cyan]{priv}[/]")
             self.notify("Keypair generated. See logs.")
+            self.suggest_next_steps("secret")
         except Exception as e:
             self.notify(f"Keygen failed: {e}", severity="error")
+
+    def run_workspace_list(self) -> None:
+        workspaces = WorkspaceService.list_workspaces()
+        if not workspaces:
+            self.log_status("[yellow]agent[/] No workspaces registered.")
+            self.suggest_next_steps("no_workspace")
+            return
+        self.log_status(f"[bold cyan]agent[/] Registered workspaces ({len(workspaces)}):")
+        for ws in workspaces:
+            current_marker = " [bold green]*[/]" if self.workspace and ws.path == self.workspace.path else ""
+            self.log_status(f" - {ws.name}: [cyan]{ws.path}[/]{current_marker}")
+        self.suggest_next_steps("workspace")
+
+    def run_workspace_add(self, path: str) -> None:
+        ws = WorkspaceService.register_workspace(os.path.abspath(os.path.expanduser(path)))
+        self.workspace = ws
+        self.update_header()
+        self.refresh_workspace_list()
+        self.notify(f"Registered: {ws.name}")
+        self.log_status(f"[bold cyan]agent[/] Workspace registered and selected: [bold]{ws.name}[/] ({ws.path})")
+        self.suggest_next_steps("workspace")
+
+    def run_help(self, prefix: str = "") -> None:
+        commands = suggest_commands(prefix)
+        if not commands:
+            self.log_status(f"[yellow]agent[/] No commands match '{prefix}'.")
+            self.suggest_next_steps("unknown")
+            return
+        self.log_status("[bold cyan]agent[/] Available slash commands:")
+        for command in commands:
+            self.log_status(f" - [bold]{command.path}[/] - {command.description}")
+        self.suggest_next_steps("start")
 
     async def action_import_asset(self, is_secret: bool) -> None:
         path = await self.push_screen_wait(FileSelectorModal(title=f"Select {'Secret' if is_secret else 'Asset'} to Import"))

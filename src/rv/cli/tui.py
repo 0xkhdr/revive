@@ -488,13 +488,13 @@ class ReviveApp(App):
         elif parsed.path == "/asset list":
             self.run_asset_list()
         elif parsed.path == "/asset import":
-            await self.run_asset_import(parsed, is_secret=False)
+            self.run_asset_import(parsed, is_secret=False)
         elif parsed.path == "/asset import-secret":
-            await self.run_asset_import(parsed, is_secret=True)
+            self.run_asset_import(parsed, is_secret=True)
         elif parsed.path == "/asset export":
-            await self.run_asset_export(parsed)
+            self.run_asset_export(parsed)
         elif parsed.path == "/secret keygen":
-            await self.run_keygen()
+            self.run_keygen()
         elif parsed.path == "/workspace list":
             self.run_workspace_list()
         elif parsed.path == "/workspace add":

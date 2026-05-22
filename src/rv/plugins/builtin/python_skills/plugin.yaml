@@ -6,5 +6,6 @@ permissions:
   shell: false
   allowed_paths:
     - "~/.config/rv/skills"
+    - "~/.config/rv"
 hooks:
   - post-restore

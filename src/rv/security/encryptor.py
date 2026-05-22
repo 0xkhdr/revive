@@ -146,6 +146,7 @@ class AgeEncryptor:
         # For CLI, we might need a temporary file if identity was a string but CLI needs a file
         if not os.path.exists(identity):
             import tempfile
+
             with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
                 tf.write(resolved_identity)
                 temp_identity_path = tf.name

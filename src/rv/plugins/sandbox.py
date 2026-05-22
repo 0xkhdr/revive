@@ -41,9 +41,7 @@ class SandboxRunner:
 
         # Build execution command using sys.executable to run module sandbox_wrapper
         if os.environ.get("REVIVE_COV_SUBPROCESS") == "1":
-            rcfile_path = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "..", "..", ".coveragerc")
-            )
+            rcfile_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".coveragerc"))
             cmd = [
                 sys.executable,
                 "-m",

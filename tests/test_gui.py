@@ -29,7 +29,7 @@ def gui_server(tmp_path_factory):
     # Scaffold a temporary config directory for workspaces to isolate tests
     temp_config_dir = tmp_path_factory.mktemp("rv_config")
     temp_workspace_dir = tmp_path_factory.mktemp("my_workspace")
-    
+
     # Pre-register our test workspace
     manifest_content = """
 version: 2
@@ -48,7 +48,7 @@ profiles:
 
     original_config_path = WorkspaceService.CONFIG_PATH
     WorkspaceService.CONFIG_PATH = os.path.join(temp_config_dir, "workspaces.yaml")
-    
+
     # Register workspace and change working directory to it
     WorkspaceService.register_workspace(str(temp_workspace_dir), "test_ws")
     original_cwd = os.getcwd()
@@ -56,20 +56,18 @@ profiles:
 
     port = get_free_port()
     host = "127.0.0.1"
-    
+
     # Launch server in background thread
     server_thread = threading.Thread(
-        target=start_gui_server,
-        kwargs={"host": host, "port": port, "open_browser": False},
-        daemon=True
+        target=start_gui_server, kwargs={"host": host, "port": port, "open_browser": False}, daemon=True
     )
     server_thread.start()
-    
+
     # Allow port binding and server start-up latency
     time.sleep(0.4)
-    
+
     yield f"http://{host}:{port}"
-    
+
     # Tear down state
     os.chdir(original_cwd)
     WorkspaceService.CONFIG_PATH = original_config_path
@@ -120,15 +118,14 @@ def test_api_manifest_get(gui_server):
 def test_api_manifest_post_validation(gui_server):
     """Ensure posting invalid manifest data fails Pydantic schema validation."""
     url = f"{gui_server}/api/manifest"
-    
+
     # profiles must be a dictionary, so passing a list is invalid schema
     bad_payload = json.dumps({"profiles": []}).encode("utf-8")
     req = urllib.request.Request(url, data=bad_payload, headers={"Content-Type": "application/json"})
-    
+
     with pytest.raises(urllib.error.HTTPError) as exc_info:
         urllib.request.urlopen(req)
     assert exc_info.value.code == 400
-
 
 
 def test_api_doctor_health(gui_server):
@@ -136,7 +133,7 @@ def test_api_doctor_health(gui_server):
     url = f"{gui_server}/api/action/doctor"
     payload = json.dumps({"profile": "base"}).encode("utf-8")
     req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-    
+
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200
         data = json.loads(resp.read().decode("utf-8"))

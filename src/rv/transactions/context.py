@@ -7,6 +7,7 @@ Includes robust rollback capabilities to restore system state on failure.
 import hashlib
 import os
 import shutil
+import tempfile
 import time
 import uuid
 from typing import Any
@@ -120,6 +121,9 @@ class TransactionContext:
                         with open(backup_path, "w") as f:
                             f.write(f"SYMLINK:{link_target}")
                         src_backup = backup_path
+                    elif os.path.isdir(target):
+                        shutil.copytree(target, backup_path, symlinks=True)
+                        src_backup = backup_path
                     elif os.path.isfile(target):
                         shutil.copy2(target, backup_path)
                         src_backup = backup_path
@@ -160,12 +164,32 @@ class TransactionContext:
                 if op_type == "copy":
                     # Perform atomic write
                     if isinstance(source_data, str) and os.path.exists(source_data):
-                        with open(source_data, "rb") as f:
-                            content = f.read()
+                        if os.path.isdir(source_data):
+                            # Atomic directory copy using temporary sibling directory
+                            if os.path.exists(target) or os.path.islink(target):
+                                if os.path.isdir(target):
+                                    shutil.rmtree(target)
+                                else:
+                                    os.unlink(target)
+
+                            parent_dir = os.path.dirname(target)
+                            os.makedirs(parent_dir, exist_ok=True)
+                            temp_dir = tempfile.mkdtemp(dir=parent_dir, prefix=".rv_atomic_dir_tmp_")
+                            try:
+                                shutil.copytree(source_data, temp_dir, symlinks=True, dirs_exist_ok=True)
+                                os.rename(temp_dir, target)
+                            except Exception as e:
+                                if os.path.exists(temp_dir):
+                                    shutil.rmtree(temp_dir)
+                                raise RuntimeError(f"Atomic directory copy failed: {e}") from e
+                        else:
+                            # Standard file copy
+                            with open(source_data, "rb") as f:
+                                content = f.read()
+                            AtomicWrite.write(target, content)
                     else:
                         content = source_data or b""
-
-                    AtomicWrite.write(target, content)
+                        AtomicWrite.write(target, content)
 
                 elif op_type == "symlink":
                     # Remove existing file/symlink if present
@@ -295,6 +319,8 @@ class TransactionContext:
 
                         if is_symlink:
                             os.symlink(link_target, target)
+                        elif os.path.isdir(src_backup):
+                            shutil.copytree(src_backup, target, symlinks=True, dirs_exist_ok=True)
                         else:
                             shutil.copy2(src_backup, target)
 

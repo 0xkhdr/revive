@@ -3,14 +3,15 @@
 Uses only Python standard library to serve static assets and REST API endpoints.
 """
 
-import os
-import sys
+import http.server
 import json
 import logging
+import os
 import shutil
+import sys
 import urllib.parse
 import webbrowser
-import http.server
+from datetime import datetime
 from io import StringIO
 from socketserver import TCPServer
 from typing import Any
@@ -73,7 +74,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
         if path.startswith("/api/"):
             content_length = int(self.headers.get("Content-Length", 0))
             post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
-            
+
             try:
                 payload = json.loads(post_data) if post_data else {}
             except ValueError:
@@ -137,7 +138,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             # Get current active workspace details
             active_ws = WorkspaceService.get_current_workspace()
             workspaces = WorkspaceService.list_workspaces()
-            
+
             # Map workspaces to JSON serializable structures
             ws_list = [
                 {
@@ -147,7 +148,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 }
                 for ws in workspaces
             ]
-            
+
             res = {
                 "active_path": os.getcwd(),
                 "active_workspace": {
@@ -163,7 +164,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
         elif path == "/api/manifest":
             active_ws = WorkspaceService.get_current_workspace()
             if not active_ws:
-                self._send_response_json({"error": "No active workspace. Please register or select a workspace first."}, 400)
+                self._send_response_json(
+                    {"error": "No active workspace. Please register or select a workspace first."}, 400
+                )
                 return
 
             manifest_path = os.path.join(active_ws.path, "manifest.yaml")
@@ -191,7 +194,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             if not folder_path:
                 self._send_response_json({"error": "Workspace path is required"}, 400)
                 return
-            
+
             abs_path = os.path.abspath(os.path.expanduser(folder_path))
             if not os.path.isdir(abs_path):
                 self._send_response_json({"error": f"Path is not a valid directory: {folder_path}"}, 400)
@@ -201,10 +204,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 ws = WorkspaceService.register_workspace(abs_path, name)
                 # Switch current context directory to this workspace
                 os.chdir(ws.path)
-                self._send_response_json({
-                    "success": True,
-                    "workspace": {"name": ws.name, "path": ws.path}
-                })
+                self._send_response_json({"success": True, "workspace": {"name": ws.name, "path": ws.path}})
             except Exception as e:
                 self._send_response_json({"error": f"Failed to register workspace: {e}"}, 500)
             return
@@ -224,12 +224,15 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             try:
                 # Update current directory to target path
                 os.chdir(target_ws.path)
-                target_ws.last_accessed = os.path.getmtime(target_ws.path) if os.path.exists(target_ws.path) else target_ws.last_accessed
-                WorkspaceService.register_workspace(target_ws.path, target_ws.name) # Updates last_accessed
-                self._send_response_json({
-                    "success": True,
-                    "workspace": {"name": target_ws.name, "path": target_ws.path}
-                })
+                target_ws.last_accessed = (
+                    datetime.fromtimestamp(os.path.getmtime(target_ws.path))
+                    if os.path.exists(target_ws.path)
+                    else target_ws.last_accessed
+                )
+                WorkspaceService.register_workspace(target_ws.path, target_ws.name)  # Updates last_accessed
+                self._send_response_json(
+                    {"success": True, "workspace": {"name": target_ws.name, "path": target_ws.path}}
+                )
             except Exception as e:
                 self._send_response_json({"error": f"Failed to switch to workspace: {e}"}, 500)
             return
@@ -245,11 +248,12 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             try:
                 # Validate using Pydantic models first
                 validated = Manifest.model_validate(payload)
-                
+
                 # Write to manifest.yaml
                 with open(manifest_path, "w", encoding="utf-8") as f:
                     data = validated.model_dump(mode="json", exclude_none=True)
                     import yaml
+
                     yaml.dump(data, f, sort_keys=False)
 
                 self._send_response_json({"success": True})
@@ -295,11 +299,12 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                     return
 
                 if is_secret:
-                    assert recipient is not None
+                    if recipient is None:
+                        raise ValueError("recipient is required for secrets")
                     dest_rel = os.path.join("secrets", f"{item_id}.age")
                     dest_abs = os.path.join(active_ws.path, dest_rel)
                     os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
-                    
+
                     AgeEncryptor.encrypt_file(abs_src, dest_abs, [recipient])
                     manifest.secrets.append(
                         Secret(
@@ -317,7 +322,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                     dest_rel = os.path.join("assets", item_id)
                     dest_abs = os.path.join(active_ws.path, dest_rel)
                     os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
-                    
+
                     shutil.copy2(abs_src, dest_abs)
                     manifest.assets.append(
                         Asset(
@@ -338,6 +343,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 with open(manifest_path, "w", encoding="utf-8") as f:
                     data = manifest.model_dump(mode="json", exclude_none=True)
                     import yaml
+
                     yaml.dump(data, f, sort_keys=False)
 
                 self._send_response_json({"success": True, "imported_id": item_id})
@@ -369,7 +375,6 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._send_response_json({"diff_lines": lines})
             except Exception as e:
                 self._send_response_json({"error": f"Failed to compute diff: {e}"}, 500)
-
 
         elif path == "/api/action/doctor":
             profile = payload.get("profile")
@@ -412,19 +417,24 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 root_logger.setLevel(original_level)
 
             logs = log_stream.getvalue()
-            
+
             if error:
-                self._send_response_json({
-                    "success": False,
-                    "error": error,
-                    "logs": logs,
-                }, 500)
+                self._send_response_json(
+                    {
+                        "success": False,
+                        "error": error,
+                        "logs": logs,
+                    },
+                    500,
+                )
             else:
-                self._send_response_json({
-                    "success": True,
-                    "tx_id": tx_id,
-                    "logs": logs,
-                })
+                self._send_response_json(
+                    {
+                        "success": True,
+                        "tx_id": tx_id,
+                        "logs": logs,
+                    }
+                )
 
         else:
             self.send_error(404, "Not Found")
@@ -433,10 +443,10 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
 def start_gui_server(host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True) -> None:
     """Instantiate and start the TCPServer serving the GUI."""
     server_address = (host, port)
-    
+
     # Enable address reuse to prevent bind issues on fast restarts
     TCPServer.allow_reuse_address = True
-    
+
     try:
         httpd = TCPServer(server_address, WebGUIRequestHandler)
     except OSError as e:
@@ -447,10 +457,10 @@ def start_gui_server(host: str = "127.0.0.1", port: int = 8080, open_browser: bo
         raise e
 
     url = f"http://{host}:{port}"
-    print(f"\n=======================================================")
-    print(f"  🌌 Revive Cosmic Web GUI Dashboard")
+    print("\n=======================================================")
+    print("  🌌 Revive Cosmic Web GUI Dashboard")
     print(f"  Serving at: {url}")
-    print(f"=======================================================\n")
+    print("=======================================================\n")
 
     if open_browser:
         try:

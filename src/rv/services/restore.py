@@ -379,19 +379,30 @@ class RestoreService:
                 if asset.id in skipped_assets:
                     continue
                 abs_source = os.path.join(repo_dir, asset.source)
-                abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
 
-                # Checksum of source file (for encrypted copy/templates, we take the source blob)
-                source_sha = cls.calculate_sha256(abs_source)
+                targets = [asset.target] if isinstance(asset.target, str) else asset.target
+                resolved_targets = []
+                permissions_list = []
+                mtime_list = []
 
-                if os.path.exists(abs_target):
-                    mtime = os.stat(abs_target).st_mtime
-                    permissions = asset.permissions or oct(os.stat(abs_target).st_mode & 0o7777)
-                    if not permissions.startswith("0"):
-                        permissions = "0" + permissions[2:] if permissions.startswith("o") else permissions
+                for t in targets:
+                    abs_target = PathHelper.canonicalize(Interpolator.interpolate(t))
+                    if os.path.exists(abs_target):
+                        resolved_targets.append(abs_target)
+                        mtime = os.stat(abs_target).st_mtime
+                        perms = asset.permissions or oct(os.stat(abs_target).st_mode & 0o7777)
+                        if not perms.startswith("0"):
+                            perms = "0" + perms[2:] if perms.startswith("o") else perms
+                        permissions_list.append(perms)
+                        mtime_list.append(mtime)
 
+                if resolved_targets:
+                    source_sha = cls.calculate_sha256(abs_source)
                     lockfile.entries[asset.id] = LockfileEntry(
-                        sha256_of_source=source_sha, target_path=abs_target, permissions=permissions, mtime=mtime
+                        sha256_of_source=source_sha,
+                        target_path=resolved_targets[0] if isinstance(asset.target, str) else resolved_targets,
+                        permissions=permissions_list[0] if isinstance(asset.target, str) else permissions_list,
+                        mtime=mtime_list[0] if isinstance(asset.target, str) else mtime_list,
                     )
 
             # Update entries for resolved secrets
@@ -399,17 +410,28 @@ class RestoreService:
                 if secret.id in skipped_assets:
                     continue
                 abs_source = os.path.join(repo_dir, secret.source)
-                abs_target = PathHelper.canonicalize(Interpolator.interpolate(secret.target))
 
-                # Checksum of source encrypted blob in repo
-                source_sha = cls.calculate_sha256(abs_source)
+                targets = [secret.target] if isinstance(secret.target, str) else secret.target
+                resolved_targets = []
+                permissions_list = []
+                mtime_list = []
 
-                if os.path.exists(abs_target):
-                    mtime = os.stat(abs_target).st_mtime
-                    permissions = secret.permissions or "0600"
+                for t in targets:
+                    abs_target = PathHelper.canonicalize(Interpolator.interpolate(t))
+                    if os.path.exists(abs_target):
+                        resolved_targets.append(abs_target)
+                        mtime = os.stat(abs_target).st_mtime
+                        perms = secret.permissions or "0600"
+                        permissions_list.append(perms)
+                        mtime_list.append(mtime)
 
+                if resolved_targets:
+                    source_sha = cls.calculate_sha256(abs_source)
                     lockfile.entries[secret.id] = LockfileEntry(
-                        sha256_of_source=source_sha, target_path=abs_target, permissions=permissions, mtime=mtime
+                        sha256_of_source=source_sha,
+                        target_path=resolved_targets[0] if isinstance(secret.target, str) else resolved_targets,
+                        permissions=permissions_list[0] if isinstance(secret.target, str) else permissions_list,
+                        mtime=mtime_list[0] if isinstance(secret.target, str) else mtime_list,
                     )
 
             # Write lockfile atomically

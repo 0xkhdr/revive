@@ -66,6 +66,32 @@ profiles:
       - my_zshrc
 ```
 
+#### Directory Copying & Target Arrays
+Revive supports copying arrays of target files and directories recursively from a single repository source directory under one asset ID. Target paths can accept either a single string or a list of strings:
+
+```yaml
+# ~/dotfiles/manifest.yaml
+version: 2
+
+assets:
+  - id: card-express-laravel-api
+    type: copy
+    source: assets/card-express-laravel-api
+    target:
+      - /var/www/html/rai/up/card-express-laravel-api/compose
+      - /var/www/html/rai/up/card-express-laravel-api/docker-compose.yml
+    permissions: "0644"
+    conflict_strategy: overwrite
+
+profiles:
+  base:
+    assets:
+      - card-express-laravel-api
+```
+
+> [!TIP]
+> **Sub-item Automated Resolution:** When `source` is a directory and `target` is a list, Revive automatically matches each target's basename (e.g., `compose`, `docker-compose.yml`) with the matching file or subdirectory within your source directory and copies it recursively. If no matching child is found, or if the source is a file, the entire source is copied to each target path.
+
 #### Secrets (Cryptographic Age Encryption)
 To safely back up sensitive files (e.g. AWS credentials, SSH keys), first generate a secure age keypair:
 

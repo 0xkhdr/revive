@@ -24,7 +24,7 @@ class WorkspaceService:
         """Loads the workspace configuration from disk."""
         if not os.path.exists(cls.CONFIG_PATH):
             return WorkspaceConfig(default_workspace=None)
-        
+
         try:
             with open(cls.CONFIG_PATH, encoding="utf-8") as f:
                 data = yaml.safe_load(f)
@@ -47,16 +47,16 @@ class WorkspaceService:
         abs_path = os.path.abspath(path)
         if not name:
             name = os.path.basename(abs_path)
-        
+
         config = cls.load_config()
-        
+
         # Check if already exists
         for ws in config.workspaces:
             if ws.path == abs_path:
                 ws.last_accessed = datetime.now()
                 cls.save_config(config)
                 return ws
-        
+
         # Add new
         new_ws = Workspace(name=name, path=abs_path, last_accessed=datetime.now())
         config.workspaces.append(new_ws)
@@ -74,10 +74,10 @@ class WorkspaceService:
         """Detects if the current directory or its parents is a registered workspace."""
         current_path = os.getcwd()
         config = cls.load_config()
-        
+
         # Sort workspaces by path length descending to match the most specific one first
         sorted_workspaces = sorted(config.workspaces, key=lambda x: len(x.path), reverse=True)
-        
+
         for ws in sorted_workspaces:
             if current_path.startswith(ws.path):
                 return ws
@@ -89,7 +89,7 @@ class WorkspaceService:
         config = cls.load_config()
         initial_count = len(config.workspaces)
         config.workspaces = [ws for ws in config.workspaces if ws.name != name]
-        
+
         if len(config.workspaces) < initial_count:
             cls.save_config(config)
             return True

@@ -11,6 +11,7 @@ from rv.security.encryptor import AgeEncryptor
 from rv.security.tempfile import SecureTempFile
 from rv.security.zerobuffer import ZeroBuffer
 from rv.transactions.context import TransactionContext
+from rv.utils.interpolate import Interpolator
 from rv.utils.path import PathHelper
 
 
@@ -51,51 +52,71 @@ class AssetHandler:
         """
         # 1. Resolve paths
         abs_source = os.path.join(repo_dir, asset.source)
-        abs_target = PathHelper.canonicalize(asset.target)
 
         # 2. Prevent path traversal outside the repo for the source path
         # (Already validated by Pydantic, but double-check to be bulletproof)
         if not os.path.exists(abs_source) and not asset.encrypted:
             raise FileNotFoundError(f"Source file not found: {abs_source}")
 
-        # 3. Check for conflicts
-        if os.path.exists(abs_target) or os.path.islink(abs_target):
-            # Check strategy
-            strategy = getattr(asset, "conflict_strategy", ConflictStrategy.PROMPT)
+        # Support target list loop
+        targets = [asset.target] if isinstance(asset.target, str) else asset.target
+        planned_any = False
 
-            if strategy == ConflictStrategy.SKIP:
-                # Skip asset
-                return False
-            elif strategy == ConflictStrategy.ABORT:
-                raise AssetHandlerError(f"Target already exists and conflict strategy is set to 'abort': {abs_target}")
-            elif strategy == ConflictStrategy.PROMPT:
-                is_terminal_interactive = cls.is_interactive() if interactive is None else interactive
-                if is_terminal_interactive:
-                    # Prompt the user
-                    confirm = typer.confirm(f"Target '{abs_target}' already exists. Overwrite?", default=False)
-                    if not confirm:
-                        return False
-                else:
-                    # Non-interactive fallback: abort to prevent silent data loss
+        for target_expr in targets:
+            # Interpolate and canonicalize target
+            interpolated_target = Interpolator.interpolate(target_expr)
+            abs_target = PathHelper.canonicalize(interpolated_target)
+
+            # Match source sub-item if directory
+            target_source = abs_source
+            if os.path.isdir(abs_source):
+                basename = os.path.basename(abs_target)
+                potential_source = os.path.join(abs_source, basename)
+                if os.path.exists(potential_source):
+                    target_source = potential_source
+
+            # 3. Check for conflicts
+            if os.path.exists(abs_target) or os.path.islink(abs_target):
+                # Check strategy
+                strategy = getattr(asset, "conflict_strategy", ConflictStrategy.PROMPT)
+
+                if strategy == ConflictStrategy.SKIP:
+                    # Skip target
+                    continue
+                elif strategy == ConflictStrategy.ABORT:
                     raise AssetHandlerError(
-                        f"Target already exists and conflict strategy is 'prompt' "
-                        f"but running in non-interactive environment: {abs_target}"
+                        f"Target already exists and conflict strategy is set to 'abort': {abs_target}"
                     )
-            # OVERWRITE continues below...
+                elif strategy == ConflictStrategy.PROMPT:
+                    is_terminal_interactive = cls.is_interactive() if interactive is None else interactive
+                    if is_terminal_interactive:
+                        # Prompt the user
+                        confirm = typer.confirm(f"Target '{abs_target}' already exists. Overwrite?", default=False)
+                        if not confirm:
+                            continue
+                    else:
+                        # Non-interactive fallback: abort to prevent silent data loss
+                        raise AssetHandlerError(
+                            f"Target already exists and conflict strategy is 'prompt' "
+                            f"but running in non-interactive environment: {abs_target}"
+                        )
+                # OVERWRITE continues below...
 
-        # 4. Handle based on asset/secret type
-        if asset.type == AssetType.SYMLINK:
-            cls._handle_symlink(asset, abs_source, abs_target, tx_context)
-        elif asset.type == AssetType.COPY:
-            cls._handle_copy(asset, abs_source, abs_target, tx_context, identity_path)
-        elif asset.type == AssetType.TEMPLATE:
-            cls._handle_template(asset, abs_source, abs_target, tx_context)
-        elif asset.type == AssetType.SECRET:
-            cls._handle_secret(asset, abs_source, abs_target, tx_context, identity_path)
-        else:
-            raise ValueError(f"Unsupported asset type: {asset.type}")
+            # 4. Handle based on asset/secret type
+            if asset.type == AssetType.SYMLINK:
+                cls._handle_symlink(asset, target_source, abs_target, tx_context)
+            elif asset.type == AssetType.COPY:
+                cls._handle_copy(asset, target_source, abs_target, tx_context, identity_path)
+            elif asset.type == AssetType.TEMPLATE:
+                cls._handle_template(asset, target_source, abs_target, tx_context)
+            elif asset.type == AssetType.SECRET:
+                cls._handle_secret(asset, target_source, abs_target, tx_context, identity_path)
+            else:
+                raise ValueError(f"Unsupported asset type: {asset.type}")
 
-        return True
+            planned_any = True
+
+        return planned_any
 
     @classmethod
     def _handle_symlink(

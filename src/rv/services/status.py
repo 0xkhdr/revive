@@ -69,112 +69,158 @@ class StatusService:
         cls, asset: Asset | Secret, repo_dir: str, lockfile: Lockfile, identity_path: str | None = None
     ) -> dict[str, Any]:
         """Evaluates a single asset or secret for drift against current filesystem."""
-        try:
-            abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
-        except Exception as e:
-            return {
-                "type": asset.type,
-                "target": asset.target,
-                "status": "error",
-                "details": f"Failed path interpolation: {e}",
-            }
-
-        abs_source = os.path.join(repo_dir, asset.source)
-
-        # Look up lockfile entry
+        targets = [asset.target] if isinstance(asset.target, str) else asset.target
         lock_entry = lockfile.entries.get(asset.id)
 
-        # 1. Check if target exists
-        if not os.path.exists(abs_target) and not os.path.islink(abs_target):
-            return {
-                "type": asset.type,
-                "target": abs_target,
-                "status": "missing",
-                "details": "Target does not exist on filesystem",
-            }
+        for target_expr in targets:
+            try:
+                abs_target = PathHelper.canonicalize(Interpolator.interpolate(target_expr))
+            except Exception as e:
+                return {
+                    "type": asset.type,
+                    "target": target_expr,
+                    "status": "error",
+                    "details": f"Failed path interpolation: {e}",
+                }
 
-        # 2. Check type mismatch (e.g. symlink wanted, but standard file exists)
-        if asset.type == AssetType.SYMLINK:
-            if not os.path.islink(abs_target):
+            # Match source sub-item if directory
+            abs_source = os.path.join(repo_dir, asset.source)
+            if os.path.isdir(abs_source):
+                basename = os.path.basename(abs_target)
+                potential_source = os.path.join(abs_source, basename)
+                if os.path.exists(potential_source):
+                    abs_source = potential_source
+
+            # Extract specific lock entry fields for this target
+            lock_entry_for_target: Any = None
+            if lock_entry:
+                if isinstance(lock_entry.target_path, list):
+                    try:
+                        t_idx = lock_entry.target_path.index(abs_target)
+                        perms = (
+                            lock_entry.permissions[t_idx]
+                            if isinstance(lock_entry.permissions, list)
+                            else lock_entry.permissions
+                        )
+                        mt = lock_entry.mtime[t_idx] if isinstance(lock_entry.mtime, list) else lock_entry.mtime
+
+                        class TargetLockEntry:
+                            def __init__(self, target_path: str, permissions: str, mtime: float):
+                                self.target_path = target_path
+                                self.permissions = permissions
+                                self.mtime = mtime
+
+                        lock_entry_for_target = TargetLockEntry(abs_target, perms, mt)
+                    except (ValueError, IndexError):
+                        pass
+                else:
+                    lock_entry_for_target = lock_entry
+
+            # 1. Check if target exists
+            if not os.path.exists(abs_target) and not os.path.islink(abs_target):
                 return {
                     "type": asset.type,
                     "target": abs_target,
-                    "status": "type_mismatch",
-                    "details": "Expected a symlink, but found a regular file/directory",
+                    "status": "missing",
+                    "details": f"Target {abs_target} does not exist on filesystem",
                 }
 
-            # Check if symlink target points to correct source
-            try:
-                link_target = os.readlink(abs_target)
-                if os.path.abspath(link_target) != os.path.abspath(abs_source):
+            # 2. Check type mismatch (e.g. symlink wanted, but standard file exists)
+            if asset.type == AssetType.SYMLINK:
+                if not os.path.islink(abs_target):
+                    return {
+                        "type": asset.type,
+                        "target": abs_target,
+                        "status": "type_mismatch",
+                        "details": "Expected a symlink, but found a regular file/directory",
+                    }
+
+                # Check if symlink target points to correct source
+                try:
+                    link_target = os.readlink(abs_target)
+                    if os.path.abspath(link_target) != os.path.abspath(abs_source):
+                        return {
+                            "type": asset.type,
+                            "target": abs_target,
+                            "status": "modified",
+                            "details": f"Symlink points to '{link_target}', expected '{abs_source}'",
+                        }
+                except Exception as e:
+                    return {
+                        "type": asset.type,
+                        "target": abs_target,
+                        "status": "error",
+                        "details": f"Failed to read symlink: {e}",
+                    }
+            else:
+                # Expected a standard file/directory
+                if os.path.islink(abs_target):
+                    return {
+                        "type": asset.type,
+                        "target": abs_target,
+                        "status": "type_mismatch",
+                        "details": "Expected a file, but found a symlink",
+                    }
+
+                # Check permissions
+                stat_mode = os.stat(abs_target).st_mode & 0o7777
+                expected_perms = asset.permissions
+                if not expected_perms:
+                    expected_perms = "0600" if asset.type == AssetType.SECRET else "0644"
+
+                if oct(stat_mode) != oct(int(expected_perms, 8)):
+                    return {
+                        "type": asset.type,
+                        "target": abs_target,
+                        "status": "permissions_drifted",
+                        "details": f"Permissions mismatch: actual {oct(stat_mode)}, expected {expected_perms}",
+                    }
+
+                # Check content drift
+                if asset.type == AssetType.COPY:
+                    if asset.encrypted:
+                        # Encrypted copy
+                        content_changed = cls._check_encrypted_drift(
+                            abs_source, abs_target, lock_entry_for_target, identity_path
+                        )
+                    else:
+                        if os.path.isdir(abs_source) or os.path.isdir(abs_target):
+                            content_changed = False
+                            if lock_entry_for_target:
+                                try:
+                                    target_mtime = os.stat(abs_target).st_mtime
+                                    content_changed = bool(abs(target_mtime - lock_entry_for_target.mtime) > 0.001)
+                                except Exception:
+                                    content_changed = True
+                        else:
+                            # Regular copy
+                            content_changed = RestoreService.calculate_sha256(
+                                abs_source
+                            ) != RestoreService.calculate_sha256(abs_target)
+                elif asset.type == AssetType.TEMPLATE:
+                    # Compare rendered template
+                    if not isinstance(asset, Asset):
+                        raise TypeError("Expected an Asset instance for template type")
+                    content_changed = cls._check_template_drift(asset, abs_source, abs_target)
+                elif asset.type == AssetType.SECRET:
+                    content_changed = cls._check_encrypted_drift(
+                        abs_source, abs_target, lock_entry_for_target, identity_path
+                    )
+                else:
+                    content_changed = False
+
+                if content_changed:
                     return {
                         "type": asset.type,
                         "target": abs_target,
                         "status": "modified",
-                        "details": f"Symlink points to '{link_target}', expected '{abs_source}'",
+                        "details": "File content has drifted from repository source",
                     }
-            except Exception as e:
-                return {
-                    "type": asset.type,
-                    "target": abs_target,
-                    "status": "error",
-                    "details": f"Failed to read symlink: {e}",
-                }
-        else:
-            # Expected a standard file
-            if os.path.islink(abs_target):
-                return {
-                    "type": asset.type,
-                    "target": abs_target,
-                    "status": "type_mismatch",
-                    "details": "Expected a file, but found a symlink",
-                }
 
-            # Check permissions
-            stat_mode = os.stat(abs_target).st_mode & 0o7777
-            expected_perms = asset.permissions
-            if not expected_perms:
-                expected_perms = "0600" if asset.type == AssetType.SECRET else "0644"
-
-            if oct(stat_mode) != oct(int(expected_perms, 8)):
-                return {
-                    "type": asset.type,
-                    "target": abs_target,
-                    "status": "permissions_drifted",
-                    "details": f"Permissions mismatch: actual {oct(stat_mode)}, expected {expected_perms}",
-                }
-
-            # Check content drift
-            if asset.type == AssetType.COPY:
-                if asset.encrypted:
-                    # Encrypted copy
-                    content_changed = cls._check_encrypted_drift(abs_source, abs_target, lock_entry, identity_path)
-                else:
-                    # Regular copy
-                    content_changed = RestoreService.calculate_sha256(abs_source) != RestoreService.calculate_sha256(
-                        abs_target
-                    )
-            elif asset.type == AssetType.TEMPLATE:
-                # Compare rendered template
-                if not isinstance(asset, Asset):
-                    raise TypeError("Expected an Asset instance for template type")
-                content_changed = cls._check_template_drift(asset, abs_source, abs_target)
-            elif asset.type == AssetType.SECRET:
-                content_changed = cls._check_encrypted_drift(abs_source, abs_target, lock_entry, identity_path)
-            else:
-                content_changed = False
-
-            if content_changed:
-                return {
-                    "type": asset.type,
-                    "target": abs_target,
-                    "status": "modified",
-                    "details": "File content has drifted from repository source",
-                }
-
+        # If we checked all targets and none had drift, they are in sync
         return {
             "type": asset.type,
-            "target": abs_target,
+            "target": asset.target,
             "status": "in_sync",
             "details": "Asset is in sync with repository state",
         }
@@ -254,7 +300,8 @@ class StatusService:
             return None
 
         try:
-            abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
+            target_str = asset.target[0] if isinstance(asset.target, list) else asset.target
+            abs_target = PathHelper.canonicalize(Interpolator.interpolate(target_str))
         except Exception:
             return None
 
@@ -353,7 +400,8 @@ class StatusService:
             return None
 
         try:
-            abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
+            target_str = asset.target[0] if isinstance(asset.target, list) else asset.target
+            abs_target = PathHelper.canonicalize(Interpolator.interpolate(target_str))
         except Exception:
             return None
 

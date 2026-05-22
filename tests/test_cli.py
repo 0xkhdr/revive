@@ -172,14 +172,19 @@ def test_cli_diff(temp_repo: str) -> None:
                 mock_diff.assert_called_once_with(temp_repo, "base", "test_zshrc", None)
 
             # 2b. Diffs present (Side-by-side default)
-            with patch("rv.services.status.StatusService.get_contents_for_diff", return_value=("old\nline1", "new\nline1")) as mock_contents:
+            with patch(
+                "rv.services.status.StatusService.get_contents_for_diff", return_value=("old\nline1", "new\nline1")
+            ) as mock_contents:
                 result = runner.invoke(app, ["diff", "-p", "base"])
                 assert result.exit_code == 0
                 assert "Expected" in result.stdout
                 assert "Actual" in result.stdout
 
             # 2c. Diffs present with early-return error placeholder
-            with patch("rv.services.status.StatusService.get_contents_for_diff", return_value=("[Cannot decrypt source: identity file missing]", "")) as mock_contents:
+            with patch(
+                "rv.services.status.StatusService.get_contents_for_diff",
+                return_value=("[Cannot decrypt source: identity file missing]", ""),
+            ) as mock_contents:
                 result = runner.invoke(app, ["diff", "-p", "base"])
                 assert result.exit_code == 0
                 assert "Error rendering diff" in result.stdout

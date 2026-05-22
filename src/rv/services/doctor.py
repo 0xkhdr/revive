@@ -117,24 +117,26 @@ class DoctorService:
                             )
 
                         # Verify path loop checks
-                        try:
-                            abs_target = PathHelper.canonicalize(Interpolator.interpolate(asset.target))
-                            if PathHelper.detect_symlink_loop(abs_target):
+                        targets = [asset.target] if isinstance(asset.target, str) else asset.target
+                        for target in targets:
+                            try:
+                                abs_target = PathHelper.canonicalize(Interpolator.interpolate(target))
+                                if PathHelper.detect_symlink_loop(abs_target):
+                                    issues.append(
+                                        {
+                                            "category": "asset_target",
+                                            "severity": "error",
+                                            "message": f"Target path '{abs_target}' for asset '{asset.id}' forms a cyclic symlink loop",
+                                        }
+                                    )
+                            except Exception as e:
                                 issues.append(
                                     {
                                         "category": "asset_target",
                                         "severity": "error",
-                                        "message": f"Target path '{abs_target}' for asset '{asset.id}' forms a cyclic symlink loop",
+                                        "message": f"Failed path interpolation/verification for asset '{asset.id}': {e}",
                                     }
                                 )
-                        except Exception as e:
-                            issues.append(
-                                {
-                                    "category": "asset_target",
-                                    "severity": "error",
-                                    "message": f"Failed path interpolation/verification for asset '{asset.id}': {e}",
-                                }
-                            )
 
                     # Verify each secret source exists in repo
                     for secret in resolved.secrets.values():

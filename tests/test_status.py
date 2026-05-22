@@ -404,6 +404,7 @@ def test_diff_edge_cases(temp_workspace: str) -> None:
         f.write("repo source text")
 
     original_open = open
+
     def conditional_open(file, *args, **kwargs):
         if file == target_file:
             raise IOError("Read permission denied")

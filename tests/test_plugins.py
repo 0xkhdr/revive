@@ -526,7 +526,12 @@ def test_sandbox_runner_malformed_args(temp_workspace: str) -> None:
     cmd = [sys.executable, "-m", "rv.plugins.sandbox_wrapper", "main.py", "invalid_b64!", "invalid_b64!", "pre-restore"]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 1
-    assert "Malformed parameters" in res.stderr or "Invalid base64-encoded string" in res.stderr or "binascii.Error" in res.stderr or "Incorrect padding" in res.stderr
+    assert (
+        "Malformed parameters" in res.stderr
+        or "Invalid base64-encoded string" in res.stderr
+        or "binascii.Error" in res.stderr
+        or "Incorrect padding" in res.stderr
+    )
 
 
 def test_sandbox_runner_plugin_exception(temp_workspace: str) -> None:
@@ -618,5 +623,3 @@ print(json.dumps({"status": "success", "message": "Shell and network allowed suc
     res = SandboxRunner.run_plugin(plugin, context)
     assert res["status"] == "success"
     assert res["message"] == "Shell and network allowed successfully"
-
-

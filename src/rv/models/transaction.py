@@ -29,9 +29,9 @@ class LockfileEntry(BaseModel):
     """Verification entry for a successfully managed asset or secret."""
 
     sha256_of_source: str = Field(..., description="SHA-256 checksum of the source asset in the repository")
-    target_path: str = Field(..., description="Resolved system target path")
-    permissions: str = Field(..., description="Enforced octal file permission string")
-    mtime: float = Field(..., description="Modified time of target at successful sync")
+    target_path: str | list[str] = Field(..., description="Resolved system target path(s)")
+    permissions: str | list[str] = Field(..., description="Enforced octal file permission string(s)")
+    mtime: float | list[float] = Field(..., description="Modified time(s) of target(s) at successful sync")
 
 
 class Lockfile(BaseModel):

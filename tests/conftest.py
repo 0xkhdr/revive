@@ -27,6 +27,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         # Run coverage combine to merge all parallel coverage files
         # We run it using the python coverage module in the active venv
         import sys
+
         cmd = [sys.executable, "-m", "coverage", "combine", "--rcfile=.coveragerc"]
         subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:

@@ -197,9 +197,7 @@ def status(
         console.print("[bold green]In Sync:[/] Environment is perfectly synchronized with the repository state.")
 
 
-def _render_side_by_side_diff(
-    expected_text: str, actual_text: str, source_name: str, target_name: str
-) -> Table:
+def _render_side_by_side_diff(expected_text: str, actual_text: str, source_name: str, target_name: str) -> Table:
     """Generates a beautiful aligned side-by-side terminal comparison using Rich."""
     import difflib
 
@@ -331,9 +329,7 @@ def diff(
                         except Exception:
                             pass
 
-                        diff_table = _render_side_by_side_diff(
-                            expected_text, actual_text, source_name, info["target"]
-                        )
+                        diff_table = _render_side_by_side_diff(expected_text, actual_text, source_name, info["target"])
                         console.print(
                             Panel(
                                 diff_table,
@@ -698,7 +694,6 @@ def self_uninstall(
         console.print("\n[yellow]Nothing to uninstall.[/]")
 
 
-
 @app.command("gui")
 def gui(
     port: int = typer.Option(8080, "--port", "-p", help="Port to run the GUI server on."),
@@ -709,7 +704,6 @@ def gui(
     from rv.gui.server import start_gui_server
 
     start_gui_server(host=host, port=port, open_browser=not no_browser)
-
 
 
 @workspace_app.command("list")

@@ -115,11 +115,17 @@ graph TD
 Inside `TransactionContext`, file updates are mapped onto this cycle:
 1. **Plan**: Compute mutations and map source-to-target paths.
 2. **Validate**: Perform pre-flight permission, storage, and parent-directory availability checks.
-3. **Snapshot**: Back up existing files/symlinks to `~/.config/rv/backups/<tx_id>` and save the transaction journal.
-4. **Execute**: Mutate the system atomically (write to temp file, chmod, and atomic rename).
+3. **Snapshot**: Back up existing files/symlinks/directories (recursively via `shutil.copytree`) to `~/.config/rv/backups/<tx_id>` and save the transaction journal.
+4. **Execute**: Mutate the system atomically (write to temp file, chmod, and atomic rename; for directories, executes recursive copytree atomically using temporary sibling folders).
 5. **Verify**: Run checksum and POSIX permission comparisons to guarantee success.
 6. **Commit**: Mark journal as `committed` and update `manifest.lock`.
 7. **Cleanup**: Wipe backup snapshots and active journals.
+
+### 3.4 Target Arrays & Recursive Directories
+Revive natively supports managing complex folder hierarchies and multi-destination workflows under a single asset ID:
+*   **Target Arrays (`target: str | list[str]`)**: Both `Asset` and `Secret` models accept single-string target paths or lists of target paths. The orchestration system automatically interpolates environment variables and processes all targets in the list safely.
+*   **Recursive Directory Synchronization**: When a source is a directory, the `copy` handler performs atomic directory copying and transactional tracking (including full recursive snapshot backup and directory rollback).
+*   **Automated Sub-Item Resolution**: If the source path is a directory and the target is a list, Revive automatically matches each target path's basename with the corresponding file/folder in the source directory, copying only that specific sub-item to its target destination.
 
 ---
 

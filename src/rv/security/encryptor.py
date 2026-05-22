@@ -90,17 +90,23 @@ class AgeEncryptor:
         if identity.startswith("AGE-SECRET-KEY-1"):
             return identity
 
-        # If it looks like a file path and exists, read it
-        if os.path.exists(identity) and os.path.isfile(identity):
-            with open(identity, encoding="utf-8") as f:
-                content = f.read().strip()
-                # If the file contains a key, return it.
-                # It might have comments (like the ones we generate)
-                for line in content.splitlines():
-                    line = line.strip()
-                    if line.startswith("AGE-SECRET-KEY-1"):
-                        return line
-                return content # Fallback to full content
+        # If it looks like a file path, we expect it to exist
+        is_path = os.path.sep in identity or identity.startswith(".") or os.path.isabs(identity)
+
+        if is_path:
+            if not os.path.exists(identity):
+                raise FileNotFoundError(f"Age identity file not found: {identity}")
+
+            if os.path.isfile(identity):
+                with open(identity, encoding="utf-8") as f:
+                    content = f.read().strip()
+                    # If the file contains a key, return it.
+                    # It might have comments (like the ones we generate)
+                    for line in content.splitlines():
+                        line = line.strip()
+                        if line.startswith("AGE-SECRET-KEY-1"):
+                            return line
+                    return content  # Fallback to full content
 
         return identity
 

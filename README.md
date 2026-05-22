@@ -100,6 +100,16 @@ This scaffolds the following repository directory structure:
 *   `secrets/`: Folder for age-encrypted `.age` files.
 *   `machine/`: Workspace to hold machine/host-specific overrides.
 
+### Cryptographic Identity
+
+Before managing secrets, generate an age keypair:
+
+```bash
+rv secret keygen --output ~/.config/rv/identity.txt
+```
+
+Keep your private key secure. You will use this path with the `--identity` or `-i` flag during restoration.
+
 ---
 
 ## 2. Configuration (`manifest.yaml`)
@@ -108,6 +118,11 @@ Revive uses a clean declarative manifest. The following is an example configurat
 
 ```yaml
 version: 2
+
+# Global configuration for host-specific overrides
+machine_overrides:
+  enabled: true
+  path: "machine/{hostname}.yaml"
 
 assets:
   - id: dot_zshrc
@@ -120,14 +135,14 @@ assets:
   - id: gitconfig_template
     type: template
     source: assets/gitconfig.j2
-    target: ~/.gitconfig
+    target: ${HOME}/.gitconfig
     permissions: "0600"
     conflict_strategy: overwrite
 
 secrets:
   - id: aws_creds
     source: secrets/aws.age
-    target: ~/.aws/credentials
+    target: ${AWS_CONFIG_HOME:-~/.aws}/credentials
     permissions: "0600"
 
 packages:
@@ -144,17 +159,37 @@ profiles:
   base:
     assets:
       - dot_zshrc
+    packages:
+      - brew
+      - apt
+  
+  # Profile inheritance via 'extends'
+  work:
+    extends: [base]
+    assets:
       - gitconfig_template
     secrets:
       - aws_creds
     packages:
-      - brew
-      - apt
+      - node
 ```
+
+### Advanced Manifest Features
+
+*   **Variable Interpolation**: All `target` paths support environment variable interpolation using `${VAR}` or `${VAR:-default}` syntax.
+*   **Profile Inheritance**: Profiles can use the `extends` keyword to inherit assets, secrets, and packages from one or more base profiles.
+*   **Machine Overrides**: Enable `machine_overrides` to automatically merge host-specific manifests from the `machine/` directory based on the system hostname.
+*   **Conflict Strategies**: Supported strategies include `prompt` (interactive), `overwrite` (force), `skip` (do nothing), and `abort` (stop execution).
 
 ---
 
 ## 3. CLI Command Reference
+
+### Global Options
+
+The following flags are available on all commands:
+*   `--verbose`, `-v`: Enable detailed debug logging.
+*   `--headless`: raw stream logs without Rich terminal formatting (ideal for CI/CD).
 
 ### Synchronizing State
 
@@ -184,6 +219,7 @@ Output detailed syntax-highlighted diffs of modified file assets.
 ```bash
 rv diff --profile <profile> [OPTIONS]
 ```
+*   `--unified`, `-u`: Output in standard unified diff format.
 
 #### `rv doctor`
 Evaluate repository sanity, permission safety, and native system tool capabilities.
@@ -221,7 +257,7 @@ rv recover [OPTIONS]
 ### Interactive Control Center
 
 #### `rv tui`
-Launch the Rich-based interactive TUI to manage workspaces, import/export assets, and perform guided restorations.
+Launch the interactive TUI to manage workspaces, import/export assets, and perform guided restorations.
 ```bash
 rv tui
 ```
@@ -247,6 +283,13 @@ Unregister a workspace by name.
 ### Secret Management (`rv secret`)
 
 Manage encrypted variables and files securely:
+
+#### `rv secret keygen`
+Generate a new age keypair for encryption and decryption.
+```bash
+rv secret keygen [OPTIONS]
+```
+*   `--output`, `-o`: Path to write the generated private identity file.
 
 #### `rv secret encrypt`
 ```bash
@@ -282,9 +325,32 @@ Remove the `rv` wrapper and isolated installation directory.
 
 ## 4. Extensibility & Plugins
 
-Revive supports custom lifecycle hooks (`pre_restore`, `post_restore`) loaded dynamically. Plugins execute inside a highly secure sandbox with restricted permissions:
-*   Standard imports are restricted.
-*   Disk accesses outside the repository, workspace, and temporary directory are blocked.
+Revive supports custom lifecycle hooks loaded dynamically from `plugins/` (repo), `~/.config/rv/plugins/`, or built-in paths. Plugins must include a `plugin.yaml` manifest.
+
+### Plugin Manifest (`plugin.yaml`)
+
+```yaml
+name: "my-custom-plugin"
+version: "1.0.0"
+entrypoint: "main.py"
+hooks:
+  - pre-restore
+  - post-restore
+permissions:
+  network: false
+  shell: true
+  allowed_paths: ["/tmp"]
+timeout: 30
+```
+
+### Hook Types
+
+*   **`pre-restore`**: Executes after profile resolution but before any filesystem mutations. Ideal for pre-flight checks.
+*   **`post-restore`**: Executes after all assets and packages have been successfully applied. Ideal for restarting services or clearing caches.
+
+Plugins execute inside a highly secure sandbox with restricted permissions:
+*   Standard imports are restricted for safety.
+*   Disk accesses outside the repository, workspace, and temporary directory are blocked unless explicitly allowed.
 *   Execution is governed by strict timeouts to prevent terminal hangs.
 
 ---

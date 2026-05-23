@@ -1,12 +1,14 @@
 """Lightweight, robust Python HTTP server for Revive Web GUI.
 
 Uses only Python standard library to serve static assets and REST API endpoints.
+Supports token-based authentication for all API endpoints.
 """
 
 import http.server
 import json
 import logging
 import os
+import secrets
 import shutil
 import sys
 import urllib.parse
@@ -26,6 +28,10 @@ from rv.services.workspace import WorkspaceService
 
 logger = logging.getLogger("rv.gui.server")
 
+# Module-level auth token — stored in memory only, never persisted to disk.
+# Set by start_gui_server() before the server starts.
+_AUTH_TOKEN: str | None = None
+
 
 class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
     """Custom request handler that serves both Web GUI static files and REST API endpoints."""
@@ -33,6 +39,36 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         """Silence standard request logging to keep terminal output clean."""
         logger.debug(format % args)
+
+    def _check_auth(self) -> bool:
+        """Validates the authentication token from query parameter or header.
+
+        Accepts token via:
+        - Query parameter: ?token=<value>
+        - HTTP header: X-Auth-Token: <value>
+
+        Returns:
+            True if the token is valid or auth is disabled (no token configured).
+            False if auth is required and the token is missing or invalid.
+        """
+        global _AUTH_TOKEN
+        if _AUTH_TOKEN is None:
+            # Auth not configured — allow all requests
+            return True
+
+        # Check query parameter
+        parsed_url = urllib.parse.urlparse(self.path)
+        query_params = urllib.parse.parse_qs(parsed_url.query)
+        query_token = query_params.get("token", [None])[0]
+        if query_token and secrets.compare_digest(query_token, _AUTH_TOKEN):
+            return True
+
+        # Check header
+        header_token = self.headers.get("X-Auth-Token", "")
+        if header_token and secrets.compare_digest(header_token, _AUTH_TOKEN):
+            return True
+
+        return False
 
     def _send_response_json(self, data: Any, status: int = 200) -> None:
         """Helper to send a JSON response."""
@@ -42,7 +78,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body.encode("utf-8"))
@@ -63,6 +99,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
         path = parsed_url.path
 
         if path.startswith("/api/"):
+            if not self._check_auth():
+                self._send_response_json({"error": "Unauthorized: valid auth token required"}, 401)
+                return
             self._handle_api_get(path, parsed_url.query)
         else:
             self._serve_static_file(path)
@@ -73,6 +112,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
         path = parsed_url.path
 
         if path.startswith("/api/"):
+            if not self._check_auth():
+                self._send_response_json({"error": "Unauthorized: valid auth token required"}, 401)
+                return
             content_length = int(self.headers.get("Content-Length", 0))
             post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
 
@@ -92,6 +134,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
         path = parsed_url.path
 
         if path.startswith("/api/"):
+            if not self._check_auth():
+                self._send_response_json({"error": "Unauthorized: valid auth token required"}, 401)
+                return
             content_length = int(self.headers.get("Content-Length", 0))
             post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
 
@@ -111,6 +156,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
         path = parsed_url.path
 
         if path.startswith("/api/"):
+            if not self._check_auth():
+                self._send_response_json({"error": "Unauthorized: valid auth token required"}, 401)
+                return
             content_length = int(self.headers.get("Content-Length", 0))
             post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
 
@@ -228,11 +276,11 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             original_path = payload.get("original_path")
             new_name = payload.get("name")
             new_path = payload.get("path")
-            
+
             if not original_path:
                 self._send_response_json({"error": "Original workspace path is required for updating"}, 400)
                 return
-                
+
             try:
                 ws = WorkspaceService.update_workspace(original_path, new_name, new_path)
                 if ws:
@@ -242,7 +290,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_response_json({"error": f"Failed to update workspace: {e}"}, 500)
             return
-            
+
         self.send_error(404, "Not Found")
 
     def _handle_api_delete(self, path: str, payload: dict[str, Any]) -> None:
@@ -252,14 +300,14 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             if not paths or not isinstance(paths, list):
                 self._send_response_json({"error": "A list of workspace paths is required"}, 400)
                 return
-                
+
             try:
                 removed_count = WorkspaceService.remove_workspaces(paths)
                 self._send_response_json({"success": True, "removed_count": removed_count})
             except Exception as e:
                 self._send_response_json({"error": f"Failed to delete workspaces: {e}"}, 500)
             return
-            
+
         self.send_error(404, "Not Found")
 
     def _handle_api_post(self, path: str, payload: dict[str, Any]) -> None:
@@ -580,8 +628,37 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
 
-def start_gui_server(host: str = "127.0.0.1", port: int = 8080, open_browser: bool = True) -> None:
-    """Instantiate and start the TCPServer serving the GUI."""
+def start_gui_server(
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    open_browser: bool = True,
+    auth_token: str | None = None,
+) -> None:
+    """Instantiate and start the TCPServer serving the GUI.
+
+    Args:
+        host: Host address to bind to.
+        port: TCP port to listen on.
+        open_browser: Whether to open a browser tab on startup.
+        auth_token: Optional authentication token for API access.
+            If None, a 32-character random hex token is auto-generated and printed.
+            If empty string (''), authentication is disabled entirely.
+    """
+    global _AUTH_TOKEN
+
+    # Configure authentication
+    if auth_token == "":
+        # Explicit empty string = disable auth
+        _AUTH_TOKEN = None
+        logger.warning("GUI auth is DISABLED. All API endpoints are unauthenticated.")
+    elif auth_token is None:
+        # Auto-generate a secure random token
+        import secrets as _secrets
+
+        _AUTH_TOKEN = _secrets.token_hex(32)
+    else:
+        _AUTH_TOKEN = auth_token
+
     server_address = (host, port)
 
     # Enable address reuse to prevent bind issues on fast restarts
@@ -592,7 +669,7 @@ def start_gui_server(host: str = "127.0.0.1", port: int = 8080, open_browser: bo
     except OSError as e:
         if "Address already in use" in str(e):
             print(f"[rv] Port {port} is occupied. Scanning for next available port...", file=sys.stderr)
-            start_gui_server(host=host, port=port + 1, open_browser=open_browser)
+            start_gui_server(host=host, port=port + 1, open_browser=open_browser, auth_token=auth_token)
             return
         raise e
 
@@ -600,6 +677,11 @@ def start_gui_server(host: str = "127.0.0.1", port: int = 8080, open_browser: bo
     print("\n=======================================================")
     print("  🌌 Revive Cosmic Web GUI Dashboard")
     print(f"  Serving at: {url}")
+    if _AUTH_TOKEN:
+        print(f"  Auth Token: {_AUTH_TOKEN}")
+        print(f"  API access: {url}/api/status?token={_AUTH_TOKEN}")
+    else:
+        print("  Auth: DISABLED (all API endpoints public)")
     print("=======================================================\n")
 
     if open_browser:

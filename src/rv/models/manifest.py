@@ -146,6 +146,11 @@ class Packages(BaseModel):
     apt: list[str] = Field(default_factory=list)
     flatpak: list[str] = Field(default_factory=list)
     snap: list[str] = Field(default_factory=list)
+    pacman: list[str] = Field(default_factory=list, description="Arch Linux packages via pacman")
+    dnf: list[str] = Field(default_factory=list, description="Fedora/RHEL packages via dnf")
+    nix: list[str] = Field(default_factory=list, description="Nix packages via nix-env (nixpkgs.<pkg>)")
+    cargo: list[str] = Field(default_factory=list, description="Rust tools via cargo install")
+    pip: list[str] = Field(default_factory=list, description="Python tools via pip install --user")
     docker: DockerConfig = Field(default_factory=lambda: DockerConfig())
     node: NodeConfig = Field(default_factory=lambda: NodeConfig())
 
@@ -157,6 +162,13 @@ class Profile(BaseModel):
     assets: list[str | Asset] = Field(default_factory=list, description="Assets to restore (by ID or inline)")
     secrets: list[str | Secret] = Field(default_factory=list, description="Secrets to restore (by ID or inline)")
     packages: list[str] = Field(default_factory=list, description="Top-level package groups referenced by this profile")
+
+
+class BackupRetentionConfig(BaseModel):
+    """Controls automatic cleanup of old transaction backup snapshots."""
+
+    max_count: int = Field(default=10, ge=1, description="Keep at most N backup snapshots (FIFO eviction)")
+    max_age_days: int = Field(default=30, ge=1, description="Delete backup snapshots older than N days")
 
 
 class MachineOverridesConfig(BaseModel):
@@ -177,6 +189,10 @@ class Manifest(BaseModel):
     packages: Packages = Field(default_factory=lambda: Packages(), description="Global package definitions")
     profiles: dict[str, Profile] = Field(default_factory=dict, description="Named deployment profiles")
     machine_overrides: MachineOverridesConfig = Field(default_factory=lambda: MachineOverridesConfig())
+    backup_retention: BackupRetentionConfig = Field(
+        default_factory=lambda: BackupRetentionConfig(),
+        description="Automatic backup snapshot pruning configuration.",
+    )
 
     @field_validator("version")
     @classmethod

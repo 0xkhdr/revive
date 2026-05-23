@@ -1,6 +1,7 @@
 """Main Typer CLI application for Revive (rv)."""
 
 import os
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -514,12 +515,16 @@ def restore(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan and validate operations without mutating the filesystem."
     ),
+    preview: bool = typer.Option(
+        False, "--preview", help="Show drift analysis between repository and system state without making any changes."
+    ),
     interactive: bool = typer.Option(
         True, "--interactive/--non-interactive", help="Toggle interactive prompting for file conflicts."
     ),
     no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip executing any plugin hooks during restore."),
+    prune_backups: bool = typer.Option(False, "--prune", help="Prune old backup snapshots after a successful restore."),
 ) -> None:
-    """Synchronize the local environment state to match the repository profile (repo -> system)."""
+    """Synchronize the local environment state to match the repository profile (repo → system)."""
     repo_dir = _get_repo_dir()
 
     profile_list = []
@@ -533,6 +538,41 @@ def restore(
         raise typer.Exit(code=1)
 
     profile_str = ",".join(profile_list)
+
+    # --preview: Show drift analysis without restoring
+    if preview:
+        try:
+            from rv.services.status import StatusService
+
+            status_result = StatusService.get_status(
+                repo_dir=repo_dir, profile_name=profile_str, identity_path=identity
+            )
+            assets_status: dict[str, dict[str, Any]] = status_result.get("assets", {})
+            if not status_result.get("drifted"):
+                console.print(
+                    Panel(
+                        "[green]✓ System is in sync with repository.[/]",
+                        title=f"Preview: {profile_str}",
+                        border_style="green",
+                    )
+                )
+                return
+            table = Table(title=f"Preview: Changes for profile '{profile_str}'", expand=True)
+            table.add_column("Asset", style="cyan", width=25)
+            table.add_column("Target", style="white")
+            table.add_column("Status", style="yellow")
+            for asset_id, asset_info in assets_status.items():
+                target = (
+                    ", ".join(asset_info.get("targets", []))
+                    if isinstance(asset_info.get("targets"), list)
+                    else str(asset_info.get("target", "-"))
+                )
+                table.add_row(asset_id, target, str(asset_info.get("status", "-")))
+            console.print(table)
+        except Exception as e:
+            console.print(f"[bold red]Preview failed:[/] {e}")
+            raise typer.Exit(code=1)
+        return
 
     try:
         tx_id = RestoreService.restore(
@@ -626,6 +666,24 @@ def restore(
             )
         )
         raise typer.Exit(code=2)
+
+    # Post-restore prune if requested
+    if prune_backups and not dry_run:
+        try:
+            from rv.services.recovery import BackupPruner
+            from rv.services.restore import ManifestLoader
+
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+            if os.path.exists(manifest_path):
+                manifest = ManifestLoader.load(manifest_path)
+                deleted = BackupPruner.prune(
+                    max_count=manifest.backup_retention.max_count,
+                    max_age_days=manifest.backup_retention.max_age_days,
+                )
+                if deleted:
+                    console.print(f"[dim]Pruned {len(deleted)} old backup snapshot(s).[/]")
+        except Exception as prune_err:
+            console.print(f"[yellow]Warning: Post-restore prune failed: {prune_err}[/]")
 
 
 @app.command("backup")
@@ -1508,11 +1566,57 @@ def gui(
     port: int = typer.Option(8080, "--port", "-p", help="Port to run the GUI server on."),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host address to bind to."),
     no_browser: bool = typer.Option(False, "--no-browser", help="Do not open the browser automatically."),
+    auth_token: str | None = typer.Option(
+        None,
+        "--auth-token",
+        help="Authentication token for API access. Auto-generated if not provided. Pass '' to disable auth.",
+    ),
 ) -> None:
     """Launch the interactive Revive Web GUI."""
     from rv.gui.server import start_gui_server
 
-    start_gui_server(host=host, port=port, open_browser=not no_browser)
+    start_gui_server(host=host, port=port, open_browser=not no_browser, auth_token=auth_token)
+
+
+@app.command("prune")
+def prune(
+    max_count: int = typer.Option(10, "--max-count", help="Keep at most N backup snapshots."),
+    max_age_days: int = typer.Option(30, "--max-age-days", help="Delete backup snapshots older than N days."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview what would be pruned without deleting."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Remove old transaction backup snapshots to reclaim disk space."""
+    from rv.services.recovery import BackupPruner
+
+    # List what would be deleted
+    candidates = BackupPruner.prune(max_count=max_count, max_age_days=max_age_days, dry_run=True)
+
+    if not candidates:
+        console.print(
+            Panel("[green]✓ No backup snapshots qualify for pruning.[/]", title="Prune", border_style="green")
+        )
+        return
+
+    table = Table(title="Backup Snapshots to Prune", expand=True)
+    table.add_column("Path", style="cyan")
+    for path in candidates:
+        table.add_row(path)
+    console.print(table)
+
+    if dry_run:
+        console.print(f"[yellow][Dry Run] {len(candidates)} snapshot(s) would be pruned.[/]")
+        return
+
+    if not yes:
+        confirmed = typer.confirm(f"Permanently delete {len(candidates)} backup snapshot(s)?")
+        if not confirmed:
+            console.print("[yellow]Prune cancelled.[/]")
+            return
+
+    deleted = BackupPruner.prune(max_count=max_count, max_age_days=max_age_days, dry_run=False)
+    console.print(
+        Panel(f"[green]✓ Pruned {len(deleted)} backup snapshot(s).[/]", title="Prune Complete", border_style="green")
+    )
 
 
 @workspace_app.command("list")
@@ -1597,3 +1701,100 @@ def workspace_remove(name: str = typer.Argument(..., help="Name of the workspace
             )
         )
         raise typer.Exit(code=1)
+
+
+@workspace_app.command("sync")
+def workspace_sync(
+    profile: str | None = typer.Option(None, "--profile", "-p", help="Profile name to restore after git pull."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview sync operations without executing."),
+    identity: str | None = typer.Option(None, "--identity", "-i", help="Path to age identity file for secrets."),
+) -> None:
+    """Pull latest changes and restore all registered workspaces (git pull → rv restore)."""
+    import subprocess
+
+    workspaces = WorkspaceService.list_workspaces()
+    if not workspaces:
+        console.print(
+            Panel(
+                "No workspaces registered. Use [bold green]rv workspace add <path>[/] first.",
+                title="Workspace Sync",
+                border_style="yellow",
+            )
+        )
+        return
+
+    results_table = Table(title="Workspace Sync Results", expand=True)
+    results_table.add_column("Workspace", style="cyan", width=20)
+    results_table.add_column("Path", style="white")
+    results_table.add_column("Git Pull", style="yellow", width=12)
+    results_table.add_column("Restore", style="green", width=12)
+    results_table.add_column("Details", style="dim")
+
+    for ws in workspaces:
+        git_status = "✓"
+        restore_status = "✓"
+        details = ""
+
+        # Step 1: git pull
+        if not dry_run:
+            try:
+                git_result = subprocess.run(
+                    ["git", "-C", ws.path, "pull", "--ff-only"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if git_result.returncode != 0:
+                    git_status = "[red]✗[/]"
+                    details = f"git pull failed: {git_result.stderr.strip()[:80]}"
+                    results_table.add_row(ws.name, ws.path, git_status, "—", details)
+                    continue
+                else:
+                    git_status = "[green]✓[/]"
+            except Exception as e:
+                git_status = "[red]✗[/]"
+                details = f"git error: {e}"
+                results_table.add_row(ws.name, ws.path, git_status, "—", details)
+                continue
+        else:
+            git_status = "[yellow]skip[/]"
+
+        # Step 2: rv restore
+        restore_profile = profile
+        if not restore_profile:
+            # Try to detect the default profile from workspace manifest
+            try:
+                from rv.services.restore import ManifestLoader
+
+                manifest_path = os.path.join(ws.path, "manifest.yaml")
+                if os.path.exists(manifest_path):
+                    manifest = ManifestLoader.load(manifest_path)
+                    if manifest.profiles:
+                        restore_profile = next(iter(manifest.profiles))
+            except Exception:
+                pass
+
+        if restore_profile:
+            if not dry_run:
+                try:
+                    RestoreService.restore(
+                        repo_dir=ws.path,
+                        profile_name=restore_profile,
+                        identity_path=identity,
+                        interactive=False,
+                        dry_run=False,
+                        no_plugins=False,
+                    )
+                    restore_status = "[green]✓[/]"
+                except Exception as e:
+                    restore_status = "[red]✗[/]"
+                    details = f"restore failed: {str(e)[:80]}"
+            else:
+                restore_status = "[yellow]skip[/]"
+        else:
+            restore_status = "[yellow]no profile[/]"
+            details = "No profile specified or detected"
+
+        results_table.add_row(ws.name, ws.path, git_status, restore_status, details)
+
+    console.print(results_table)

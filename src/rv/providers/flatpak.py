@@ -14,8 +14,15 @@ class FlatpakProvider(BaseProvider):
     def __init__(self) -> None:
         super().__init__("flatpak")
 
-    def _is_installed(self, ref: str) -> bool:
-        """Checks if a flatpak ref is already installed via flatpak info."""
+    def is_installed(self, ref: str) -> bool:
+        """Checks if a flatpak ref is already installed via flatpak info.
+
+        Args:
+            ref: Flatpak application ref to check.
+
+        Returns:
+            True if installed, False otherwise.
+        """
         try:
             # flatpak info <ref> returns 0 if installed, 1 if not.
             res = subprocess.run(["flatpak", "info", ref], capture_output=True, check=False)
@@ -38,7 +45,7 @@ class FlatpakProvider(BaseProvider):
 
         missing = []
         for ref in packages:
-            if not self._is_installed(ref):
+            if not self.is_installed(ref):
                 missing.append(ref)
 
         if not missing:

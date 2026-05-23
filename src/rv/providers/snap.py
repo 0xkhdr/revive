@@ -14,8 +14,15 @@ class SnapProvider(BaseProvider):
     def __init__(self) -> None:
         super().__init__("snap")
 
-    def _is_installed(self, pkg: str) -> bool:
-        """Checks if a snap package is installed via snap list."""
+    def is_installed(self, pkg: str) -> bool:
+        """Checks if a snap package is installed via snap list.
+
+        Args:
+            pkg: Snap package name to check.
+
+        Returns:
+            True if installed, False otherwise.
+        """
         try:
             # snap list <pkg> returns 0 if installed, 1 if not.
             res = subprocess.run(["snap", "list", pkg], capture_output=True, check=False)
@@ -46,7 +53,7 @@ class SnapProvider(BaseProvider):
                 actual_pkg = pkg.split(":", 1)[1]
                 classic_flag = True
 
-            if not self._is_installed(actual_pkg):
+            if not self.is_installed(actual_pkg):
                 missing.append((pkg, actual_pkg, classic_flag))
 
         if not missing:

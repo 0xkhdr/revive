@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -58,9 +59,11 @@ profiles:
     port = get_free_port()
     host = "127.0.0.1"
 
-    # Launch server in background thread
+    # Launch server in background thread with auth disabled for integration testing
     server_thread = threading.Thread(
-        target=start_gui_server, kwargs={"host": host, "port": port, "open_browser": False}, daemon=True
+        target=start_gui_server,
+        kwargs={"host": host, "port": port, "open_browser": False, "auth_token": ""},
+        daemon=True,
     )
     server_thread.start()
 
@@ -163,3 +166,41 @@ def test_api_recovery_list(gui_server):
         assert resp.status == 200
         data = json.loads(resp.read().decode("utf-8"))
         assert "journals" in data
+
+
+def test_api_token_authentication():
+    """Verify WebGUIRequestHandler's _check_auth method works correctly for token validation."""
+    import rv.gui.server as gui_server_module
+    from rv.gui.server import WebGUIRequestHandler
+
+    # Mock the handler and its attributes
+    handler = MagicMock(spec=WebGUIRequestHandler)
+    handler.path = "/api/workspace"
+    handler.headers = {"X-Auth-Token": "test-secret-token"}
+
+    # Case 1: Auth disabled (_AUTH_TOKEN is None)
+    gui_server_module._AUTH_TOKEN = None
+    assert WebGUIRequestHandler._check_auth(handler) is True
+
+    # Case 2: Auth enabled, matching header token
+    gui_server_module._AUTH_TOKEN = "test-secret-token"
+    assert WebGUIRequestHandler._check_auth(handler) is True
+
+    # Case 3: Auth enabled, mismatched header token
+    handler.headers = {"X-Auth-Token": "wrong-token"}
+    assert WebGUIRequestHandler._check_auth(handler) is False
+
+    # Case 4: Auth enabled, missing header but matching query token
+    handler.headers = {}
+    handler.path = "/api/workspace?token=test-secret-token"
+    assert WebGUIRequestHandler._check_auth(handler) is True
+
+    # Case 5: Auth enabled, missing header and mismatched/missing query token
+    handler.path = "/api/workspace?token=wrong-token"
+    assert WebGUIRequestHandler._check_auth(handler) is False
+
+    handler.path = "/api/workspace"
+    assert WebGUIRequestHandler._check_auth(handler) is False
+
+    # Clean up module state
+    gui_server_module._AUTH_TOKEN = None

@@ -71,7 +71,22 @@ class DoctorService:
 
         # 3. Environment capabilities checks
         checks_run += 1
-        system_tools = ["age", "age-keygen", "brew", "apt", "flatpak", "snap", "docker", "node", "git"]
+        system_tools = [
+            "age",
+            "age-keygen",
+            "brew",
+            "apt",
+            "flatpak",
+            "snap",
+            "pacman",
+            "dnf",
+            "nix-env",
+            "cargo",
+            "pip",
+            "docker",
+            "node",
+            "git",
+        ]
         tools_status: dict[str, bool] = {}
         for tool in system_tools:
             available = Platform.has_tool(tool)

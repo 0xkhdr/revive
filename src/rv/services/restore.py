@@ -13,9 +13,14 @@ from rv.models.manifest import Asset, Manifest, Secret
 from rv.models.transaction import Lockfile, LockfileEntry
 from rv.providers.apt import AptProvider
 from rv.providers.brew import BrewProvider
+from rv.providers.cargo import CargoProvider
+from rv.providers.dnf import DnfProvider
 from rv.providers.docker import DockerProvider
 from rv.providers.flatpak import FlatpakProvider
+from rv.providers.nix import NixProvider
 from rv.providers.node import NodeProvider
+from rv.providers.pacman import PacmanProvider
+from rv.providers.pip import PipProvider
 from rv.providers.snap import SnapProvider
 from rv.security.scrubber import SecretScrubber
 from rv.services.handlers import AssetHandler
@@ -70,6 +75,11 @@ class ResolvedProfile:
             "apt": [],
             "flatpak": [],
             "snap": [],
+            "pacman": [],
+            "dnf": [],
+            "nix": [],
+            "cargo": [],
+            "pip": [],
         }
         self.docker_images: list[str] = []
         self.node_config: dict[str, str | None] = {"version_file": None, "version": None}
@@ -190,6 +200,16 @@ class ProfileResolver:
                 resolved.packages["flatpak"].extend(manifest.packages.flatpak)
             elif pkg_provider == "snap":
                 resolved.packages["snap"].extend(manifest.packages.snap)
+            elif pkg_provider == "pacman":
+                resolved.packages["pacman"].extend(manifest.packages.pacman)
+            elif pkg_provider == "dnf":
+                resolved.packages["dnf"].extend(manifest.packages.dnf)
+            elif pkg_provider == "nix":
+                resolved.packages["nix"].extend(manifest.packages.nix)
+            elif pkg_provider == "cargo":
+                resolved.packages["cargo"].extend(manifest.packages.cargo)
+            elif pkg_provider == "pip":
+                resolved.packages["pip"].extend(manifest.packages.pip)
             elif pkg_provider == "docker":
                 resolved.docker_images.extend(manifest.packages.docker.images)
             elif pkg_provider == "node":
@@ -299,7 +319,7 @@ class RestoreService:
                         # Merge packages
                         if "packages" in override_data:
                             pkg_overrides = override_data["packages"]
-                            for k in ["brew", "apt", "flatpak", "snap"]:
+                            for k in ["brew", "apt", "flatpak", "snap", "pacman", "dnf", "nix", "cargo", "pip"]:
                                 if k in pkg_overrides and isinstance(pkg_overrides[k], list):
                                     resolved.packages[k].extend(pkg_overrides[k])
                             if "docker" in pkg_overrides and "images" in pkg_overrides["docker"]:
@@ -388,6 +408,16 @@ class RestoreService:
                     FlatpakProvider().install(resolved.packages["flatpak"], dry_run=dry_run)
                 if resolved.packages["snap"]:
                     SnapProvider().install(resolved.packages["snap"], dry_run=dry_run)
+                if resolved.packages["pacman"]:
+                    PacmanProvider().install(resolved.packages["pacman"], dry_run=dry_run)
+                if resolved.packages["dnf"]:
+                    DnfProvider().install(resolved.packages["dnf"], dry_run=dry_run)
+                if resolved.packages["nix"]:
+                    NixProvider().install(resolved.packages["nix"], dry_run=dry_run)
+                if resolved.packages["cargo"]:
+                    CargoProvider().install(resolved.packages["cargo"], dry_run=dry_run)
+                if resolved.packages["pip"]:
+                    PipProvider().install(resolved.packages["pip"], dry_run=dry_run)
                 if resolved.docker_images:
                     DockerProvider().install(resolved.docker_images, dry_run=dry_run)
                 if resolved.node_config["version"] or resolved.node_config["version_file"]:
@@ -493,6 +523,8 @@ class RestoreService:
                     )
 
             # Write lockfile atomically
+            # Carry over any rendered template checksums collected by handlers
+            lockfile.rendered_checksums.update(tx_context.rendered_checksums)
             AtomicWrite.write(lockfile_path, lockfile.model_dump_json(indent=2).encode("utf-8"))
 
             # Step 14: Structured Audit Log Commit

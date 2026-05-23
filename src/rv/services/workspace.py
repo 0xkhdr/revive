@@ -96,7 +96,9 @@ class WorkspaceService:
         return False
 
     @classmethod
-    def update_workspace(cls, original_path: str, new_name: str | None = None, new_path: str | None = None) -> Workspace | None:
+    def update_workspace(
+        cls, original_path: str, new_name: str | None = None, new_path: str | None = None
+    ) -> Workspace | None:
         """Updates a workspace's name and/or path."""
         config = cls.load_config()
         for ws in config.workspaces:

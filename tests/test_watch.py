@@ -23,12 +23,12 @@ def test_repo_change_handler_ignores_git() -> None:
 
     event_git = FileSystemEvent("/tmp/fake_repo/.git/config")
     event_git.event_type = "modified"
-    handler.on_any_event(event_git)
+    handler.dispatch(event_git)
     assert handler._last_event_time is None
 
     event_normal = FileSystemEvent("/tmp/fake_repo/manifest.yaml")
     event_normal.event_type = "modified"
-    handler.on_any_event(event_normal)
+    handler.dispatch(event_normal)
     assert handler._last_event_time is not None
 
 
@@ -93,14 +93,15 @@ def test_watchdog_daemon_start_stop() -> None:
         daemon = WatchdogDaemon(
             repo_dir="/tmp/fake_repo", profile_name="base", identity_path="id_file", debounce_seconds=3.0
         )
+        daemon._shutdown_event.set()  # Prevent start() from blocking
         daemon.start()
         mock_observer_cls.assert_called_once()
         mock_observer.schedule.assert_called_once()
         mock_observer.start.assert_called_once()
 
         daemon.stop()
-        mock_observer.stop.assert_called_once()
-        mock_observer.join.assert_called_once()
+        mock_observer.stop.assert_called()
+        mock_observer.join.assert_called()
 
 
 def test_cli_watch_command() -> None:

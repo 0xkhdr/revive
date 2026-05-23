@@ -1,11 +1,12 @@
 """Watchdog daemon for revive. Monitors repo for changes and triggers restore."""
 
 import os
+import signal
 import threading
 import time
 from typing import Any
 
-from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.events import FileSystemEvent, PatternMatchingEventHandler
 from watchdog.observers import Observer
 
 from rv.logging.audit import AuditLogger
@@ -14,13 +15,23 @@ from rv.transactions.lock import LockAcquisitionError, ProcessLock
 
 logger = AuditLogger.get_logger("rv.watchers.daemon")
 
+# Patterns to exclude from filesystem event monitoring
+_GIT_EXCLUDE_PATTERNS: list[str] = ["*/.git/*", "*/.git"]
 
-class RepoChangeHandler(FileSystemEventHandler):
-    """Handles filesystem events in the revive repository."""
+
+class RepoChangeHandler(PatternMatchingEventHandler):
+    """Handles filesystem events in the revive repository, ignoring .git changes."""
 
     def __init__(
         self, repo_dir: str, profile_name: str, identity_path: str | None = None, debounce_seconds: float = 5.0
     ):
+        # Exclude .git directory changes at the observer level using PatternMatchingEventHandler
+        super().__init__(
+            patterns=["*"],
+            ignore_patterns=_GIT_EXCLUDE_PATTERNS,
+            ignore_directories=False,
+            case_sensitive=True,
+        )
         self.repo_dir = os.path.abspath(repo_dir)
         self.profile_name = profile_name
         self.identity_path = identity_path
@@ -35,20 +46,11 @@ class RepoChangeHandler(FileSystemEventHandler):
         self._checker_thread.start()
 
     def on_any_event(self, event: FileSystemEvent) -> None:
-        # Ignore .git folder changes
-        src_path = os.fsdecode(event.src_path)
-        if ".git/" in src_path or src_path.endswith(".git"):
-            return
-        dest_path = getattr(event, "dest_path", None)
-        if dest_path:
-            dest_path_str = os.fsdecode(dest_path)
-            if ".git/" in dest_path_str or dest_path_str.endswith(".git"):
-                return
-
         # Ignore directory modifications (only care about files)
         if event.is_directory and event.event_type == "modified":
             return
 
+        src_path = os.fsdecode(event.src_path)
         logger.debug(f"Detected filesystem event: {event.event_type} on {src_path}")
         with self._lock:
             self._last_event_time = time.time()
@@ -95,7 +97,7 @@ class RepoChangeHandler(FileSystemEventHandler):
 
 
 class WatchdogDaemon:
-    """Watchdog daemon coordinating filesystem observation."""
+    """Watchdog daemon coordinating filesystem observation with graceful signal handling."""
 
     def __init__(
         self, repo_dir: str, profile_name: str, identity_path: str | None = None, debounce_seconds: float = 5.0
@@ -106,9 +108,10 @@ class WatchdogDaemon:
         self.debounce_seconds = debounce_seconds
         self._observer: Any = None
         self._handler: RepoChangeHandler | None = None
+        self._shutdown_event = threading.Event()
 
     def start(self) -> None:
-        """Starts monitoring the repository directory."""
+        """Starts monitoring the repository directory and blocks until shutdown."""
         logger.info(f"Starting revive watchdog on '{self.repo_dir}' for profile '{self.profile_name}'...")
         self._handler = RepoChangeHandler(
             repo_dir=self.repo_dir,
@@ -120,6 +123,26 @@ class WatchdogDaemon:
         self._observer.schedule(self._handler, self.repo_dir, recursive=True)
         self._observer.start()
         logger.info("Watchdog started successfully. Press Ctrl+C to exit.")
+
+        # Register signal handlers for graceful shutdown
+        def _signal_handler(signum: int, frame: Any) -> None:
+            sig_name = signal.Signals(signum).name
+            logger.info(f"Received signal {sig_name}. Initiating graceful watchdog shutdown...")
+            self._shutdown_event.set()
+
+        original_sigint = signal.getsignal(signal.SIGINT)
+        original_sigterm = signal.getsignal(signal.SIGTERM)
+        signal.signal(signal.SIGINT, _signal_handler)
+        signal.signal(signal.SIGTERM, _signal_handler)
+
+        try:
+            # Block main thread until shutdown signal received
+            self._shutdown_event.wait()
+        finally:
+            # Restore original signal handlers
+            signal.signal(signal.SIGINT, original_sigint)
+            signal.signal(signal.SIGTERM, original_sigterm)
+            self.stop()
 
     def stop(self) -> None:
         """Stops monitoring and cleans up threads."""

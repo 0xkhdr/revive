@@ -16,6 +16,25 @@ class NodeProvider(BaseProvider):
     def __init__(self) -> None:
         super().__init__("node")
 
+    def is_installed(self, pkg: str) -> bool:
+        """Checks if a specific Node.js version is currently active.
+
+        For NodeProvider, 'pkg' is treated as a version string (e.g. '20.0.0').
+        Returns True if node is available and the current version matches.
+
+        Args:
+            pkg: Node.js version string to check.
+
+        Returns:
+            True if node is present and version matches, False otherwise.
+        """
+        current = self._get_current_version()
+        if not current:
+            return False
+        # Normalize: both current and pkg should be without 'v' prefix
+        normalized_pkg = pkg.lstrip("v")
+        return current == normalized_pkg or current.startswith(normalized_pkg)
+
     def _get_current_version(self) -> str | None:
         """Returns the current active Node.js version, normalized without 'v' prefix."""
         if not shutil.which("node"):

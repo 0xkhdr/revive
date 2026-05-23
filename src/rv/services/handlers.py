@@ -1,6 +1,10 @@
 """Asset handlers for copy, symlink, template, and secret orchestration."""
 
+import getpass
+import hashlib
 import os
+import platform
+import socket
 import sys
 
 import jinja2
@@ -114,7 +118,7 @@ class AssetHandler:
             elif asset.type == AssetType.COPY:
                 cls._handle_copy(asset, target_source, abs_target, tx_context, identity_path)
             elif asset.type == AssetType.TEMPLATE:
-                cls._handle_template(asset, target_source, abs_target, tx_context)
+                cls._handle_template(asset, target_source, abs_target, tx_context, repo_dir=repo_dir)
             elif asset.type == AssetType.SECRET:
                 cls._handle_secret(asset, target_source, abs_target, tx_context, identity_path)
             else:
@@ -189,9 +193,14 @@ class AssetHandler:
 
     @classmethod
     def _handle_template(
-        cls, asset: Asset | Secret, abs_source: str, abs_target: str, tx_context: TransactionContext
+        cls,
+        asset: Asset | Secret,
+        abs_source: str,
+        abs_target: str,
+        tx_context: TransactionContext,
+        repo_dir: str = "",
     ) -> None:
-        """Registers a template rendering operation."""
+        """Registers a template rendering operation with built-in context variable injection."""
         if os.path.exists(abs_target) or os.path.islink(abs_target):
             tx_context.plan_operation("delete", abs_target)
 
@@ -202,8 +211,19 @@ class AssetHandler:
         except Exception as e:
             raise AssetHandlerError(f"Failed to read template source {abs_source}: {e}") from e
 
-        # Merge environment variables and template_vars
-        context = dict(os.environ)
+        # Build built-in context variables (auto-injected into every template)
+        builtin_context: dict[str, str] = {
+            "_hostname": socket.gethostname(),
+            "_user": getpass.getuser(),
+            "_platform": sys.platform,
+            "_arch": platform.machine(),
+            "_home": str(os.path.expanduser("~")),
+            "_repo_dir": repo_dir,
+        }
+
+        # Merge: environment vars → builtins → user-defined template_vars (user takes precedence)
+        context: dict[str, object] = dict(os.environ)
+        context.update(builtin_context)
         if isinstance(asset, Asset) and asset.template_vars:
             context.update(asset.template_vars)
 
@@ -214,9 +234,14 @@ class AssetHandler:
         except Exception as e:
             raise AssetHandlerError(f"Template rendering failed for {asset.id}: {e}") from e
 
+        # Compute SHA256 of rendered content for lockfile tracking
+        rendered_bytes = rendered.encode("utf-8")
+        rendered_sha256 = hashlib.sha256(rendered_bytes).hexdigest()
+        tx_context.rendered_checksums[asset.id] = rendered_sha256
+
         # Plan copy with rendered content
         tx_context.plan_operation(
-            "copy", abs_target, source_data=rendered.encode("utf-8"), permissions=asset.permissions, owner=asset.owner
+            "copy", abs_target, source_data=rendered_bytes, permissions=asset.permissions, owner=asset.owner
         )
 
     @classmethod

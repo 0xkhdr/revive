@@ -20,20 +20,25 @@ class AptProvider(BaseProvider):
 
         return shutil.which("apt-get") is not None and shutil.which("dpkg") is not None
 
+    def is_installed(self, pkg: str) -> bool:
+        """Checks if a Debian/Ubuntu package is currently installed using dpkg.
+
+        Args:
+            pkg: Package name to check.
+
+        Returns:
+            True if installed, False otherwise.
+        """
+        try:
+            result = subprocess.run(["dpkg", "-s", pkg], capture_output=True, text=True, check=False)
+            return result.returncode == 0 and "Status: install ok installed" in result.stdout
+        except Exception as e:
+            logger.debug(f"Failed to check package status via dpkg for {pkg}: {e}")
+            return False
+
     def _get_missing_packages(self, packages: list[str]) -> list[str]:
         """Queries dpkg to see which packages are not currently installed."""
-        missing = []
-        for pkg in packages:
-            try:
-                # dpkg -s <pkg> returns 0 if installed, 1 if not.
-                result = subprocess.run(["dpkg", "-s", pkg], capture_output=True, text=True, check=False)
-                if result.returncode != 0 or "Status: install ok installed" not in result.stdout:
-                    missing.append(pkg)
-            except Exception as e:
-                # If dpkg command fails or is blocked, treat package as missing
-                logger.debug(f"Failed to check package status via dpkg for {pkg}: {e}")
-                missing.append(pkg)
-        return missing
+        return [pkg for pkg in packages if not self.is_installed(pkg)]
 
     def install(self, packages: list[str], dry_run: bool = False) -> None:
         """Installs missing packages using apt-get.

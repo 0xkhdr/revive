@@ -157,7 +157,10 @@ class BackupService:
                 continue
 
             # Determine where to write the backup file in the repository
-            if isinstance(item.target, list) or os.path.isdir(abs_source):
+            is_source_dir = os.path.isdir(abs_source) or item.source.endswith(("/", "\\"))
+            is_target_dir = os.path.isdir(abs_target)
+
+            if isinstance(item.target, list) or (is_source_dir and not is_target_dir):
                 resolved_source = os.path.join(abs_source, os.path.basename(abs_target))
             else:
                 resolved_source = abs_source

@@ -28,7 +28,13 @@ console = Console()
 
 def _get_repo_dir() -> str:
     """Returns the current working directory as the revive repository path."""
-    return os.getcwd()
+    repo_dir = os.getcwd()
+    try:
+        from rv.utils.interpolate import load_env
+        load_env(repo_dir)
+    except ImportError:
+        pass
+    return repo_dir
 
 
 def complete_profile(ctx: typer.Context, incomplete: str) -> list[str]:
@@ -78,7 +84,7 @@ assets:
   - id: example_zshrc
     type: symlink
     source: assets/example_zshrc
-    target: ~/.zshrc
+    target: ${USER_HOME}/.zshrc
     permissions: "0644"
     conflict_strategy: prompt
 
@@ -150,6 +156,7 @@ This repository contains my system configuration, managed by **Revive**.
 # Used by manifest.yaml for variable interpolation.
 # DO NOT commit sensitive secrets here! Use `rv secret` instead.
 
+USER_HOME="~"
 # EXAMPLE_VAR="some_value"
 """
 
@@ -157,6 +164,7 @@ This repository contains my system configuration, managed by **Revive**.
 # Copy this file to .env and configure your variables.
 # DO NOT commit sensitive secrets here!
 
+USER_HOME="~"
 # EXAMPLE_VAR="some_value"
 """
 

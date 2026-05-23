@@ -4,6 +4,29 @@ import os
 import re
 
 
+def load_env(repo_dir: str) -> None:
+    """Loads a .env file from the repo directory into os.environ."""
+    env_path = os.path.join(repo_dir, ".env")
+    if not os.path.exists(env_path):
+        return
+
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip()
+                # Remove surrounding quotes if present
+                if len(val) >= 2 and val[0] == val[-1] and val.startswith(("'", '"')):
+                    val = val[1:-1]
+                # Only set if not already set in environment
+                if key not in os.environ:
+                    os.environ[key] = val
+
+
 class Interpolator:
     """Safely substitutes ${VAR} or ${VAR:-default} from environment variables."""
 

@@ -535,7 +535,7 @@ def restore(
     profile_str = ",".join(profile_list)
 
     try:
-        RestoreService.restore(
+        tx_id = RestoreService.restore(
             repo_dir=repo_dir,
             profile_name=profile_str,
             identity_path=identity,
@@ -543,8 +543,88 @@ def restore(
             dry_run=dry_run,
             no_plugins=no_plugins,
         )
+
+        # Resolve the profile to summarize what was restored if manifest exists
+        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        if os.path.exists(manifest_path):
+            from rv.services.restore import ManifestLoader, ProfileResolver
+
+            manifest = ManifestLoader.load(manifest_path)
+            resolved = ProfileResolver.resolve(manifest, profile_str)
+
+            # Build list of assets restored
+            assets_summary = []
+            for asset_id, asset in resolved.assets.items():
+                targets = [asset.target] if isinstance(asset.target, str) else asset.target
+                targets_str = ", ".join(targets)
+                assets_summary.append(f"  - [green]✓[/] {asset_id} [cyan]→[/] {targets_str}")
+
+            # Build list of secrets restored
+            secrets_summary = []
+            for secret_id, secret in resolved.secrets.items():
+                targets = [secret.target] if isinstance(secret.target, str) else secret.target
+                targets_str = ", ".join(targets)
+                secrets_summary.append(f"  - [green]✓[/] [yellow]{secret_id}[/] [cyan]→[/] {targets_str}")
+
+            # Build list of packages restored
+            pkgs_summary = []
+            for manager, pkgs in resolved.packages.items():
+                if pkgs:
+                    pkgs_summary.append(f"  - [bold white]{manager.upper()}:[/] [cyan]{', '.join(pkgs)}[/]")
+            if resolved.docker_images:
+                pkgs_summary.append(f"  - [bold white]DOCKER IMAGES:[/] [cyan]{', '.join(resolved.docker_images)}[/]")
+            if resolved.node_config.get("version") or resolved.node_config.get("version_file"):
+                node_ver = resolved.node_config.get("version") or resolved.node_config.get("version_file")
+                pkgs_summary.append(f"  - [bold white]NODE.JS VERSION:[/] [cyan]{node_ver}[/]")
+
+            # Prepare details
+            details = []
+            details.append(f"[bold white]Profile(s):[/] [magenta]{profile_str}[/]")
+            if dry_run:
+                details.append("[bold yellow]Mode:[/] Dry Run (No changes applied)")
+            else:
+                details.append(f"[bold white]Transaction ID:[/] [cyan]{tx_id}[/]")
+
+            if assets_summary:
+                details.append("\n[bold white]Assets Restored:[/]")
+                details.extend(assets_summary)
+            if secrets_summary:
+                details.append("\n[bold white]Secrets Decrypted & Applied:[/]")
+                details.extend(secrets_summary)
+            if pkgs_summary:
+                details.append("\n[bold white]Packages Installed/Orchestrated:[/]")
+                details.extend(pkgs_summary)
+
+            if not assets_summary and not secrets_summary and not pkgs_summary:
+                details.append("\n(No assets, secrets, or packages configured for this profile)")
+        else:
+            # Fallback simple success panel if manifest is missing (e.g. in test mock environment)
+            details = []
+            details.append(f"[bold white]Profile(s):[/] [magenta]{profile_str}[/]")
+            if dry_run:
+                details.append("[bold yellow]Mode:[/] Dry Run (No changes applied)")
+            else:
+                details.append(f"[bold white]Transaction ID:[/] [cyan]{tx_id}[/]")
+
+        title_str = "Revive Restore Plan (Dry Run)" if dry_run else "Revive Restore Completed"
+        border_style_str = "yellow" if dry_run else "green"
+
+        console.print(
+            Panel(
+                "\n".join(details),
+                title=title_str,
+                border_style=border_style_str,
+            )
+        )
     except Exception as e:
-        console.print(f"[bold red]Transaction Failed:[/] {e}")
+        console.print(
+            Panel(
+                f"[bold red]Transaction Failed:[/] {e}\n\n"
+                "[yellow]Note:[/] Revive has automatically rolled back all file and symlink modifications to their pre-existing states. Your environment remains safe.",
+                title="Restore Failed & Rolled Back",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=2)
 
 
@@ -586,11 +666,49 @@ def backup(
         )
 
         if dry_run:
-            console.print("[yellow]Dry Run:[/] Backup completed successfully (no files written).")
+            summary = []
+            summary.append(f"[bold white]Profile(s):[/] [magenta]{profile_str}[/]")
+            summary.append("[bold yellow]Mode:[/] Dry Run (No changes committed to repository)")
+            if backed_up:
+                summary.append("\n[bold white]Assets/Secrets planned for backup:[/]")
+                for item in backed_up:
+                    summary.append(f"  - [yellow]→[/] {item}")
+            else:
+                summary.append("\n(No assets or secrets planned for backup)")
+
+            console.print(
+                Panel(
+                    "\n".join(summary),
+                    title="Revive Backup Plan (Dry Run)",
+                    border_style="yellow",
+                )
+            )
         else:
-            console.print(f"[bold green]Success![/] Backed up {len(backed_up)} asset(s)/secret(s) to repository.")
+            summary = []
+            summary.append(f"[bold white]Profile(s):[/] [magenta]{profile_str}[/]")
+            summary.append(f"[bold white]Repository:[/] [cyan]{repo_dir}[/]")
+            if backed_up:
+                summary.append(f"\n[bold green]Successfully backed up {len(backed_up)} item(s):[/]")
+                for item in backed_up:
+                    summary.append(f"  - [green]✓[/] {item}")
+            else:
+                summary.append("\n(No assets or secrets were backed up)")
+
+            console.print(
+                Panel(
+                    "\n".join(summary),
+                    title="Revive Backup Completed",
+                    border_style="green",
+                )
+            )
     except Exception as e:
-        console.print(f"[bold red]Backup Failed:[/] {e}")
+        console.print(
+            Panel(
+                f"[bold red]Backup Failed![/]\n\n[bold white]Error details:[/] {e}",
+                title="Backup Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=2)
 
 
@@ -652,10 +770,24 @@ def status(
     console.print(table)
 
     if report["drifted"]:
-        console.print("[bold yellow]Warning:[/] System drift detected. Run [bold green]rv restore[/] to synchronize.")
+        console.print(
+            Panel(
+                "[bold yellow]Warning: System Drift Detected[/]\n\n"
+                "Your local system state has drifted from the repository configuration.\n"
+                f"To synchronize, run: [bold green]rv restore {profile_str}[/]",
+                title="Status: Drifted",
+                border_style="yellow",
+            )
+        )
         raise typer.Exit(code=0)
     else:
-        console.print("[bold green]In Sync:[/] Environment is perfectly synchronized with the repository state.")
+        console.print(
+            Panel(
+                "[bold green]In Sync![/]\n\nEnvironment is perfectly synchronized with the repository state.",
+                title="Status: Synchronized",
+                border_style="green",
+            )
+        )
 
 
 def _render_side_by_side_diff(expected_text: str, actual_text: str, source_name: str, target_name: str) -> Table:
@@ -814,7 +946,14 @@ def diff(
                         )
 
     if not has_diffs:
-        console.print("[green]No file content modifications detected.[/]")
+        console.print(
+            Panel(
+                "[bold green]No file content modifications detected.[/]\n\n"
+                "All configured assets match the repository contents perfectly.",
+                title="Drift Diff Summary",
+                border_style="green",
+            )
+        )
 
 
 @app.command("doctor")
@@ -849,35 +988,36 @@ def doctor(
         console.print_json(json.dumps(report))
         raise typer.Exit(code=0 if report["healthy"] else 1)
 
+    # Build tools integration list
+    tools_str = ""
+    for tool, available in report["tools"].items():
+        status_styled = "[bold green]✓ Available[/]" if available else "[bold yellow]✗ Missing[/]"
+        tools_str += f"  - {tool:<25}: {status_styled}\n"
+
+    # Build issues list
+    issues_str = ""
+    if report["issues"]:
+        issues_str = "\n[bold red]Issues Detected:[/]\n"
+        for issue in report["issues"]:
+            prefix = "[bold red][Critical][/]" if issue["severity"] == "critical" else "[bold yellow][Warning][/]"
+            issues_str += f"  {prefix} ({issue['category']}): {issue['message']}\n"
+    else:
+        issues_str = "\n[bold green]Perfect![/] No issues detected in repository setup."
+
     console.print(
         Panel(
-            f"[bold white]Sanity Check summary:[/] "
+            f"[bold white]Sanity Check Summary:[/] "
             f"{'[bold green]HEALTHY[/]' if report['healthy'] else '[bold red]ISSUES FOUND[/]'}\n"
-            f"Checks run: {report['checks_run']}",
+            f"Checks run: {report['checks_run']}\n\n"
+            f"[bold white]System Tool Integration:[/]\n{tools_str}"
+            f"{issues_str}",
             title="Revive System Doctor",
             border_style="green" if report["healthy"] else "red",
         )
     )
 
-    # Print tools
-    tools_table = Table(title="System Tool Integration")
-    tools_table.add_column("Tool / Integration", style="cyan")
-    tools_table.add_column("Status", style="bold")
-
-    for tool, available in report["tools"].items():
-        status_styled = "[green]Available[/]" if available else "[yellow]Missing[/]"
-        tools_table.add_row(tool, status_styled)
-    console.print(tools_table)
-
-    # Print issues
-    if report["issues"]:
-        console.print("\n[bold red]Issues Detected:[/]")
-        for issue in report["issues"]:
-            prefix = "[bold red][Critical][/]" if issue["severity"] == "critical" else "[yellow][Warning][/]"
-            console.print(f" {prefix} ({issue['category']}): {issue['message']}")
+    if not report["healthy"]:
         raise typer.Exit(code=1)
-    else:
-        console.print("\n[bold green]Perfect![/] No issues detected in repository setup.")
 
 
 @secret_app.command("encrypt")
@@ -891,9 +1031,24 @@ def secret_encrypt(
     """Encrypt a plaintext secret using age public keys."""
     try:
         AgeEncryptor.encrypt_file(file_path, output_path, recipient)
-        console.print(f"[bold green]Successfully encrypted secret[/] to '{output_path}'.")
+        console.print(
+            Panel(
+                f"[bold green]Success![/] Successfully encrypted secret to '{output_path}'.\n\n"
+                f"[bold white]Plaintext source:[/] [cyan]{file_path}[/]\n"
+                f"[bold white]Encrypted output:[/] [magenta]{output_path}[/]\n"
+                f"[bold white]Recipients:[/] [yellow]{', '.join(recipient)}[/]",
+                title="Secret Encrypted",
+                border_style="green",
+            )
+        )
     except Exception as e:
-        console.print(f"[bold red]Encryption failed:[/] {e}")
+        console.print(
+            Panel(
+                f"[bold red]Encryption failed:[/] {e}",
+                title="Encryption Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=1)
 
 
@@ -906,9 +1061,24 @@ def secret_decrypt(
     """Decrypt an age-encrypted secret file using an identity private key."""
     try:
         AgeEncryptor.decrypt_file(file_path, output_path, identity)
-        console.print(f"[bold green]Successfully decrypted secret[/] to '{output_path}'.")
+        console.print(
+            Panel(
+                f"[bold green]Success![/] Successfully decrypted secret to '{output_path}'.\n\n"
+                f"[bold white]Encrypted source:[/] [cyan]{file_path}[/]\n"
+                f"[bold white]Decrypted output:[/] [magenta]{output_path}[/]\n"
+                f"[bold white]Identity used:[/] [yellow]{identity}[/]",
+                title="Secret Decrypted",
+                border_style="green",
+            )
+        )
     except Exception as e:
-        console.print(f"[bold red]Decryption failed:[/] {e}")
+        console.print(
+            Panel(
+                f"[bold red]Decryption failed:[/] {e}",
+                title="Decryption Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=1)
 
 
@@ -929,9 +1099,23 @@ def secret_rotate(
             AgeEncryptor.decrypt_file(file_path, tmp_plain, identity)
             # Re-encrypt with new keys
             AgeEncryptor.encrypt_file(tmp_plain, file_path, new_recipient)
-            console.print(f"[bold green]Success:[/] Secret at '{file_path}' successfully rotated to new recipients.")
+            console.print(
+                Panel(
+                    f"[bold green]Success:[/] Secret at '{file_path}' successfully rotated to new recipients.\n\n"
+                    f"[bold white]Decryption identity:[/] [yellow]{identity}[/]\n"
+                    f"[bold white]New recipients:[/] [yellow]{', '.join(new_recipient)}[/]",
+                    title="Secret Rotated",
+                    border_style="green",
+                )
+            )
         except Exception as e:
-            console.print(f"[bold red]Rotation failed:[/] {e}")
+            console.print(
+                Panel(
+                    f"[bold red]Rotation failed:[/] {e}",
+                    title="Rotation Failed",
+                    border_style="red",
+                )
+            )
             raise typer.Exit(code=1)
 
 
@@ -956,14 +1140,35 @@ def secret_keygen(
             # Set secure file permissions (0600)
             os.chmod(output, 0o600)
 
-            console.print("[bold green]Success:[/] Generated a new age keypair.")
-            console.print(f"Private identity key saved to: [cyan]{output}[/]")
-            console.print(f"Public recipient key: [bold yellow]{public_key}[/]")
+            console.print(
+                Panel(
+                    "[bold green]Success:[/] Generated a new age keypair.\n\n"
+                    f"Private identity key saved to: [cyan]{output}[/]\n"
+                    f"[bold white]File permissions:[/] [magenta]0600 (Secure)[/]\n"
+                    f"[bold white]Public recipient key:[/] [bold yellow]{public_key}[/]",
+                    title="Age Keypair Generated",
+                    border_style="green",
+                )
+            )
         else:
-            console.print(f"Private identity key:\n[bold cyan]{private_key}[/]\n")
-            console.print(f"Public recipient key:\n[bold yellow]{public_key}[/]")
+            console.print(
+                Panel(
+                    "[bold green]Success:[/] Generated a new age keypair.\n\n"
+                    f"Private identity key:\n[bold cyan]{private_key}[/]\n\n"
+                    f"Public recipient key:\n[bold yellow]{public_key}[/]\n\n"
+                    "[bold red]WARNING:[/] Copy the private key safely immediately. It will not be stored.",
+                    title="Age Keypair Generated",
+                    border_style="green",
+                )
+            )
     except Exception as e:
-        console.print(f"[bold red]Key generation failed:[/] {e}")
+        console.print(
+            Panel(
+                f"[bold red]Key generation failed:[/] {e}",
+                title="Key Generation Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=1)
 
 
@@ -1002,6 +1207,18 @@ def watch(
 
     profile_str = ",".join(profile_list)
 
+    console.print(
+        Panel(
+            "Monitoring revive repository for changes...\n\n"
+            f"[bold white]Repository:[/] [cyan]{repo_dir}[/]\n"
+            f"[bold white]Profile(s):[/] [magenta]{profile_str}[/]\n"
+            f"[bold white]Debounce delay:[/] [yellow]{debounce}s[/]\n\n"
+            "Press [bold red]Ctrl+C[/] to stop the watchdog daemon.",
+            title="Revive Watchdog Daemon Active",
+            border_style="cyan",
+        )
+    )
+
     daemon = WatchdogDaemon(
         repo_dir=repo_dir, profile_name=profile_str, identity_path=identity, debounce_seconds=debounce
     )
@@ -1013,7 +1230,13 @@ def watch(
     except KeyboardInterrupt:
         console.print("\n[yellow]Stopping watchdog daemon...[/]")
         daemon.stop()
-        console.print("[green]Watchdog daemon stopped.[/]")
+        console.print(
+            Panel(
+                "Watchdog daemon stopped successfully.\nSystem state remains unchanged.",
+                title="Watchdog Stopped",
+                border_style="yellow",
+            )
+        )
 
 
 @app.command("recover")
@@ -1028,18 +1251,45 @@ def recover(
     try:
         journals = RecoveryService.list_incomplete_journals()
         if not journals:
-            console.print("[green]No incomplete transactions found.[/]")
+            console.print(
+                Panel(
+                    "No incomplete transactions found.\nYour environment state is safe.",
+                    title="Transaction Recovery",
+                    border_style="green",
+                )
+            )
             raise typer.Exit(code=0)
 
         if auto:
             latest = journals[0]
             console.print(f"[yellow]Auto-recovering latest transaction {latest.tx_id}...[/]")
             RecoveryService.rollback_journal(latest)
-            console.print(f"[green]Transaction {latest.tx_id} successfully rolled back.[/]")
+            console.print(
+                Panel(
+                    f"Transaction {latest.tx_id} successfully rolled back.\n"
+                    "All affected files and symlinks have been restored to their pre-transaction states.",
+                    title="Rollback Complete",
+                    border_style="green",
+                )
+            )
             raise typer.Exit(code=0)
 
         # Interactive mode
-        console.print(f"[yellow]Found {len(journals)} incomplete transaction(s):[/]")
+        journals_list = ""
+        for journal in journals:
+            journals_list += (
+                f"  - [cyan]ID:[/] {journal.tx_id}\n"
+                f"    [dim]Timestamp:[/] {journal.timestamp}\n"
+                f"    [dim]Status:[/] {journal.status}\n\n"
+            )
+        console.print(
+            Panel(
+                f"Found [yellow]{len(journals)}[/] incomplete transaction(s):\n\n{journals_list.strip()}",
+                title="Incomplete Transactions Detected",
+                border_style="yellow",
+            )
+        )
+
         for journal in journals:
             console.print(f"\n[cyan]Transaction:[/] {journal.tx_id}")
             console.print(f"  [cyan]Timestamp:[/] {journal.timestamp}")
@@ -1051,13 +1301,33 @@ def recover(
                 if action in ("r", "rollback"):
                     try:
                         RecoveryService.rollback_journal(journal)
-                        console.print(f"[green]Transaction {journal.tx_id} rolled back.[/]")
+                        console.print(
+                            Panel(
+                                f"Transaction {journal.tx_id} rolled back.\n"
+                                "All affected files and symlinks have been restored to their pre-transaction states.",
+                                title="Rollback Complete",
+                                border_style="green",
+                            )
+                        )
                     except Exception as e:
-                        console.print(f"[bold red]Rollback failed:[/] {e}")
+                        console.print(
+                            Panel(
+                                f"[bold red]Rollback failed![/]\n\n[bold white]Error details:[/] {e}",
+                                title="Rollback Failed",
+                                border_style="red",
+                            )
+                        )
                     break
                 elif action in ("d", "discard"):
                     RecoveryService.discard_journal(journal)
-                    console.print(f"[yellow]Transaction {journal.tx_id} journal discarded.[/]")
+                    console.print(
+                        Panel(
+                            f"Transaction {journal.tx_id} journal discarded.\n"
+                            "Backup snapshots deleted. No files were modified.",
+                            title="Journal Discarded",
+                            border_style="yellow",
+                        )
+                    )
                     break
                 elif action in ("s", "skip"):
                     console.print("[yellow]Skipping transaction recovery.[/]")
@@ -1067,7 +1337,13 @@ def recover(
     except typer.Exit:
         raise
     except Exception as e:
-        console.print(f"[bold red]Recovery failed:[/] {e}")
+        console.print(
+            Panel(
+                f"[bold red]Recovery failed![/]\n\n[bold white]Error details:[/] {e}",
+                title="Recovery Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=1)
 
 
@@ -1091,8 +1367,11 @@ def self_install(
 
     if os.path.exists(target_path) and not force:
         console.print(
-            f"[bold yellow]Warning:[/] An installation wrapper already exists at '{target_path}'. "
-            "Use '--force' or '-f' to overwrite it."
+            Panel(
+                f"[bold yellow]Warning:[/] An installation wrapper already exists at '{target_path}'. Use '--force' or '-f' to overwrite it.",
+                title="Installation Aborted",
+                border_style="yellow",
+            )
         )
         raise typer.Exit(code=0)
 
@@ -1132,7 +1411,13 @@ exec "{python_bin}" -m rv "$@"
                 '  [bold cyan]export PATH="$HOME/.local/bin:$PATH"[/]'
             )
     except Exception as e:
-        console.print(f"[bold red]Self-installation failed:[/] {e}")
+        console.print(
+            Panel(
+                f"[bold red]Self-installation failed:[/] {e}",
+                title="Self-Installation Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=1)
 
 
@@ -1155,6 +1440,7 @@ def self_uninstall(
     config_root = os.path.join(home, ".config", "rv")
 
     removed_count = 0
+    actions = []
 
     # 1. Remove wrapper
     if os.path.exists(target_path):
@@ -1170,38 +1456,51 @@ def self_uninstall(
         if is_ours or force:
             try:
                 os.remove(target_path)
-                console.print(f"[green]Removed wrapper:[/] {target_path}")
+                actions.append(f"  - [red]Removed wrapper:[/] {target_path}")
                 removed_count += 1
             except Exception as e:
-                console.print(f"[red]Failed to remove wrapper:[/] {e}")
+                actions.append(f"  - [bold red]Failed to remove wrapper:[/] {e}")
         else:
-            console.print(
-                f"[yellow]Skipped wrapper:[/] '{target_path}' does not look like an autogenerated wrapper. "
-                "Use '--force' to remove it."
+            actions.append(
+                f"  - [bold yellow]Skipped wrapper:[/] '{target_path}' does not look like an autogenerated wrapper. (Use '--force')"
             )
 
     # 2. Remove isolated install root
     if os.path.exists(install_root):
         try:
             shutil.rmtree(install_root)
-            console.print(f"[green]Removed isolated installation:[/] {install_root}")
+            actions.append(f"  - [red]Removed isolated installation:[/] {install_root}")
             removed_count += 1
         except Exception as e:
-            console.print(f"[red]Failed to remove installation root:[/] {e}")
+            actions.append(f"  - [bold red]Failed to remove installation root:[/] {e}")
 
     # 3. Purge config if requested
     if purge_config and os.path.exists(config_root):
         try:
             shutil.rmtree(config_root)
-            console.print(f"[green]Purged configuration:[/] {config_root}")
+            actions.append(f"  - [red]Purged configuration:[/] {config_root}")
             removed_count += 1
         except Exception as e:
-            console.print(f"[red]Failed to purge configuration:[/] {e}")
+            actions.append(f"  - [bold red]Failed to purge configuration:[/] {e}")
 
     if removed_count > 0:
-        console.print("\n[bold green]Revive CLI uninstalled successfully.[/]")
+        console.print(
+            Panel(
+                "[bold green]Success![/] Revive CLI uninstalled successfully.\n\n"
+                "[bold white]Actions performed:[/]\n" + "\n".join(actions),
+                title="Revive Uninstalled",
+                border_style="green",
+            )
+        )
     else:
-        console.print("\n[yellow]Nothing to uninstall.[/]")
+        console.print(
+            Panel(
+                "No Revive components or configuration directories were found to remove.\n"
+                "Revive is not active on this system.",
+                title="Uninstall: Nothing to do",
+                border_style="yellow",
+            )
+        )
 
 
 @app.command("gui")
@@ -1221,13 +1520,20 @@ def workspace_list() -> None:
     """List all registered workspaces."""
     workspaces = WorkspaceService.list_workspaces()
     if not workspaces:
-        console.print("[yellow]No workspaces registered.[/]")
+        console.print(
+            Panel(
+                "No revive workspaces are registered in the global configuration (~/.config/rv/workspaces.yaml).\n"
+                "Run [bold green]rv init[/] or [bold green]rv workspace add <path>[/] to register one.",
+                title="Workspaces Registry",
+                border_style="yellow",
+            )
+        )
         return
 
-    table = Table(title="Registered Revive Workspaces")
-    table.add_column("Name", style="green")
+    table = Table(title="Registered Revive Workspaces", expand=True)
+    table.add_column("Name", style="green", width=20)
     table.add_column("Path", style="cyan")
-    table.add_column("Last Accessed", style="dim")
+    table.add_column("Last Accessed", style="dim", width=25)
 
     for ws in workspaces:
         table.add_row(ws.name, ws.path, ws.last_accessed.strftime("%Y-%m-%d %H:%M:%S"))
@@ -1242,22 +1548,52 @@ def workspace_add(
 ) -> None:
     """Register an existing directory as a revive workspace."""
     if not os.path.isdir(path):
-        console.print(f"[bold red]Error:[/] '{path}' is not a directory.")
+        console.print(
+            Panel(
+                f"[bold red]Error:[/] '{path}' is not a directory.",
+                title="Registration Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=1)
 
     manifest_path = os.path.join(path, "manifest.yaml")
+    warning_msg = ""
     if not os.path.exists(manifest_path):
-        console.print(f"[bold yellow]Warning:[/] No manifest.yaml found at '{path}'. Registering anyway.")
+        warning_msg = "\n\n[bold yellow]Warning:[/] No manifest.yaml found at this path. Registering anyway."
 
     ws = WorkspaceService.register_workspace(path, name)
-    console.print(f"[bold green]Registered workspace:[/] {ws.name} ({ws.path})")
+    console.print(
+        Panel(
+            "[bold green]Success![/] Workspace registered successfully.\n\n"
+            f"[bold white]Friendly Name:[/] [magenta]{ws.name}[/]\n"
+            f"[bold white]Absolute Path:[/] [cyan]{ws.path}[/]"
+            f"{warning_msg}",
+            title="Workspace Registered",
+            border_style="green",
+        )
+    )
 
 
 @workspace_app.command("remove")
 def workspace_remove(name: str = typer.Argument(..., help="Name of the workspace to remove.")) -> None:
     """Unregister a workspace by name."""
     if WorkspaceService.remove_workspace(name):
-        console.print(f"[bold green]Unregistered workspace:[/] {name}")
+        console.print(
+            Panel(
+                "[bold green]Success![/] Workspace de-registered successfully.\n\n"
+                f"[bold white]Workspace Name:[/] [magenta]{name}[/]\n"
+                "The physical workspace directory and files were not modified.",
+                title="Workspace Unregistered",
+                border_style="green",
+            )
+        )
     else:
-        console.print(f"[bold red]Error:[/] Workspace '{name}' not found.")
+        console.print(
+            Panel(
+                f"[bold red]Error:[/] Workspace '{name}' not found.",
+                title="Unregistration Failed",
+                border_style="red",
+            )
+        )
         raise typer.Exit(code=1)

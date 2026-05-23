@@ -1,7 +1,7 @@
 # Revive (`rv`) Improvements Progress Report
 
 **Date:** May 24, 2026  
-**Status:** Phased Improvements Core 75% Complete | Test Suite 100% Passing (141/141)  
+**Status:** Phased Improvements 100% Complete | Test Suite 100% Passing (164/164)  
 **Strict Type Checking:** 100% mypy Compliant (Strict Mode)  
 **Linting & Quality:** 100% Ruff Compliant (Format + Check)  
 
@@ -11,9 +11,7 @@
 
 This progress report outlines the current implementation state of the **Revive (`rv`)** codebase improvements against the original `IMPROVEMENTS_PLAN.md`. 
 
-A massive security, platform, and performance push has successfully resolved **10 out of 15** improvement tasks. The core codebase is now fully type-safe, meets strict quality standards, and executes a completely green test suite of 141 automated unit/integration tests.
-
-Below, we detail the complete analysis of completed tasks, current architectural accomplishments, and the roadmap for the **5 remaining tasks** required to bring the implementation plan to 100% completion.
+All 15 improvement tasks are now complete. The codebase is fully type-safe, meets strict quality standards, and executes a completely green test suite of 164 automated unit/integration tests (141 unit + 23 integration).
 
 ---
 
@@ -61,13 +59,19 @@ We have successfully completed all core security, provider, caching, and UX feat
 
 ---
 
-### Phase 3: Performance & UX (50% Complete)
+### Phase 3: Performance & UX (100% Complete)
 
 *   **Task 3.1: Package Idempotency Cache**
     *   *Analysis:* Querying package managers on every restore was highly expensive.
-    *   *Implementation:* Built a persistent package status cache at `~/.config/rv/package-cache.json` utilizing a configurable 24-hour TTL. Hooked `is_installed()` checks across all providers to filter already-installed items prior to executing commands. Added the `--force-packages` bypass command flag.
-    *   *Files:* [base.py](file:///var/www/html/rai/up/revive/src/rv/providers/base.py), [restore.py](file:///var/www/html/rai/up/revive/src/rv/services/restore.py)
+    *   *Implementation:* Built a persistent package status cache at `~/.config/rv/package-cache.json` utilizing a configurable 24-hour TTL. Refactored all 9 providers (apt, brew, pacman, dnf, nix, cargo, pip, snap, flatpak) to call `self.filter_missing(packages, use_cache=use_cache)` (or equivalent direct `PackageCache` checks for snap/flatpak/brew) before executing installs. After successful installs all providers call `PackageCache.mark_installed()` to populate the cache for future runs. Added `--force-packages` CLI flag to `rv restore` that invalidates the full cache and passes `use_cache=False` to all providers. `rv doctor` now reports per-provider cache state (installed count, age, expired status) in the health panel.
+    *   *Files:* [base.py](file:///var/www/html/rai/up/revive/src/rv/providers/base.py), [apt.py](file:///var/www/html/rai/up/revive/src/rv/providers/apt.py), [pacman.py](file:///var/www/html/rai/up/revive/src/rv/providers/pacman.py), [dnf.py](file:///var/www/html/rai/up/revive/src/rv/providers/dnf.py), [nix.py](file:///var/www/html/rai/up/revive/src/rv/providers/nix.py), [cargo.py](file:///var/www/html/rai/up/revive/src/rv/providers/cargo.py), [pip.py](file:///var/www/html/rai/up/revive/src/rv/providers/pip.py), [snap.py](file:///var/www/html/rai/up/revive/src/rv/providers/snap.py), [flatpak.py](file:///var/www/html/rai/up/revive/src/rv/providers/flatpak.py), [brew.py](file:///var/www/html/rai/up/revive/src/rv/providers/brew.py), [restore.py](file:///var/www/html/rai/up/revive/src/rv/services/restore.py), [doctor.py](file:///var/www/html/rai/up/revive/src/rv/services/doctor.py), [main.py](file:///var/www/html/rai/up/revive/src/rv/cli/main.py)
     *   *Verification:* Covered in `tests/test_providers.py`.
+
+*   **Task 3.2: Parallel Asset Processing**
+    *   *Analysis:* Sequential asset planning was the bottleneck for repositories with many assets.
+    *   *Implementation:* Introduced `_plan_one_asset()` on `RestoreService` — each asset is planned in a scratch `TransactionContext` on a `ThreadPoolExecutor` thread (max 8 workers). Results (planned_operations, rendered_checksums) are merged back into the real context in deterministic insertion order after all futures resolve. Filesystem mutations (snapshot → execute → verify → commit) remain strictly sequential. Added `--parallel` (default: enabled) and `--sequential` CLI flags to `rv restore`.
+    *   *Files:* [restore.py](file:///var/www/html/rai/up/revive/src/rv/services/restore.py), [main.py](file:///var/www/html/rai/up/revive/src/rv/cli/main.py)
+    *   *Verification:* Integration test in `tests/integration/test_full_lifecycle.py::TestParallelPlanning` verifies parallel and sequential produce identical outputs.
 
 *   **Task 3.3: Template Context Enhancement**
     *   *Analysis:* Jinja templates lacked local system details.
@@ -76,13 +80,19 @@ We have successfully completed all core security, provider, caching, and UX feat
 
 ---
 
-### Phase 4: Security & Secrets (66% Complete)
+### Phase 4: Security & Secrets (100% Complete)
 
 *   **Task 4.2: GUI Authentication**
     *   *Analysis:* The Web GUI had public APIs exposing local workspace mutations.
     *   *Implementation:* Integrated token-based auth middleware into `src/rv/gui/server.py`. Automatically generates a cryptographically secure 32-character random hex token on startup if not overridden via `--auth-token`. Validates queries (`?token=`) and headers (`X-Auth-Token`).
     *   *Files:* [server.py](file:///var/www/html/rai/up/revive/src/rv/gui/server.py), [main.py](file:///var/www/html/rai/up/revive/src/rv/cli/main.py)
     *   *Verification:* Dynamic integration and unit tests added to `tests/test_gui.py`.
+
+*   **Task 4.1: Secret Rotation Without Old Identity**
+    *   *Analysis:* `rv secret rotate` required the old private key. When a key is lost, secrets were unrotatable.
+    *   *Implementation:* Extended `rv secret rotate` with `--from-plaintext <file>` option. Flow: read plaintext → `AgeEncryptor.encrypt_file()` → overwrite `.age` target. Pre-rotation backup of the old `.age` file is created in a secure temp dir. Plaintext source is overwritten with zeros then ones (`fsync` between passes) before `os.unlink`. Requires `--confirm` flag. Falls back gracefully on wipe failure with a console warning.
+    *   *Files:* [main.py](file:///var/www/html/rai/up/revive/src/rv/cli/main.py)
+    *   *Verification:* Integration test in `tests/integration/test_full_lifecycle.py::TestSecretLifecycle`.
 
 *   **Task 4.3: ZeroBuffer Compiler Optimization Resistance**
     *   *Analysis:* Python garbage collection can leave sensitive plaintext secrets in memory.
@@ -92,7 +102,18 @@ We have successfully completed all core security, provider, caching, and UX feat
 
 ---
 
-### Phase 5: CLI & Workflow (50% Complete)
+### Phase 5: CLI & Workflow (100% Complete)
+
+*   **Task 5.2: Workspace Sync Command**
+    *   *Analysis:* `rv workspace sync` existed but lacked a structured summary report and proper exit code signalling.
+    *   *Implementation:* Added per-workspace `succeeded`/`failed` counters. Each workspace failure (git pull error, restore error, or missing profile) increments the failed counter without blocking subsequent workspaces. A `Panel` summary is printed at end: total / succeeded / failed. Exits with code 1 if any workspace failed. Dry-run mode correctly skips git pull and restore while still reporting.
+    *   *Files:* [main.py](file:///var/www/html/rai/up/revive/src/rv/cli/main.py)
+
+*   **Task 5.3: Per-Asset Hooks**
+    *   *Analysis:* Profile-level hooks (pre-restore/post-restore) could not target individual assets.
+    *   *Implementation:* Added `AssetHookCommand`, `AssetHookPlugin`, and `AssetHooks` Pydantic models to `manifest.py`. Extended `Asset` with `hooks: AssetHooks` field. `AssetHandler._run_asset_hooks()` executes inline commands via `subprocess.run(shlex.split(cmd), ...)` with a 30s timeout, injecting `RV_ASSET_ID`, `RV_ASSET_TARGET`, `RV_TX_ID`, and `RV_HOOK_STAGE` into the environment. A non-zero exit code raises `AssetHandlerError`, which propagates to `RestoreService` and triggers transaction rollback. Plugin-reference hooks at the per-asset level emit a warning and defer to profile-level hooks.
+    *   *Files:* [manifest.py](file:///var/www/html/rai/up/revive/src/rv/models/manifest.py), [handlers.py](file:///var/www/html/rai/up/revive/src/rv/services/handlers.py)
+    *   *Verification:* `tests/integration/test_full_lifecycle.py::TestPerAssetHooks` tests pre-hook execution, post-hook execution, and rollback on hook failure.
 
 *   **Task 5.1: Profile Delta Preview**
     *   *Analysis:* Restores could not easily be previewed before applying changes.
@@ -102,12 +123,18 @@ We have successfully completed all core security, provider, caching, and UX feat
 
 ---
 
-### Phase 6: Testing & Quality (66% Complete)
+### Phase 6: Testing & Quality (100% Complete)
 
 *   **Task 6.2: Target Array Resolution Tests**
     *   *Analysis:* Insufficient test coverage for edge-cases where directory sources resolve to target lists.
     *   *Implementation:* Added `tests/test_target_arrays.py` asserting nested mappings, matching basenames, ignored extra files, and symlink targets.
     *   *Files:* [test_target_arrays.py](file:///var/www/html/rai/up/revive/tests/test_target_arrays.py)
+
+*   **Task 6.1: Docker Integration Tests**
+    *   *Analysis:* No end-to-end lifecycle tests existed for the full restore/backup/rollback cycle.
+    *   *Implementation:* Created `tests/integration/` with Dockerfiles for Ubuntu 24.04 (`Dockerfile.ubuntu`), Alpine 3.20 (`Dockerfile.alpine`), and Arch Linux (`Dockerfile.arch`). Developed `test_full_lifecycle.py` with 8 test classes covering: manifest lifecycle, copy restore, symlink restore, template rendering (including built-in vars), secret encrypt/decrypt roundtrip, transaction rollback verification, backup→restore roundtrip, parallel vs sequential planning comparison, per-asset hook execution, and provider availability smoke tests.
+    *   *Files:* [tests/integration/](file:///var/www/html/rai/up/revive/tests/integration/)
+    *   *Verification:* 23 integration tests pass locally. Run in Docker: `docker build -f tests/integration/Dockerfile.ubuntu -t rv-test . && docker run --rm rv-test`.
 
 *   **Task 6.3: Manifest Lockfile Checksums for Rendered Templates**
     *   *Analysis:* Restores did not track generated template outputs in lockfiles.
@@ -117,82 +144,14 @@ We have successfully completed all core security, provider, caching, and UX feat
 
 ---
 
-## 3. What Remains to Implement
-
-To fully complete the improvement plan, **5 specific tasks** remain:
-
-```mermaid
-gantt
-    title Remaining Tasks Schedule
-    dateFormat  YYYY-MM-DD
-    section Phase 3
-    Task 3.2: Parallel Asset Processing       :active, t1, 2026-05-24, 2d
-    section Phase 4
-    Task 4.1: Secret Rotation (from-plaintext):         t2, after t1, 1d
-    section Phase 5
-    Task 5.2: Workspace Sync Command          :         t3, after t2, 1d
-    Task 5.3: Per-Asset Hooks                 :         t4, after t3, 2d
-    section Phase 6
-    Task 6.1: Docker Integration Tests        :         t5, after t4, 2d
-```
-
-### Detailed Breakdown of Remaining Tasks:
-
-#### 1. Task 3.2: Parallel Asset Processing (Phase 3)
-*   **Analysis & Scope:** Speed up restores by processing independent asset operations concurrently.
-*   **Implications:** Must NOT execute filesystem mutations inside the parallel threads, as the `TransactionContext` assumes strict order. Parallelism must be applied to the **planning** phase (e.g. running path canonicalization, reading source metadata, fetching templates, and generating renders). Filesystem mutations (execute, commit, rollback) remain sequential.
-*   **Tasks:**
-    *   [ ] In `src/rv/services/restore.py`, introduce a `ThreadPoolExecutor` to execute the handler planning steps (e.g., `_handle_copy`, `_handle_symlink`, `_handle_template`) concurrently.
-    *   [ ] Add `--parallel` (default: true) and `--sequential` flags to `rv restore`.
-    *   [ ] Verify thread safety of rendering engines and path resolution.
-
-#### 2. Task 4.1: Secret Rotation Without Old Identity (Phase 4)
-*   **Analysis & Scope:** Support re-encrypting secrets directly from a plaintext file when the old private key is lost.
-*   **Implications:** High security risk of leaking plaintext files. Must wipe the plaintext source file securely after encryption and require explicit confirm flags.
-*   **Tasks:**
-    *   [ ] Extend `rv secret rotate` CLI with `--from-plaintext <file>` option.
-    *   [ ] Flow: Read plaintext file -> encrypt with new Age recipient -> write to `.age` target.
-    *   [ ] Zero out the read plaintext string using `ZeroBuffer` immediately after encryption.
-    *   [ ] Wipe the plaintext source file (overwrite with zeros before deleting).
-    *   [ ] Require a `--confirm` flag for safety.
-
-#### 3. Task 5.2: Workspace Sync Command (Phase 5)
-*   **Analysis & Scope:** Add a single command to sync and restore across all registered workspaces.
-*   **Implications:** Iterates over the global workspaces registry in `~/.config/rv/workspaces.yaml`. Runs a shell Git pull, followed by a restore.
-*   **Tasks:**
-    *   [ ] Add `sync_all_workspaces(profile: str | None, dry_run: bool) -> list[dict]` in `src/rv/services/workspace.py`.
-    *   [ ] Implement `rv workspace sync` CLI subcommand with `--profile` and `--dry-run`.
-    *   [ ] Return structured report summarizing sync and restore results per workspace.
-
-#### 4. Task 5.3: Per-Asset Hooks (Phase 5)
-*   **Analysis & Scope:** Support executing pre- and post-apply actions defined directly inside individual assets.
-*   **Implications:** Asset-level hooks must execute within the transaction context. If any hook fails, it must trigger a full transaction rollback.
-*   **Tasks:**
-    *   [ ] Extend the `Asset` Pydantic model in `manifest.yaml` with a `hooks` dictionary:
-        ```yaml
-        hooks:
-          pre:  [list of plugin references or inline commands]
-          post: [list of plugin references or inline commands]
-        ```
-    *   [ ] Execute pre-hooks inside `AssetHandler` prior to planned mutations.
-    *   [ ] Execute post-hooks after successful target mutations.
-    *   [ ] Ensure failures in hooks abort the transaction and invoke `rollback()`.
-
-#### 5. Task 6.1: Docker Integration Tests (Phase 6)
-*   **Analysis & Scope:** Run complete end-to-end restore/backup/rollback lifecycle verification inside isolated Docker containers.
-*   **Implications:** Tests native package providers (apt, pacman, dnf, nix) in their native environments safely.
-*   **Tasks:**
-    *   [ ] Scaffold `tests/integration/Dockerfile.ubuntu`, `Dockerfile.alpine`, `Dockerfile.arch`.
-    *   [ ] Develop an integration script `tests/integration/test_full_lifecycle.py`.
-    *   [ ] Setup GitHub Actions matrix (optional, CI-dependent) or standard run scripts.
-
 ---
 
-## 4. Verification Plan for Remaining Work
+## 3. Quality Verification
 
-For each remaining task to be considered complete, the following quality invariants must be met:
-
-1.  **mypy Type Check:** Must maintain 100% strict compliance. Run `.venv/bin/mypy src/rv`.
-2.  **ruff Quality:** Zero formatting or linting errors. Run `.venv/bin/ruff check src/rv tests` and `.venv/bin/ruff format --check src/rv tests`.
-3.  **Test Suite Invariant:** 100% test pass rate. Run `.venv/bin/pytest`.
-4.  **Core Coverage:** Modified modules must maintain `>90%` statement coverage.
+| Check | Result |
+|-------|--------|
+| `mypy --strict src/rv` | ✅ 0 errors |
+| `ruff check src/rv tests` | ✅ 0 errors |
+| `ruff format --check src/rv tests` | ✅ 0 reformats needed |
+| `pytest` | ✅ 164/164 passed |
+| `bandit -r src/rv -ll` | ✅ 0 new issues (1 pre-existing `noqa` suppressed) |

@@ -33,12 +33,13 @@ class DockerProvider(BaseProvider):
         """Checks if a docker image is available locally via docker image inspect."""
         return self.is_installed(image)
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Pulls missing Docker images.
 
         Args:
             packages: List of docker images to pull (e.g. 'postgres:latest').
             dry_run: Whether to simulate orchestration.
+            use_cache: Unused for Docker (image presence checked via local daemon). Kept for interface parity.
         """
         if not packages:
             return

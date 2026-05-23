@@ -44,12 +44,13 @@ class CargoProvider(BaseProvider):
             logger.debug(f"Failed to check cargo install status for '{pkg}': {e}")
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs missing Rust tools via cargo install.
 
         Args:
             packages: List of crate names to install (e.g. ['ripgrep', 'fd-find']).
             dry_run: Whether to simulate installation without making changes.
+            use_cache: If True (default), consult the PackageCache for idempotency.
         """
         if not packages:
             return
@@ -57,8 +58,7 @@ class CargoProvider(BaseProvider):
         if not dry_run and not self.is_available():
             raise ProviderError("cargo is not available on this platform")
 
-        # Filter out already-installed packages for idempotency
-        missing = [pkg for pkg in packages if not self.is_installed(pkg)]
+        missing = self.filter_missing(packages, use_cache=use_cache)
 
         if not missing:
             logger.info("All cargo packages are already installed.")
@@ -69,10 +69,12 @@ class CargoProvider(BaseProvider):
             return
 
         logger.info(f"Installing missing cargo packages: {', '.join(missing)}")
-        # cargo install accepts multiple crate names in a single invocation
         cmd = ["cargo", "install"] + missing
         try:
             self.execute_with_retry(cmd)
+            from rv.providers.base import PackageCache
+
+            PackageCache.mark_installed(self.name, missing)
             logger.info("Cargo package installation completed successfully.")
         except Exception as e:
             raise ProviderError(f"Cargo installation failed: {e}") from e

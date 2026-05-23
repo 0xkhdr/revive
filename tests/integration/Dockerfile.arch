@@ -1,0 +1,24 @@
+FROM archlinux:latest
+
+RUN pacman -Sy --noconfirm \
+    python \
+    python-pip \
+    git \
+    age \
+    curl \
+    && pacman -Scc --noconfirm
+
+# Ensure git is usable in tests
+RUN git config --global user.email "ci@rv-test.local" && \
+    git config --global user.name "Revive CI"
+
+WORKDIR /app
+COPY . /app
+
+RUN python -m venv /app/.venv && \
+    /app/.venv/bin/pip install --quiet --upgrade pip && \
+    /app/.venv/bin/pip install --quiet -e ".[dev]"
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["python", "-m", "pytest", "tests/integration/test_full_lifecycle.py", "-v", "--tb=short"]

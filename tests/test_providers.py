@@ -127,6 +127,8 @@ def test_apt_provider() -> None:
         patch("rv.providers.apt.AptProvider.is_available", return_value=True),
         patch("subprocess.run", return_value=mock_dpkg_fail),
         patch("rv.providers.apt.AptProvider.execute_with_retry") as mock_exec,
+        patch("rv.providers.base.PackageCache.is_installed", return_value=False),
+        patch("rv.providers.base.PackageCache.mark_installed"),
     ):
         provider.install(["git"])
         mock_exec.assert_called_once_with(["apt-get", "install", "-y", "git"])
@@ -167,6 +169,8 @@ def test_flatpak_provider() -> None:
         patch("rv.providers.flatpak.FlatpakProvider.is_available", return_value=True),
         patch("subprocess.run", return_value=mock_info_fail),
         patch("rv.providers.flatpak.FlatpakProvider.execute_with_retry") as mock_exec,
+        patch("rv.providers.base.PackageCache.is_installed", return_value=False),
+        patch("rv.providers.base.PackageCache.mark_installed"),
     ):
         provider.install(["org.gimp.GIMP"])
         mock_exec.assert_called_once_with(["flatpak", "install", "-y", "org.gimp.GIMP"])
@@ -200,6 +204,8 @@ def test_snap_provider() -> None:
         patch("rv.providers.snap.SnapProvider.is_available", return_value=True),
         patch("subprocess.run", return_value=mock_snap_fail),
         patch("rv.providers.snap.SnapProvider.execute_with_retry") as mock_exec,
+        patch("rv.providers.base.PackageCache.is_installed", return_value=False),
+        patch("rv.providers.base.PackageCache.mark_installed"),
     ):
         provider.install(["classic:code"])
         mock_exec.assert_called_once_with(["snap", "install", "code", "--classic"])

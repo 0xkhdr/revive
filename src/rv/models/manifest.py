@@ -18,6 +18,31 @@ class AssetType(StrEnum):
     SECRET = "secret"
 
 
+class AssetHookCommand(BaseModel):
+    """Inline shell-command hook definition for a per-asset hook step."""
+
+    command: str = Field(..., description="Shell command to execute (passed as list via shlex.split)")
+
+
+class AssetHookPlugin(BaseModel):
+    """Plugin-reference hook definition for a per-asset hook step."""
+
+    plugin: str = Field(..., description="Plugin name to invoke from the repository plugins/ directory")
+
+
+class AssetHooks(BaseModel):
+    """Pre- and post-mutation hook definitions for a single asset."""
+
+    pre: list[AssetHookCommand | AssetHookPlugin] = Field(
+        default_factory=list,
+        description="Hooks to execute before the asset mutation is applied.",
+    )
+    post: list[AssetHookCommand | AssetHookPlugin] = Field(
+        default_factory=list,
+        description="Hooks to execute after the asset mutation is applied successfully.",
+    )
+
+
 class ConflictStrategy(StrEnum):
     """Strategies to resolve file conflicts during restore."""
 
@@ -39,6 +64,7 @@ class Asset(BaseModel):
     conflict_strategy: ConflictStrategy = Field(ConflictStrategy.PROMPT, description="Conflict resolution strategy")
     encrypted: bool = Field(False, description="Whether the asset source is encrypted (always true for secret type)")
     template_vars: dict[str, Any] | None = Field(None, description="Key-value mapping for template interpolation")
+    hooks: AssetHooks = Field(default_factory=AssetHooks, description="Per-asset pre/post mutation hooks")
 
     @model_validator(mode="after")
     def validate_encrypted_secret(self) -> "Asset":

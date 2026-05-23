@@ -30,12 +30,13 @@ class SnapProvider(BaseProvider):
         except Exception:
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs missing snap packages.
 
         Args:
             packages: List of snap package names.
             dry_run: Whether to simulate installation.
+            use_cache: If True (default), consult the PackageCache for idempotency.
         """
         if not packages:
             return
@@ -43,18 +44,24 @@ class SnapProvider(BaseProvider):
         if not dry_run and not self.is_available():
             raise ProviderError("snap CLI is not installed or not in system PATH")
 
+        from rv.providers.base import PackageCache
+
         missing = []
         for pkg in packages:
-            # Snap packages might be specified with flags (e.g. classic) like "classic:code" or "code --classic"
-            # To be robust, let's allow "classic:code" prefix or similar.
             actual_pkg = pkg
             classic_flag = False
             if pkg.startswith("classic:"):
                 actual_pkg = pkg.split(":", 1)[1]
                 classic_flag = True
 
+            # Check cache first, then live query
+            if use_cache and PackageCache.is_installed(self.name, actual_pkg):
+                logger.debug(f"[Cache] snap '{actual_pkg}' already in cache. Skipping.")
+                continue
             if not self.is_installed(actual_pkg):
                 missing.append((pkg, actual_pkg, classic_flag))
+            else:
+                PackageCache.mark_installed(self.name, [actual_pkg])
 
         if not missing:
             logger.info("All snap packages are already installed.")
@@ -73,6 +80,7 @@ class SnapProvider(BaseProvider):
 
             try:
                 self.execute_with_retry(cmd)
+                PackageCache.mark_installed(self.name, [actual_pkg])
                 logger.info(f"Successfully installed Snap: {pkg}")
             except Exception as e:
                 raise ProviderError(f"Snap installation failed for {pkg}: {e}") from e

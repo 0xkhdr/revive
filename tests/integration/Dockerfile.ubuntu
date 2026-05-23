@@ -1,0 +1,29 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    git \
+    age \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Ensure git is usable in tests
+RUN git config --global user.email "ci@rv-test.local" && \
+    git config --global user.name "Revive CI"
+
+WORKDIR /app
+COPY . /app
+
+RUN python3 -m venv /app/.venv && \
+    /app/.venv/bin/pip install --quiet --upgrade pip && \
+    /app/.venv/bin/pip install --quiet -e ".[dev]"
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["python", "-m", "pytest", "tests/integration/test_full_lifecycle.py", "-v", "--tb=short"]

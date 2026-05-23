@@ -41,12 +41,13 @@ class DnfProvider(BaseProvider):
             logger.debug(f"Failed to check rpm package status for '{pkg}': {e}")
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs missing packages using dnf install -y.
 
         Args:
             packages: List of package names to check and install.
             dry_run: Whether to simulate installation without making changes.
+            use_cache: If True (default), consult the PackageCache for idempotency.
         """
         if not packages:
             return
@@ -54,8 +55,7 @@ class DnfProvider(BaseProvider):
         if not dry_run and not self.is_available():
             raise ProviderError("dnf is not available on this platform")
 
-        # Filter out already-installed packages for idempotency
-        missing = [pkg for pkg in packages if not self.is_installed(pkg)]
+        missing = self.filter_missing(packages, use_cache=use_cache)
 
         if not missing:
             logger.info("All dnf packages are already installed.")
@@ -69,6 +69,9 @@ class DnfProvider(BaseProvider):
         cmd = ["dnf", "install", "-y"] + missing
         try:
             self.execute_with_retry(cmd)
+            from rv.providers.base import PackageCache
+
+            PackageCache.mark_installed(self.name, missing)
             logger.info("DNF package installation completed successfully.")
         except Exception as e:
             raise ProviderError(f"DNF installation failed: {e}") from e

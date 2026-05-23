@@ -2,21 +2,31 @@
 
 import getpass
 import hashlib
+import logging
 import os
 import platform
+import shlex
 import socket
+import subprocess
 import sys
+from typing import TYPE_CHECKING
 
 import jinja2
 import typer
 
-from rv.models.manifest import Asset, AssetType, ConflictStrategy, Secret
+from rv.logging.audit import AuditLogger
+from rv.models.manifest import Asset, AssetHookCommand, AssetHookPlugin, AssetType, ConflictStrategy, Secret
 from rv.security.encryptor import AgeEncryptor
 from rv.security.tempfile import SecureTempFile
 from rv.security.zerobuffer import ZeroBuffer
 from rv.transactions.context import TransactionContext
 from rv.utils.interpolate import Interpolator
 from rv.utils.path import PathHelper
+
+if TYPE_CHECKING:
+    pass
+
+_hook_logger = AuditLogger.get_logger("rv.services.handlers.hooks")
 
 
 class AssetHandlerError(Exception):
@@ -113,6 +123,10 @@ class AssetHandler:
                 # OVERWRITE continues below...
 
             # 4. Handle based on asset/secret type
+            # Execute per-asset pre-hooks before planning mutations
+            if isinstance(asset, Asset) and asset.hooks.pre:
+                cls._run_asset_hooks(asset.hooks.pre, asset.id, "pre", abs_target, tx_context)
+
             if asset.type == AssetType.SYMLINK:
                 cls._handle_symlink(asset, target_source, abs_target, tx_context)
             elif asset.type == AssetType.COPY:
@@ -124,9 +138,93 @@ class AssetHandler:
             else:
                 raise ValueError(f"Unsupported asset type: {asset.type}")
 
+            # Execute per-asset post-hooks after planning mutations
+            if isinstance(asset, Asset) and asset.hooks.post:
+                cls._run_asset_hooks(asset.hooks.post, asset.id, "post", abs_target, tx_context)
+
             planned_any = True
 
         return planned_any
+
+    @classmethod
+    def _run_asset_hooks(
+        cls,
+        hooks: list[AssetHookCommand | AssetHookPlugin],
+        asset_id: str,
+        stage: str,
+        abs_target: str,
+        tx_context: TransactionContext,
+    ) -> None:
+        """Executes per-asset hooks for the given stage (pre or post).
+
+        Inline commands run via subprocess with shell=False.
+        Plugin references are logged as warnings (full sandbox delegation is done
+        at profile-level hook stage; per-asset plugin hooks require repo_dir context
+        passed through the full plugin loader, deferred to profile-level execution).
+
+        Args:
+            hooks: List of hook definitions (command or plugin references).
+            asset_id: ID of the asset being processed (for error messages).
+            stage: Hook stage label ('pre' or 'post').
+            abs_target: Absolute path of the asset target (for environment context).
+            tx_context: Active transaction context (for rollback on failure).
+
+        Raises:
+            AssetHandlerError: If a hook command fails.
+        """
+        for hook in hooks:
+            if isinstance(hook, AssetHookCommand):
+                try:
+                    args = shlex.split(hook.command)
+                except ValueError as e:
+                    raise AssetHandlerError(
+                        f"Asset '{asset_id}' {stage}-hook has invalid command syntax: {hook.command!r}: {e}"
+                    ) from e
+
+                env = os.environ.copy()
+                env["RV_ASSET_ID"] = asset_id
+                env["RV_ASSET_TARGET"] = abs_target
+                env["RV_TX_ID"] = tx_context.tx_id
+                env["RV_HOOK_STAGE"] = stage
+
+                _hook_logger.info(
+                    f"Asset '{asset_id}': running {stage}-hook command: {args[0]!r}",
+                    extra={"asset_id": asset_id, "stage": stage},
+                )
+                try:
+                    result = subprocess.run(
+                        args,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        env=env,
+                    )
+                    if result.returncode != 0:
+                        stderr_snippet = (result.stderr or "").strip()[:200]
+                        raise AssetHandlerError(
+                            f"Asset '{asset_id}' {stage}-hook command exited with code "
+                            f"{result.returncode}: {stderr_snippet}"
+                        )
+                    if result.stdout:
+                        _hook_logger.debug(f"Asset '{asset_id}' {stage}-hook stdout: {result.stdout.strip()[:200]}")
+                except subprocess.TimeoutExpired as e:
+                    raise AssetHandlerError(
+                        f"Asset '{asset_id}' {stage}-hook command timed out after 30s: {hook.command!r}"
+                    ) from e
+
+            elif isinstance(hook, AssetHookPlugin):
+                # Plugin references at per-asset level require the repo_dir which is not
+                # available here; log a warning and skip. Profile-level plugin hooks
+                # (pre-restore / post-restore) are the correct mechanism for plugin hooks.
+                _hook_logger.warning(
+                    f"Asset '{asset_id}' {stage}-hook references plugin '{hook.plugin}'. "
+                    f"Per-asset plugin hooks are executed at the profile level only. "
+                    f"Use profile hooks for plugin references."
+                )
+                _hook_logger.log(
+                    logging.DEBUG,
+                    f"Skipping per-asset plugin hook '{hook.plugin}' for asset '{asset_id}'.",
+                )
 
     @classmethod
     def _handle_symlink(

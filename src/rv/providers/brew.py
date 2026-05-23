@@ -45,12 +45,14 @@ class BrewProvider(BaseProvider):
         except Exception:
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs Homebrew packages using a temporary Brewfile.
 
         Args:
             packages: List of formula/cask/tap strings.
             dry_run: Whether to simulate installation.
+            use_cache: If True (default), consult the PackageCache for idempotency.
+                       For brew, cache is checked but brew bundle is inherently idempotent.
         """
         if not packages:
             return
@@ -90,8 +92,10 @@ class BrewProvider(BaseProvider):
 
             logger.info("Installing packages via brew bundle...")
             try:
-                # brew bundle install --file=<tempfile>
                 self.execute_with_retry(["brew", "bundle", "--file", tmp_path])
+                from rv.providers.base import PackageCache
+
+                PackageCache.mark_installed(self.name, packages)
                 logger.info("Homebrew bundle restoration completed successfully.")
             except Exception as e:
                 raise ProviderError(f"Homebrew installation failed: {e}") from e

@@ -46,12 +46,13 @@ class NixProvider(BaseProvider):
             logger.debug(f"Failed to check nix-env package status for '{pkg}': {e}")
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs missing nix packages via nix-env -iA nixpkgs.<pkg>.
 
         Args:
             packages: List of nixpkgs attribute names (e.g. ['ripgrep', 'neovim']).
             dry_run: Whether to simulate installation without making changes.
+            use_cache: If True (default), consult the PackageCache for idempotency.
         """
         if not packages:
             return
@@ -59,8 +60,7 @@ class NixProvider(BaseProvider):
         if not dry_run and not self.is_available():
             raise ProviderError("nix-env is not available on this platform")
 
-        # Filter out already-installed packages for idempotency
-        missing = [pkg for pkg in packages if not self.is_installed(pkg)]
+        missing = self.filter_missing(packages, use_cache=use_cache)
 
         if not missing:
             logger.info("All nix packages are already installed.")
@@ -71,11 +71,13 @@ class NixProvider(BaseProvider):
             return
 
         logger.info(f"Installing missing nix packages: {', '.join(missing)}")
-        # Install each package individually (nix-env -iA requires separate invocations per attribute path)
+        from rv.providers.base import PackageCache
+
         for pkg in missing:
             cmd = ["nix-env", "-iA", f"nixpkgs.{pkg}"]
             try:
                 self.execute_with_retry(cmd)
+                PackageCache.mark_installed(self.name, [pkg])
                 logger.info(f"Nix package '{pkg}' installed successfully.")
             except Exception as e:
                 raise ProviderError(f"Nix installation of '{pkg}' failed: {e}") from e

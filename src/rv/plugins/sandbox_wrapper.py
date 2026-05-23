@@ -17,7 +17,8 @@ import socket
 import subprocess
 import sys
 import tempfile
-from typing import Any, Mapping, NoReturn, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, NoReturn
 
 # ---------------------------------------------------------------------------
 # Step 0: Apply resource limits BEFORE blocking ctypes/resource

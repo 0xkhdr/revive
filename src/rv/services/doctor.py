@@ -176,4 +176,32 @@ class DoctorService:
 
         healthy = not any(i["severity"] == "critical" for i in issues)
 
-        return {"healthy": healthy, "issues": issues, "checks_run": checks_run, "tools": tools_status}
+        # 5. Package cache state
+        checks_run += 1
+        import time
+
+        from rv.providers.base import _CACHE_TTL_SECONDS, PackageCache
+
+        cache_data = PackageCache._load()
+        cache_info: dict[str, Any] = {}
+        now = time.time()
+        for provider_name, entry in cache_data.items():
+            if not isinstance(entry, dict):
+                continue
+            last_updated = entry.get("last_updated", 0.0)
+            installed = entry.get("installed", [])
+            age_secs = now - last_updated
+            expired = age_secs > _CACHE_TTL_SECONDS
+            cache_info[provider_name] = {
+                "installed_count": len(installed),
+                "age_seconds": round(age_secs, 1),
+                "expired": expired,
+            }
+
+        return {
+            "healthy": healthy,
+            "issues": issues,
+            "checks_run": checks_run,
+            "tools": tools_status,
+            "package_cache": cache_info,
+        }

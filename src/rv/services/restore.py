@@ -4,6 +4,8 @@ import hashlib
 import logging
 import os
 import socket
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
@@ -250,6 +252,65 @@ class RestoreService:
         return hasher.hexdigest()
 
     @classmethod
+    def _plan_asset_parallel(
+        cls,
+        asset: Asset | Secret,
+        repo_dir: str,
+        identity_path: str | None,
+        interactive: bool,
+    ) -> tuple[str, bool, dict[str, str]]:
+        """Plans a single asset in an isolated TransactionContext snapshot.
+
+        Used by the parallel planning stage. Returns the asset/secret ID, whether it
+        was successfully planned, and any rendered checksums captured during planning.
+
+        Note: each call uses a *fresh* disposable TransactionContext so that planned
+        operations can be collected and replayed sequentially into the real context.
+        The returned operations are dictionaries safe to pass across thread boundaries.
+
+        Args:
+            asset: Asset or Secret to plan.
+            repo_dir: Canonical repository path.
+            identity_path: Optional age identity file path.
+            interactive: Whether to prompt on conflicts.
+
+        Returns:
+            Tuple of (asset_id, was_planned, rendered_checksums, planned_ops).
+        """
+        # Unused — implemented inline via _plan_one_asset for simpler return type.
+        raise NotImplementedError  # pragma: no cover
+
+    @classmethod
+    def _plan_one_asset(
+        cls,
+        asset: Asset | Secret,
+        repo_dir: str,
+        identity_path: str | None,
+        interactive: bool,
+    ) -> tuple[str, bool, dict[str, str], list[dict[str, Any]]]:
+        """Plans a single asset using a scratch TransactionContext.
+
+        Thread-safe: creates its own TransactionContext so no shared state is mutated.
+        Results (planned_operations, rendered_checksums) are returned as plain data
+        and merged into the main TransactionContext on the calling thread.
+
+        Args:
+            asset: Asset or Secret to plan.
+            repo_dir: Canonical repository path.
+            identity_path: Optional age identity file path.
+            interactive: Whether to prompt on conflicts.
+
+        Returns:
+            Tuple of (asset_id, was_planned, rendered_checksums_dict, planned_operations_list).
+        """
+        scratch = TransactionContext()
+        try:
+            planned = AssetHandler.handle(asset, repo_dir, scratch, identity_path, interactive)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to plan asset '{asset.id}': {exc}") from exc
+        return asset.id, planned, dict(scratch.rendered_checksums), list(scratch.planned_operations)
+
+    @classmethod
     def restore(
         cls,
         repo_dir: str,
@@ -258,6 +319,8 @@ class RestoreService:
         interactive: bool = False,
         dry_run: bool = False,
         no_plugins: bool = False,
+        parallel: bool = True,
+        force_packages: bool = False,
     ) -> str:
         """Runs the entire restore lifecycle under flock process protection.
 
@@ -352,23 +415,36 @@ class RestoreService:
             logger.info("Step 4/14 & 5/14: Validating dependencies and handling decryption...")
             tx_context = TransactionContext()
 
-            # Process assets and secrets into the transaction plan
-            skipped_assets = []
-            for asset in resolved.assets.values():
-                try:
-                    success = AssetHandler.handle(asset, repo_dir, tx_context, identity_path, interactive)
-                    if not success:
-                        skipped_assets.append(asset.id)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to plan asset '{asset.id}': {e}") from e
+            all_items: list[Asset | Secret] = list(resolved.assets.values()) + list(resolved.secrets.values())
+            skipped_assets: list[str] = []
 
-            for secret in resolved.secrets.values():
-                try:
-                    success = AssetHandler.handle(secret, repo_dir, tx_context, identity_path, interactive)
-                    if not success:
-                        skipped_assets.append(secret.id)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to plan secret '{secret.id}': {e}") from e
+            if parallel and len(all_items) > 1:
+                logger.info(f"Planning {len(all_items)} assets in parallel (ThreadPoolExecutor)...")
+                # Collect futures preserving insertion order for determinism
+                futures: list[tuple[Future[tuple[str, bool, dict[str, str], list[dict[str, Any]]]], str]] = []
+                with ThreadPoolExecutor(max_workers=min(8, len(all_items))) as executor:
+                    for item in all_items:
+                        fut: Future[tuple[str, bool, dict[str, str], list[dict[str, Any]]]] = executor.submit(
+                            cls._plan_one_asset, item, repo_dir, identity_path, interactive
+                        )
+                        futures.append((fut, item.id))
+
+                # Merge results in original order (deterministic)
+                for fut, _item_id in futures:
+                    asset_id, planned, checksums, ops = fut.result()  # re-raises any exception
+                    if not planned:
+                        skipped_assets.append(asset_id)
+                    tx_context.rendered_checksums.update(checksums)
+                    tx_context.planned_operations.extend(ops)
+            else:
+                # Sequential fallback
+                for item in all_items:
+                    try:
+                        success = AssetHandler.handle(item, repo_dir, tx_context, identity_path, interactive)
+                        if not success:
+                            skipped_assets.append(item.id)
+                    except Exception as e:
+                        raise RuntimeError(f"Failed to plan asset '{item.id}': {e}") from e
 
             if skipped_assets:
                 logger.info(f"Skipped assets due to conflict strategy: {', '.join(skipped_assets)}")
@@ -399,25 +475,31 @@ class RestoreService:
 
             # Step 10: Package Orchestration
             logger.info("Step 10/14: Orchestrating package installations...")
+            use_cache = not force_packages
+            if force_packages:
+                logger.info("--force-packages active: bypassing idempotency cache for all providers.")
+                from rv.providers.base import PackageCache
+
+                PackageCache.invalidate_all()
             try:
                 if resolved.packages["brew"]:
-                    BrewProvider().install(resolved.packages["brew"], dry_run=dry_run)
+                    BrewProvider().install(resolved.packages["brew"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["apt"]:
-                    AptProvider().install(resolved.packages["apt"], dry_run=dry_run)
+                    AptProvider().install(resolved.packages["apt"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["flatpak"]:
-                    FlatpakProvider().install(resolved.packages["flatpak"], dry_run=dry_run)
+                    FlatpakProvider().install(resolved.packages["flatpak"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["snap"]:
-                    SnapProvider().install(resolved.packages["snap"], dry_run=dry_run)
+                    SnapProvider().install(resolved.packages["snap"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["pacman"]:
-                    PacmanProvider().install(resolved.packages["pacman"], dry_run=dry_run)
+                    PacmanProvider().install(resolved.packages["pacman"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["dnf"]:
-                    DnfProvider().install(resolved.packages["dnf"], dry_run=dry_run)
+                    DnfProvider().install(resolved.packages["dnf"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["nix"]:
-                    NixProvider().install(resolved.packages["nix"], dry_run=dry_run)
+                    NixProvider().install(resolved.packages["nix"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["cargo"]:
-                    CargoProvider().install(resolved.packages["cargo"], dry_run=dry_run)
+                    CargoProvider().install(resolved.packages["cargo"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["pip"]:
-                    PipProvider().install(resolved.packages["pip"], dry_run=dry_run)
+                    PipProvider().install(resolved.packages["pip"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.docker_images:
                     DockerProvider().install(resolved.docker_images, dry_run=dry_run)
                 if resolved.node_config["version"] or resolved.node_config["version_file"]:

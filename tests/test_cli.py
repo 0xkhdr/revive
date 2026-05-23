@@ -63,6 +63,8 @@ def test_cli_restore(temp_repo: str) -> None:
                 interactive=True,
                 dry_run=False,
                 no_plugins=False,
+                parallel=True,
+                force_packages=False,
             )
 
         # 2. Success case with options
@@ -76,6 +78,8 @@ def test_cli_restore(temp_repo: str) -> None:
                 interactive=False,
                 dry_run=True,
                 no_plugins=False,
+                parallel=True,
+                force_packages=False,
             )
 
         # 3. Success case with no-plugins option
@@ -89,6 +93,8 @@ def test_cli_restore(temp_repo: str) -> None:
                 interactive=True,
                 dry_run=False,
                 no_plugins=True,
+                parallel=True,
+                force_packages=False,
             )
 
         # 4. Failure case
@@ -388,6 +394,8 @@ def test_cli_restore_multiple_profiles(temp_repo: str) -> None:
                 interactive=True,
                 dry_run=False,
                 no_plugins=False,
+                parallel=True,
+                force_packages=False,
             )
 
 

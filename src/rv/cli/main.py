@@ -523,6 +523,16 @@ def restore(
     ),
     no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip executing any plugin hooks during restore."),
     prune_backups: bool = typer.Option(False, "--prune", help="Prune old backup snapshots after a successful restore."),
+    parallel: bool = typer.Option(
+        True,
+        "--parallel/--sequential",
+        help="Plan assets in parallel (default) or sequentially (use --sequential to debug race conditions).",
+    ),
+    force_packages: bool = typer.Option(
+        False,
+        "--force-packages",
+        help="Bypass the package idempotency cache and re-query all providers. Invalidates cache before installing.",
+    ),
 ) -> None:
     """Synchronize the local environment state to match the repository profile (repo → system)."""
     repo_dir = _get_repo_dir()
@@ -582,6 +592,8 @@ def restore(
             interactive=interactive,
             dry_run=dry_run,
             no_plugins=no_plugins,
+            parallel=parallel,
+            force_packages=force_packages,
         )
 
         # Resolve the profile to summarize what was restored if manifest exists
@@ -1052,6 +1064,18 @@ def doctor(
         status_styled = "[bold green]✓ Available[/]" if available else "[bold yellow]✗ Missing[/]"
         tools_str += f"  - {tool:<25}: {status_styled}\n"
 
+    # Build package cache summary
+    cache_info: dict[str, Any] = report.get("package_cache", {})
+    if cache_info:
+        cache_str = "\n[bold white]Package Idempotency Cache:[/]\n"
+        for provider_name, info in cache_info.items():
+            count = info["installed_count"]
+            age_h = round(info["age_seconds"] / 3600, 1)
+            expired_flag = " [bold yellow](expired)[/]" if info["expired"] else ""
+            cache_str += f"  - {provider_name:<20}: {count} cached  ({age_h}h old){expired_flag}\n"
+    else:
+        cache_str = "\n[bold white]Package Idempotency Cache:[/] [dim]empty — will query providers on next restore[/]\n"
+
     # Build issues list
     issues_str = ""
     if report["issues"]:
@@ -1068,6 +1092,7 @@ def doctor(
             f"{'[bold green]HEALTHY[/]' if report['healthy'] else '[bold red]ISSUES FOUND[/]'}\n"
             f"Checks run: {report['checks_run']}\n\n"
             f"[bold white]System Tool Integration:[/]\n{tools_str}"
+            f"{cache_str}"
             f"{issues_str}",
             title="Revive System Doctor",
             border_style="green" if report["healthy"] else "red",
@@ -1143,13 +1168,129 @@ def secret_decrypt(
 @secret_app.command("rotate")
 def secret_rotate(
     file_path: str = typer.Argument(..., help="Path to the encrypted secret file to rotate."),
-    identity: str = typer.Option(..., "--identity", "-i", help="Path to the current age identity file."),
+    identity: str | None = typer.Option(None, "--identity", "-i", help="Path to the current age identity file."),
     new_recipient: list[str] = typer.Option(
         ..., "--new-recipient", "-nr", help="New age public key recipient (multiple allowed)."
     ),
+    from_plaintext: str | None = typer.Option(
+        None,
+        "--from-plaintext",
+        help=(
+            "Path to a plaintext source file to encrypt directly (skips decryption step). "
+            "The plaintext file will be securely wiped and deleted after encryption. "
+            "Requires --confirm."
+        ),
+    ),
+    confirm: bool = typer.Option(
+        False,
+        "--confirm",
+        help="Required when using --from-plaintext. Confirms the plaintext file will be securely wiped.",
+    ),
 ) -> None:
-    """Decrypt a secret using existing key, and re-encrypt with a new list of recipients."""
+    """Decrypt a secret using existing key and re-encrypt with new recipients.
+
+    Use --from-plaintext to encrypt a new plaintext file directly when the
+    original identity is unavailable (e.g. after a key loss). The plaintext
+    source file is securely overwritten with zeros and deleted after encryption.
+    """
+    import shutil
+    import tempfile
+
     from rv.security.tempfile import SecureTempFile
+    from rv.security.zerobuffer import ZeroBuffer
+
+    # ── Mode: --from-plaintext ──────────────────────────────────────────────
+    if from_plaintext is not None:
+        if not confirm:
+            console.print(
+                Panel(
+                    "[bold red]⚠ WARNING:[/] Using [bold yellow]--from-plaintext[/] will:\n"
+                    "  1. Encrypt the plaintext file with the new recipients.\n"
+                    "  2. [bold red]Permanently and irrecoverably wipe[/] the plaintext source file.\n\n"
+                    "This action cannot be undone. Re-run with [bold yellow]--confirm[/] to proceed.",
+                    title="Confirmation Required",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(code=1)
+
+        if not os.path.isfile(from_plaintext):
+            console.print(
+                Panel(
+                    f"[bold red]Error:[/] Plaintext source file not found: '{from_plaintext}'",
+                    title="File Not Found",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(code=1)
+
+        # Back up the target .age file before overwriting (if it exists)
+        backup_path: str | None = None
+        if os.path.exists(file_path):
+            backup_dir = tempfile.mkdtemp(prefix="rv_secret_backup_")
+            backup_path = os.path.join(backup_dir, os.path.basename(file_path) + ".bak")
+            shutil.copy2(file_path, backup_path)
+            os.chmod(backup_path, 0o600)
+
+        try:
+            # Encrypt the plaintext directly to the target .age file
+            AgeEncryptor.encrypt_file(from_plaintext, file_path, new_recipient)
+        except Exception as e:
+            # Restore backup on failure
+            if backup_path and os.path.exists(backup_path):
+                shutil.copy2(backup_path, file_path)
+            console.print(
+                Panel(
+                    f"[bold red]Encryption failed:[/] {e}\n"
+                    + (f"Original file restored from backup: {backup_path}" if backup_path else ""),
+                    title="Rotation Failed",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(code=1)
+
+        # Securely wipe the plaintext source file
+        try:
+            plaintext_size = os.path.getsize(from_plaintext)
+            # Overwrite with zeros, then with ones, then remove
+            with open(from_plaintext, "r+b") as pf:
+                pf.write(b"\x00" * plaintext_size)
+                pf.flush()
+                os.fsync(pf.fileno())
+                pf.seek(0)
+                pf.write(b"\xff" * plaintext_size)
+                pf.flush()
+                os.fsync(pf.fileno())
+            os.unlink(from_plaintext)
+        except Exception as wipe_err:
+            console.print(
+                f"[bold yellow]Warning:[/] Secure wipe of '{from_plaintext}' may be incomplete: {wipe_err}\n"
+                "[bold red]Manually delete the plaintext file immediately.[/]"
+            )
+
+        console.print(
+            Panel(
+                f"[bold green]Success:[/] Plaintext file encrypted to '{file_path}'.\n\n"
+                f"[bold white]New recipients:[/] [yellow]{', '.join(new_recipient)}[/]\n"
+                f"[bold red]Plaintext source wiped:[/] [cyan]{from_plaintext}[/]"
+                + (f"\n[bold white]Pre-rotation backup:[/] [dim]{backup_path}[/]" if backup_path else ""),
+                title="Secret Rotated from Plaintext",
+                border_style="green",
+            )
+        )
+        return
+
+    # ── Mode: standard rotate (decrypt old → re-encrypt with new recipients) ──
+    if identity is None:
+        console.print(
+            Panel(
+                "[bold red]Error:[/] --identity is required for standard rotation.\n"
+                "Use --from-plaintext to rotate without the old identity.",
+                title="Missing Identity",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
 
     with SecureTempFile.file() as tmp_plain:
         try:
@@ -1157,6 +1298,11 @@ def secret_rotate(
             AgeEncryptor.decrypt_file(file_path, tmp_plain, identity)
             # Re-encrypt with new keys
             AgeEncryptor.encrypt_file(tmp_plain, file_path, new_recipient)
+            # Zero the temporary plaintext
+            with open(tmp_plain, "r+b") as tf:
+                tmp_size = os.path.getsize(tmp_plain)
+                tf.write(b"\x00" * tmp_size)
+                tf.flush()
             console.print(
                 Panel(
                     f"[bold green]Success:[/] Secret at '{file_path}' successfully rotated to new recipients.\n\n"
@@ -1709,7 +1855,12 @@ def workspace_sync(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview sync operations without executing."),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Path to age identity file for secrets."),
 ) -> None:
-    """Pull latest changes and restore all registered workspaces (git pull → rv restore)."""
+    """Pull latest changes and restore all registered workspaces (git pull → rv restore).
+
+    Each workspace is processed independently; a failure in one workspace does not
+    block others. A summary report is printed at the end showing how many succeeded
+    and failed. Exits with code 1 if any workspace encountered an error.
+    """
     import subprocess
 
     workspaces = WorkspaceService.list_workspaces()
@@ -1730,10 +1881,14 @@ def workspace_sync(
     results_table.add_column("Restore", style="green", width=12)
     results_table.add_column("Details", style="dim")
 
+    succeeded = 0
+    failed = 0
+
     for ws in workspaces:
         git_status = "✓"
         restore_status = "✓"
         details = ""
+        ws_failed = False
 
         # Step 1: git pull
         if not dry_run:
@@ -1748,6 +1903,7 @@ def workspace_sync(
                     git_status = "[red]✗[/]"
                     details = f"git pull failed: {git_result.stderr.strip()[:80]}"
                     results_table.add_row(ws.name, ws.path, git_status, "—", details)
+                    failed += 1
                     continue
                 else:
                     git_status = "[green]✓[/]"
@@ -1755,6 +1911,7 @@ def workspace_sync(
                 git_status = "[red]✗[/]"
                 details = f"git error: {e}"
                 results_table.add_row(ws.name, ws.path, git_status, "—", details)
+                failed += 1
                 continue
         else:
             git_status = "[yellow]skip[/]"
@@ -1789,12 +1946,35 @@ def workspace_sync(
                 except Exception as e:
                     restore_status = "[red]✗[/]"
                     details = f"restore failed: {str(e)[:80]}"
+                    ws_failed = True
             else:
                 restore_status = "[yellow]skip[/]"
         else:
             restore_status = "[yellow]no profile[/]"
             details = "No profile specified or detected"
+            ws_failed = True
+
+        if ws_failed:
+            failed += 1
+        else:
+            succeeded += 1
 
         results_table.add_row(ws.name, ws.path, git_status, restore_status, details)
 
     console.print(results_table)
+
+    total = len(workspaces)
+    summary_color = "green" if failed == 0 else "red"
+    console.print(
+        Panel(
+            f"[bold white]Total:[/] {total}  "
+            f"[bold green]Succeeded:[/] {succeeded}  "
+            f"[bold red]Failed:[/] {failed}"
+            + ("\n\n[dim]Use --dry-run to preview operations.[/]" if not dry_run else ""),
+            title="Sync Summary",
+            border_style=summary_color,
+        )
+    )
+
+    if failed > 0:
+        raise typer.Exit(code=1)

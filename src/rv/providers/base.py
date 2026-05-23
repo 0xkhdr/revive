@@ -223,11 +223,13 @@ class BaseProvider:
 
         raise ProviderError(f"Failed to execute command after {retries} attempts: {last_error}") from last_error
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs the given packages using the native tool.
 
         Args:
             packages: List of packages/references to install.
             dry_run: If True, previews the install without execution.
+            use_cache: If True (default), consult the PackageCache for idempotency.
+                       Pass False when --force-packages is requested.
         """
         raise NotImplementedError("Subclasses must implement the install method")

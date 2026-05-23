@@ -41,12 +41,13 @@ class PacmanProvider(BaseProvider):
             logger.debug(f"Failed to check pacman package status for '{pkg}': {e}")
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs missing packages using pacman -S --noconfirm.
 
         Args:
             packages: List of package names to check and install.
             dry_run: Whether to simulate installation without making changes.
+            use_cache: If True (default), consult the PackageCache for idempotency.
         """
         if not packages:
             return
@@ -54,8 +55,7 @@ class PacmanProvider(BaseProvider):
         if not dry_run and not self.is_available():
             raise ProviderError("pacman is not available on this platform")
 
-        # Filter out already-installed packages for idempotency
-        missing = [pkg for pkg in packages if not self.is_installed(pkg)]
+        missing = self.filter_missing(packages, use_cache=use_cache)
 
         if not missing:
             logger.info("All pacman packages are already installed.")
@@ -69,6 +69,9 @@ class PacmanProvider(BaseProvider):
         cmd = ["pacman", "-S", "--noconfirm"] + missing
         try:
             self.execute_with_retry(cmd)
+            from rv.providers.base import PackageCache
+
+            PackageCache.mark_installed(self.name, missing)
             logger.info("Pacman package installation completed successfully.")
         except Exception as e:
             raise ProviderError(f"Pacman installation failed: {e}") from e

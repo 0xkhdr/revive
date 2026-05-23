@@ -40,12 +40,13 @@ class AptProvider(BaseProvider):
         """Queries dpkg to see which packages are not currently installed."""
         return [pkg for pkg in packages if not self.is_installed(pkg)]
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs missing packages using apt-get.
 
         Args:
             packages: List of package names to check and install.
             dry_run: Whether to simulate installation.
+            use_cache: If True (default), consult the PackageCache for idempotency.
         """
         if not packages:
             return
@@ -53,8 +54,8 @@ class AptProvider(BaseProvider):
         if not dry_run and not self.is_available():
             raise ProviderError("apt-get or dpkg is not available on this platform")
 
-        logger.info("Checking package status via dpkg...")
-        missing = self._get_missing_packages(packages)
+        logger.info("Checking package status via dpkg (with idempotency cache)...")
+        missing = self.filter_missing(packages, use_cache=use_cache)
 
         if not missing:
             logger.info("All apt packages are already installed.")
@@ -65,11 +66,12 @@ class AptProvider(BaseProvider):
             return
 
         logger.info(f"Installing missing apt packages: {', '.join(missing)}")
-        # apt-get install -y <pkg_list>
-        # Note: requires root permissions, which is up to the caller's environment setup.
         cmd = ["apt-get", "install", "-y"] + missing
         try:
             self.execute_with_retry(cmd)
+            from rv.providers.base import PackageCache
+
+            PackageCache.mark_installed(self.name, missing)
             logger.info("Apt package installation completed successfully.")
         except Exception as e:
             raise ProviderError(f"Apt installation failed: {e}") from e

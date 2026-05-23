@@ -145,7 +145,13 @@ class StatusService:
                 # Check if symlink target points to correct source
                 try:
                     link_target = os.readlink(abs_target)
-                    if os.path.abspath(link_target) != os.path.abspath(abs_source):
+                    # Resolve relative symlink relative to the symlink's directory
+                    if not os.path.isabs(link_target):
+                        abs_link_target = os.path.abspath(os.path.join(os.path.dirname(abs_target), link_target))
+                    else:
+                        abs_link_target = os.path.abspath(link_target)
+
+                    if abs_link_target != os.path.abspath(abs_source):
                         return {
                             "type": asset.type,
                             "target": abs_target,

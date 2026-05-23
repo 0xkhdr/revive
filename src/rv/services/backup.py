@@ -169,11 +169,25 @@ class BackupService:
             if os.path.islink(abs_target):
                 try:
                     link_target = os.readlink(abs_target)
-                    if os.path.abspath(link_target) == os.path.abspath(resolved_source):
+                    # Resolve relative symlink relative to the symlink's directory
+                    if not os.path.isabs(link_target):
+                        abs_link_target = os.path.abspath(os.path.join(os.path.dirname(abs_target), link_target))
+                    else:
+                        abs_link_target = os.path.abspath(link_target)
+
+                    if abs_link_target == os.path.abspath(resolved_source):
                         logger.info(f"Asset '{item.id}' is already in sync (system symlink points to repo).")
                         continue
+
                     # Follow symlink to get actual target file contents
-                    abs_target = os.path.realpath(abs_target)
+                    real_target = os.path.realpath(abs_target)
+                    if not os.path.exists(real_target):
+                        logger.warning(
+                            f"Symlink target for '{item.id}' at '{abs_target}' points to a non-existent path "
+                            f"'{real_target}', skipping backup of this symlink target."
+                        )
+                        continue
+                    abs_target = real_target
                 except OSError:
                     pass
 

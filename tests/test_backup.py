@@ -165,3 +165,47 @@ profiles:
         assert args[0] == os.path.join(system_dir, "my_secret")
         assert args[1] == os.path.join(repo_dir, "secrets", "my_secret.age")
         assert args[2] == ["age1_mock_pub"]
+
+
+def test_backup_relative_and_broken_symlinks(temp_workspace):
+    repo_dir, system_dir, identity_file, tmpdir = temp_workspace
+
+    manifest_path = os.path.join(repo_dir, "manifest.yaml")
+    manifest_content = f"""
+version: 2
+assets:
+  - id: relative_symlink_asset
+    type: symlink
+    source: assets/config_file
+    target: {system_dir}/config_file
+  - id: broken_symlink_asset
+    type: symlink
+    source: assets/broken_link
+    target: {system_dir}/broken_link
+profiles:
+  base:
+    assets: [relative_symlink_asset, broken_symlink_asset]
+"""
+    with open(manifest_path, "w") as f:
+        f.write(manifest_content)
+
+    # 1. Create a relative symlink on system pointing to the expected repo source
+    repo_source_path = os.path.join(repo_dir, "assets", "config_file")
+    os.makedirs(os.path.dirname(repo_source_path), exist_ok=True)
+    with open(repo_source_path, "w") as f:
+        f.write("in repo content")
+
+    rel_target = os.path.relpath(repo_source_path, system_dir)
+    os.symlink(rel_target, os.path.join(system_dir, "config_file"))
+
+    # 2. Create a broken symlink on system pointing to non-existent path
+    os.symlink("non_existent_target_path", os.path.join(system_dir, "broken_link"))
+
+    # Run backup. The relative symlink is already in sync, so it should be skipped without error.
+    # The broken symlink target doesn't exist, so it should be skipped with a warning.
+    # Neither should fail or raise FileNotFoundError.
+    backed_up = BackupService.backup(repo_dir, "base", identity_path=None, dry_run=False)
+    
+    assert "relative_symlink_asset" in backed_up
+    assert "broken_symlink_asset" in backed_up
+

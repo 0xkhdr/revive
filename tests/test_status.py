@@ -417,3 +417,57 @@ def test_diff_edge_cases(temp_workspace: str) -> None:
         with patch("builtins.open", side_effect=conditional_open):
             # Should raise IOError inside get_diff and return None
             assert StatusService.get_diff(temp_workspace, "base", "my_file") is None
+
+
+def test_status_relative_symlink(temp_workspace: str) -> None:
+    """Verifies that relative symlinks are correctly identified as in_sync during status checking."""
+    manifest_data = {
+        "version": 2,
+        "assets": [
+            {
+                "id": "rel_link",
+                "type": "symlink",
+                "source": "assets/config_file",
+                "target": os.path.join(temp_workspace, "symlink_tgt"),
+            }
+        ],
+        "profiles": {
+            "base": {
+                "assets": ["rel_link"],
+            }
+        },
+    }
+    with open(os.path.join(temp_workspace, "manifest.yaml"), "w") as f:
+        yaml.safe_dump(manifest_data, f)
+
+    # Create the source file in repo
+    source_path = os.path.join(temp_workspace, "assets", "config_file")
+    os.makedirs(os.path.dirname(source_path), exist_ok=True)
+    with open(source_path, "w") as f:
+        f.write("config file contents")
+
+    # Create a relative symlink at the target pointing to the source
+    target_path = os.path.join(temp_workspace, "symlink_tgt")
+    rel_target = os.path.relpath(source_path, temp_workspace)
+    os.symlink(rel_target, target_path)
+
+    # Create the expected lockfile to simulate a restored status check
+    from rv.models.transaction import Lockfile, LockfileEntry
+    lockfile_path = os.path.join(temp_workspace, "manifest.lock")
+    entry = LockfileEntry(
+        sha256_of_source="123",
+        target_path=target_path,
+        permissions="0777",
+        mtime=os.lstat(target_path).st_mtime,
+    )
+    lockfile = Lockfile(
+        profile="base",
+        entries={"rel_link": entry},
+    )
+    with open(lockfile_path, "w") as f:
+        f.write(lockfile.model_dump_json())
+
+    # Check status
+    report = StatusService.get_status(temp_workspace, "base")
+    assert report["assets"]["rel_link"]["status"] == "in_sync"
+

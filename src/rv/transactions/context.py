@@ -229,13 +229,17 @@ class TransactionContext:
         self._write_journal()
 
         try:
-            for op in self.planned_operations:
+            for idx, op in enumerate(self.planned_operations):
                 target = op["target"]
                 op_type = op["op_type"]
                 kwargs = op["kwargs"]
 
                 if op_type == "delete":
-                    if os.path.exists(target):
+                    has_subsequent_creation = any(
+                        other_op["target"] == target and other_op["op_type"] in ("copy", "symlink")
+                        for other_op in self.planned_operations[idx + 1:]
+                    )
+                    if not has_subsequent_creation and os.path.exists(target):
                         raise RuntimeError(f"Verification failed: Deleted target still exists at {target}")
                     continue
 

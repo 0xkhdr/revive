@@ -204,9 +204,25 @@ class RestoreService:
 
     @staticmethod
     def calculate_sha256(path: str) -> str:
-        """Calculates SHA-256 of the file at the given path."""
+        """Calculates SHA-256 of the file or directory at the given path."""
         if not os.path.exists(path):
             return ""
+        if os.path.isdir(path):
+            hasher = hashlib.sha256()
+            for root, dirs, files in os.walk(path):
+                dirs.sort()
+                for file in sorted(files):
+                    file_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(file_path, path)
+                    hasher.update(rel_path.encode("utf-8"))
+                    try:
+                        with open(file_path, "rb") as f:
+                            for chunk in iter(lambda: f.read(4096), b""):
+                                hasher.update(chunk)
+                    except Exception:
+                        pass
+            return hasher.hexdigest()
+
         hasher = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):

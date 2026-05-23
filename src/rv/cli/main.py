@@ -762,7 +762,7 @@ def status(
         table.add_row(
             asset_id,
             info["type"].value if hasattr(info["type"], "value") else str(info["type"]),
-            info["target"],
+            "\n".join(info["target"]) if isinstance(info["target"], (list, tuple)) else str(info["target"]),
             status_styled,
             info["details"],
         )

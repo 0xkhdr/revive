@@ -16,7 +16,7 @@ from rv.services.status import StatusService
 from rv.services.workspace import WorkspaceService
 
 app = typer.Typer(
-    name="rv", help="Revive (rv) — Production-grade environment lifecycle manager CLI.", add_completion=False
+    name="rv", help="Revive (rv) — Production-grade environment lifecycle manager CLI.", add_completion=True
 )
 secret_app = typer.Typer(name="secret", help="Cryptographic secret management commands.")
 workspace_app = typer.Typer(name="workspace", help="Manage registered revive workspaces.")
@@ -29,6 +29,21 @@ console = Console()
 def _get_repo_dir() -> str:
     """Returns the current working directory as the revive repository path."""
     return os.getcwd()
+
+
+def complete_profile(ctx: typer.Context, incomplete: str) -> list[str]:
+    """Provide shell autocompletion for profile names."""
+    try:
+        from rv.services.restore import ManifestLoader
+
+        repo_dir = _get_repo_dir()
+        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        if os.path.exists(manifest_path):
+            manifest = ManifestLoader.load(manifest_path)
+            return [name for name in manifest.profiles.keys() if name.startswith(incomplete)]
+    except Exception:
+        pass
+    return []
 
 
 @app.callback()
@@ -118,7 +133,9 @@ profiles:
 
 @app.command("restore")
 def restore(
-    profile: str = typer.Argument(..., help="Name of the deployment profile to restore."),
+    profiles: list[str] = typer.Argument(
+        ..., help="Name(s) of the deployment profile(s) to restore.", autocompletion=complete_profile
+    ),
     identity: str | None = typer.Option(
         None, "--identity", "-i", help="Path to age identity file for decrypting secrets."
     ),
@@ -133,10 +150,22 @@ def restore(
     """Synchronize the local environment state to match the repository profile (repo -> system)."""
     repo_dir = _get_repo_dir()
 
+    profile_list = []
+    for p in profiles:
+        for item in p.split(","):
+            if item.strip():
+                profile_list.append(item.strip())
+
+    if not profile_list:
+        console.print("[bold red]Error:[/] No profiles specified.")
+        raise typer.Exit(code=1)
+
+    profile_str = ",".join(profile_list)
+
     try:
         RestoreService.restore(
             repo_dir=repo_dir,
-            profile_name=profile,
+            profile_name=profile_str,
             identity_path=identity,
             interactive=interactive,
             dry_run=dry_run,
@@ -149,7 +178,9 @@ def restore(
 
 @app.command("backup")
 def backup(
-    profile: str = typer.Argument(..., help="Name of the deployment profile to backup."),
+    profiles: list[str] = typer.Argument(
+        ..., help="Name(s) of the deployment profile(s) to backup.", autocompletion=complete_profile
+    ),
     identity: str | None = typer.Option(
         None, "--identity", "-i", help="Path to age identity file for encrypting secrets."
     ),
@@ -160,12 +191,24 @@ def backup(
     """Synchronize the local environment state back into the repository profile (system -> repo)."""
     repo_dir = _get_repo_dir()
 
+    profile_list = []
+    for p in profiles:
+        for item in p.split(","):
+            if item.strip():
+                profile_list.append(item.strip())
+
+    if not profile_list:
+        console.print("[bold red]Error:[/] No profiles specified.")
+        raise typer.Exit(code=1)
+
+    profile_str = ",".join(profile_list)
+
     try:
         from rv.services.backup import BackupService
 
         backed_up = BackupService.backup(
             repo_dir=repo_dir,
-            profile_name=profile,
+            profile_name=profile_str,
             identity_path=identity,
             dry_run=dry_run,
         )
@@ -181,19 +224,33 @@ def backup(
 
 @app.command("status")
 def status(
-    profile: str = typer.Option(..., "--profile", "-p", help="Profile to evaluate sync status for."),
+    profile: list[str] = typer.Option(
+        ..., "--profile", "-p", help="Profile(s) to evaluate sync status for.", autocompletion=complete_profile
+    ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to check secret drift."),
 ) -> None:
     """Compare system state against repository profile and calculate drift."""
     repo_dir = _get_repo_dir()
 
+    profile_list = []
+    for p in profile:
+        for item in p.split(","):
+            if item.strip():
+                profile_list.append(item.strip())
+
+    if not profile_list:
+        console.print("[bold red]Error:[/] No profiles specified.")
+        raise typer.Exit(code=1)
+
+    profile_str = ",".join(profile_list)
+
     try:
-        report = StatusService.get_status(repo_dir, profile, identity)
+        report = StatusService.get_status(repo_dir, profile_str, identity)
     except Exception as e:
         console.print(f"[bold red]Status check failed:[/] {e}")
         raise typer.Exit(code=1)
 
-    table = Table(title=f"Drift Analysis for Profile '{profile}'", expand=True)
+    table = Table(title=f"Drift Analysis for Profile '{profile_str}'", expand=True)
     table.add_column("Asset ID", style="cyan", width=20)
     table.add_column("Type", style="magenta", width=12)
     table.add_column("Target Path", style="blue")
@@ -305,15 +362,29 @@ def _render_side_by_side_diff(expected_text: str, actual_text: str, source_name:
 
 @app.command("diff")
 def diff(
-    profile: str = typer.Option(..., "--profile", "-p", help="Profile name to check drift for."),
+    profile: list[str] = typer.Option(
+        ..., "--profile", "-p", help="Profile name(s) to check drift for.", autocompletion=complete_profile
+    ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to diff encrypted secrets."),
     unified: bool = typer.Option(False, "--unified", "-u", help="Display standard unified diff format."),
 ) -> None:
     """Print colored diffs of all modified file assets on the filesystem."""
     repo_dir = _get_repo_dir()
 
+    profile_list = []
+    for p in profile:
+        for item in p.split(","):
+            if item.strip():
+                profile_list.append(item.strip())
+
+    if not profile_list:
+        console.print("[bold red]Error:[/] No profiles specified.")
+        raise typer.Exit(code=1)
+
+    profile_str = ",".join(profile_list)
+
     try:
-        report = StatusService.get_status(repo_dir, profile, identity)
+        report = StatusService.get_status(repo_dir, profile_str, identity)
     except Exception as e:
         console.print(f"[bold red]Failed to get drift status:[/] {e}")
         raise typer.Exit(code=1)
@@ -323,7 +394,7 @@ def diff(
     for asset_id, info in report["assets"].items():
         if info["status"] == "modified":
             if unified:
-                diff_text = StatusService.get_diff(repo_dir, profile, asset_id, identity)
+                diff_text = StatusService.get_diff(repo_dir, profile_str, asset_id, identity)
                 if diff_text:
                     has_diffs = True
                     console.print(
@@ -334,7 +405,7 @@ def diff(
                         )
                     )
             else:
-                contents = StatusService.get_contents_for_diff(repo_dir, profile, asset_id, identity)
+                contents = StatusService.get_contents_for_diff(repo_dir, profile_str, asset_id, identity)
                 if contents:
                     expected_text, actual_text = contents
                     if not actual_text and expected_text.startswith("["):
@@ -354,7 +425,7 @@ def diff(
                         try:
                             manifest_path = os.path.join(repo_dir, "manifest.yaml")
                             manifest = ManifestLoader.load(manifest_path)
-                            resolved = ProfileResolver.resolve(manifest, profile)
+                            resolved = ProfileResolver.resolve(manifest, profile_str)
                             asset = resolved.assets.get(asset_id) or resolved.secrets.get(asset_id)
                             if asset:
                                 source_name = f"repo://{asset.source}"
@@ -376,15 +447,29 @@ def diff(
 
 @app.command("doctor")
 def doctor(
-    profile: str | None = typer.Option(
-        None, "--profile", "-p", help="Optionally run doctor checks specific to a profile."
+    profile: list[str] = typer.Option(
+        None,
+        "--profile",
+        "-p",
+        help="Optionally run doctor checks specific to profile(s).",
+        autocompletion=complete_profile,
     ),
     json_format: bool = typer.Option(False, "--json", help="Output diagnostic report in structured JSON format."),
 ) -> None:
     """Evaluate repository sanity, permission safety, and system capabilities."""
     repo_dir = _get_repo_dir()
 
-    report = DoctorService.check_health(repo_dir, profile)
+    profile_str = None
+    if profile:
+        profile_list = []
+        for p in profile:
+            for item in p.split(","):
+                if item.strip():
+                    profile_list.append(item.strip())
+        if profile_list:
+            profile_str = ",".join(profile_list)
+
+    report = DoctorService.check_health(repo_dir, profile_str)
 
     if json_format:
         import json
@@ -512,7 +597,13 @@ def secret_keygen(
 
 @app.command("watch")
 def watch(
-    profile: str = typer.Option(..., "--profile", "-p", help="Profile to monitor and auto-apply changes for."),
+    profile: list[str] = typer.Option(
+        ...,
+        "--profile",
+        "-p",
+        help="Profile(s) to monitor and auto-apply changes for.",
+        autocompletion=complete_profile,
+    ),
     identity: str | None = typer.Option(
         None, "--identity", "-i", help="Path to age identity file for decrypting secrets."
     ),
@@ -526,7 +617,22 @@ def watch(
     from rv.watchers.daemon import WatchdogDaemon
 
     repo_dir = _get_repo_dir()
-    daemon = WatchdogDaemon(repo_dir=repo_dir, profile_name=profile, identity_path=identity, debounce_seconds=debounce)
+
+    profile_list = []
+    for p in profile:
+        for item in p.split(","):
+            if item.strip():
+                profile_list.append(item.strip())
+
+    if not profile_list:
+        console.print("[bold red]Error:[/] No profiles specified.")
+        raise typer.Exit(code=1)
+
+    profile_str = ",".join(profile_list)
+
+    daemon = WatchdogDaemon(
+        repo_dir=repo_dir, profile_name=profile_str, identity_path=identity, debounce_seconds=debounce
+    )
     try:
         daemon.start()
         # Keep main thread alive while watcher runs

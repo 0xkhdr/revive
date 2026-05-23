@@ -359,3 +359,56 @@ def test_cli_self_install(temp_repo: str) -> None:
         result = runner.invoke(app, ["self-install", "--force"])
         assert result.exit_code == 1
         assert "Self-installation failed:" in result.stdout
+
+
+def test_cli_restore_multiple_profiles(temp_repo: str) -> None:
+    """Tests 'rv restore' with multiple profiles."""
+    with patch("os.getcwd", return_value=temp_repo):
+        with patch("rv.services.restore.RestoreService.restore") as mock_restore:
+            result = runner.invoke(app, ["restore", "base", "work"])
+            assert result.exit_code == 0
+            mock_restore.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base,work",
+                identity_path=None,
+                interactive=True,
+                dry_run=False,
+                no_plugins=False,
+            )
+
+
+def test_cli_status_multiple_profiles(temp_repo: str) -> None:
+    """Tests 'rv status' with multiple profiles."""
+    with patch("os.getcwd", return_value=temp_repo):
+        with patch("rv.services.status.StatusService.get_status") as mock_status:
+            mock_status.return_value = {"drifted": False, "assets": {}}
+            result = runner.invoke(app, ["status", "-p", "base", "-p", "work"])
+            assert result.exit_code == 0
+            mock_status.assert_called_once_with(temp_repo, "base,work", None)
+
+
+def test_complete_profile_callback(temp_repo: str) -> None:
+    """Tests complete_profile autocomplete helper."""
+    # Write manifest.yaml with profiles
+    manifest_data = {
+        "version": 2,
+        "assets": [],
+        "profiles": {
+            "base": {"assets": []},
+            "work": {"assets": []},
+            "home": {"assets": []},
+        },
+    }
+    with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
+        import yaml
+
+        yaml.safe_dump(manifest_data, f)
+
+    from rv.cli.main import complete_profile
+
+    with patch("os.getcwd", return_value=temp_repo):
+        res = complete_profile(None, "w")
+        assert res == ["work"]
+
+        res_all = complete_profile(None, "")
+        assert sorted(res_all) == sorted(["base", "work", "home"])

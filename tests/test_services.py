@@ -363,3 +363,36 @@ def test_doctor_service(temp_repo: str) -> None:
     report = DoctorService.check_health(temp_repo, "base")
     assert report["healthy"] is True
     assert len(report["issues"]) == 0
+
+
+def test_profile_resolver_multiple_profiles() -> None:
+    from rv.models.manifest import Packages
+
+    manifest = Manifest(
+        version=2,
+        packages=Packages(brew=["ripgrep"], apt=["curl"]),
+        assets=[
+            Asset(id="zshrc", type=AssetType.SYMLINK, source="assets/zshrc", target="~/.zshrc"),
+            Asset(id="bashrc", type=AssetType.COPY, source="assets/bashrc", target="~/.bashrc"),
+        ],
+        secrets=[
+            Secret(id="ssh_key", source="secrets/id_ed25519.age", target="~/.ssh/id_ed25519", permissions="0600"),
+            Secret(id="vpn_key", source="secrets/vpn.age", target="~/.vpn/key", permissions="0600"),
+        ],
+        profiles={
+            "base": Profile(assets=["zshrc"], secrets=["ssh_key"], packages=["brew"]),
+            "work": Profile(assets=["bashrc"], secrets=["vpn_key"], packages=["apt"]),
+        },
+    )
+
+    resolved = ProfileResolver.resolve(manifest, "base,work")
+    assert "zshrc" in resolved.assets
+    assert "bashrc" in resolved.assets
+    assert "ssh_key" in resolved.secrets
+    assert "vpn_key" in resolved.secrets
+    assert resolved.packages["brew"] == ["ripgrep"]
+    assert resolved.packages["apt"] == ["curl"]
+
+    # Test error handling of invalid profile in list
+    with pytest.raises(ValueError, match="Profile 'invalid' is not defined"):
+        ProfileResolver.resolve(manifest, "base,invalid")

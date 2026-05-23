@@ -80,21 +80,57 @@ class ProfileResolver:
 
     @classmethod
     def resolve(cls, manifest: Manifest, profile_name: str) -> ResolvedProfile:
-        """Resolves the inheritance hierarchy of a profile.
+        """Resolves the inheritance hierarchy of a profile or multiple comma-separated profiles.
 
         Args:
             manifest: Root Manifest configuration.
-            profile_name: Name of the target profile.
+            profile_name: Name of the target profile (can be comma-separated).
 
         Returns:
             Fully resolved profile configuration.
         """
-        if profile_name not in manifest.profiles:
-            raise ValueError(f"Profile '{profile_name}' is not defined in manifest profiles")
+        profile_names = [p.strip() for p in profile_name.split(",") if p.strip()]
+        if not profile_names:
+            raise ValueError("No profile names provided")
 
-        resolved = ResolvedProfile()
-        cls._resolve_recursive(manifest, profile_name, resolved, [])
-        return resolved
+        if len(profile_names) == 1:
+            name = profile_names[0]
+            if name not in manifest.profiles:
+                raise ValueError(f"Profile '{name}' is not defined in manifest profiles")
+
+            resolved = ResolvedProfile()
+            cls._resolve_recursive(manifest, name, resolved, [])
+            return resolved
+
+        # Multiple profiles: resolve each and merge
+        merged = ResolvedProfile()
+        for name in profile_names:
+            resolved = cls.resolve(manifest, name)
+
+            # Merge assets (last-write-wins)
+            merged.assets.update(resolved.assets)
+
+            # Merge secrets (last-write-wins)
+            merged.secrets.update(resolved.secrets)
+
+            # Merge packages
+            for provider, pkgs in resolved.packages.items():
+                for p in pkgs:
+                    if p not in merged.packages[provider]:
+                        merged.packages[provider].append(p)
+
+            # Merge docker images
+            for img in resolved.docker_images:
+                if img not in merged.docker_images:
+                    merged.docker_images.append(img)
+
+            # Merge node config
+            if resolved.node_config["version_file"]:
+                merged.node_config["version_file"] = resolved.node_config["version_file"]
+            if resolved.node_config["version"]:
+                merged.node_config["version"] = resolved.node_config["version"]
+
+        return merged
 
     @classmethod
     def _resolve_recursive(

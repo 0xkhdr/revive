@@ -171,7 +171,7 @@ class BackupService:
                         continue
                     # Follow symlink to get actual target file contents
                     abs_target = os.path.realpath(abs_target)
-                except Exception:
+                except OSError:
                     pass
 
             if dry_run:

@@ -4,6 +4,10 @@ import fcntl
 import os
 from typing import IO, Any
 
+from rv.logging.audit import AuditLogger
+
+logger = AuditLogger.get_logger("rv.transactions.lock")
+
 
 class LockAcquisitionError(Exception):
     """Raised when the process cannot acquire the revive process lock."""
@@ -67,7 +71,7 @@ class ProcessLock:
                 # Release flock explicitly and close
                 fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
                 self._lock_file.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Error releasing lock: {e}")
             finally:
                 self._lock_file = None

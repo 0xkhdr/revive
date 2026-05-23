@@ -35,22 +35,22 @@
 
             <!-- Navigation Hub Section -->
             <section class="sidebar-section">
-                <h2 class="section-title">Navigation Hub</h2>
-                <nav class="sidebar-nav">
-                    <button class="nav-tab active" data-tab="overview">
-                        <span class="nav-icon">🌌</span>
+                <h2 class="section-title" id="nav-hub-title">Navigation Hub</h2>
+                <nav class="sidebar-nav" role="tablist" aria-labelledby="nav-hub-title">
+                    <button class="nav-tab active" data-tab="overview" role="tab" aria-selected="true" aria-controls="tab-overview" id="tab-btn-overview">
+                        <span class="nav-icon" aria-hidden="true">🌌</span>
                         <span>Overview</span>
                     </button>
-                    <button class="nav-tab" data-tab="assets">
-                        <span class="nav-icon">📁</span>
+                    <button class="nav-tab" data-tab="assets" role="tab" aria-selected="false" aria-controls="tab-assets" id="tab-btn-assets">
+                        <span class="nav-icon" aria-hidden="true">📁</span>
                         <span>Assets & Packages</span>
                     </button>
-                    <button class="nav-tab" data-tab="keys">
-                        <span class="nav-icon">🔑</span>
+                    <button class="nav-tab" data-tab="keys" role="tab" aria-selected="false" aria-controls="tab-keys" id="tab-btn-keys">
+                        <span class="nav-icon" aria-hidden="true">🔑</span>
                         <span>Secrets Vault</span>
                     </button>
-                    <button class="nav-tab" data-tab="recovery">
-                        <span class="nav-icon">🛡️</span>
+                    <button class="nav-tab" data-tab="recovery" role="tab" aria-selected="false" aria-controls="tab-recovery" id="tab-btn-recovery">
+                        <span class="nav-icon" aria-hidden="true">🛡️</span>
                         <span>Disaster Recovery</span>
                     </button>
                 </nav>
@@ -75,12 +75,14 @@
                 </div>
 
                 <!-- Register Workspace Form -->
-                <form class="workspace-register-form" id="ws-register-form">
+                <form class="workspace-register-form" id="ws-register-form" aria-label="Register a new workspace">
                     <div class="input-glow-group">
+                        <label for="new-ws-path" class="sr-only" style="display:none;">Absolute workspace path</label>
                         <input type="text" id="new-ws-path" placeholder="Register absolute workspace path..." required autocomplete="off">
+                        <label for="new-ws-name" class="sr-only" style="display:none;">Friendly name (optional)</label>
                         <input type="text" id="new-ws-name" placeholder="Friendly name (optional)..." autocomplete="off">
                     </div>
-                    <button type="submit" class="cyber-btn sm green">
+                    <button type="submit" class="cyber-btn sm green" aria-label="Register Workspace">
                         <span class="btn-glow"></span>
                         <span>Register Workspace</span>
                     </button>
@@ -93,7 +95,7 @@
                 <div class="profiles-grid" id="profiles-grid">
                     <!-- Loaded dynamically -->
                 </div>
-                <button class="cyber-btn sm purple borderless" id="btn-create-profile-modal">
+                <button class="cyber-btn sm purple borderless" id="btn-create-profile-modal" aria-haspopup="dialog">
                     <span>+ Create New Profile</span>
                 </button>
             </section>
@@ -101,7 +103,7 @@
             <!-- Diagnostics Clinic Quick Panel -->
             <section class="sidebar-section diagnostics-quick-panel">
                 <h2 class="section-title">Diagnostics Status</h2>
-                <div class="diag-summary" id="diag-summary">
+                <div class="diag-summary" id="diag-summary" aria-live="polite" aria-atomic="true">
                     <span class="diag-spinner">Running diagnostic check...</span>
                 </div>
             </section>
@@ -131,7 +133,7 @@
             <!-- ─── Tab Content Containers ─── -->
 
             <!-- Tab 1: Overview -->
-            <div class="tab-content" id="tab-overview">
+            <div class="tab-content" id="tab-overview" role="tabpanel" aria-labelledby="tab-btn-overview" tabindex="0">
                 <div class="content-split-grid">
                     <!-- Profile Inheritance and Visual Overview Map -->
                     <section class="hub-card glass-panel flex-grow" id="inheritance-map-card">
@@ -160,7 +162,7 @@
             </div>
 
             <!-- Tab 2: Assets & Orchestration -->
-            <div class="tab-content hidden" id="tab-assets">
+            <div class="tab-content hidden" id="tab-assets" role="tabpanel" aria-labelledby="tab-btn-assets" tabindex="0">
                 <div class="content-split-grid">
                     <!-- Configured Assets and Secrets Orchestrator -->
                     <section class="hub-card glass-panel flex-grow">
@@ -236,7 +238,7 @@
             </div>
 
             <!-- Tab 3: Secrets Vault & Keys -->
-            <div class="tab-content hidden" id="tab-keys">
+            <div class="tab-content hidden" id="tab-keys" role="tabpanel" aria-labelledby="tab-btn-keys" tabindex="0">
                 <div class="content-split-grid">
                     <!-- Key Gen Card -->
                     <section class="hub-card glass-panel flex-grow">
@@ -290,7 +292,7 @@
             </div>
 
             <!-- Tab 4: Disaster Recovery -->
-            <div class="tab-content hidden" id="tab-recovery">
+            <div class="tab-content hidden" id="tab-recovery" role="tabpanel" aria-labelledby="tab-btn-recovery" tabindex="0">
                 <div class="content-split-grid">
                     <!-- Incomplete Journals List -->
                     <section class="hub-card glass-panel flex-grow">
@@ -348,11 +350,11 @@
     </div>
 
     <!-- ─── Restores Execution Overlay Console Modal ─── -->
-    <div class="modal-overlay" id="restore-modal">
+    <div class="modal-overlay" id="restore-modal" role="dialog" aria-modal="true" aria-labelledby="restore-modal-title">
         <div class="modal-box glass-panel glow-card large">
             <div class="modal-header">
-                <h2>Transactional System Restoration</h2>
-                <button class="close-btn" id="btn-close-restore-modal">×</button>
+                <h2 id="restore-modal-title">Transactional System Restoration</h2>
+                <button class="close-btn" id="btn-close-restore-modal" aria-label="Close dialog">×</button>
             </div>
             <div class="modal-content">
                 <p class="modal-description">Deploy and synchronize profiles to your local system files under flock transaction locking protection.</p>
@@ -404,11 +406,11 @@
     </div>
 
     <!-- ─── Interactive Diff Viewer Modal ─── -->
-    <div class="modal-overlay" id="diff-modal">
+    <div class="modal-overlay" id="diff-modal" role="dialog" aria-modal="true" aria-labelledby="diff-modal-title">
         <div class="modal-box glass-panel glow-card large">
             <div class="modal-header">
-                <h2>Asset Drift Diff Viewer</h2>
-                <button class="close-btn" id="btn-close-diff-modal">×</button>
+                <h2 id="diff-modal-title">Asset Drift Diff Viewer</h2>
+                <button class="close-btn" id="btn-close-diff-modal" aria-label="Close dialog">×</button>
             </div>
             <div class="modal-content">
                 <div class="diff-meta">
@@ -425,11 +427,11 @@
     </div>
 
     <!-- ─── Profile Creation Modal ─── -->
-    <div class="modal-overlay" id="create-profile-modal">
+    <div class="modal-overlay" id="create-profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
         <div class="modal-box glass-panel glow-card">
             <div class="modal-header">
-                <h2>Create Named Deployment Profile</h2>
-                <button class="close-btn" id="btn-close-profile-modal">×</button>
+                <h2 id="profile-modal-title">Create Named Deployment Profile</h2>
+                <button class="close-btn" id="btn-close-profile-modal" aria-label="Close dialog">×</button>
             </div>
             <div class="modal-content">
                 <form id="create-profile-form">

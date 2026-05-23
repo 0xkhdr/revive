@@ -59,6 +59,9 @@ target-version = "py312"
 select = ["E", "F", "B", "I", "N", "UP", "S"]
 ignore = ["E501", "S110", "B904", "S603", "S607", "S112", "F401", "B008", "S105"]
 
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S108", "S310", "S103", "B017"]
+
 [tool.mypy]
 strict = true
 ignore_missing_imports = true

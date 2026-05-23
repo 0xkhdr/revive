@@ -5,6 +5,7 @@ import hashlib
 import os
 from typing import Any
 
+from rv.logging.audit import AuditLogger
 from rv.models.manifest import Asset, AssetType, Secret
 from rv.models.transaction import Lockfile
 from rv.security.encryptor import AgeEncryptor
@@ -12,6 +13,8 @@ from rv.security.tempfile import SecureTempFile
 from rv.services.restore import ManifestLoader, ProfileResolver, RestoreService
 from rv.utils.interpolate import Interpolator
 from rv.utils.path import PathHelper
+
+logger = AuditLogger.get_logger("rv.services.status")
 
 
 class StatusService:
@@ -46,8 +49,8 @@ class StatusService:
         if os.path.exists(lockfile_path):
             try:
                 lockfile = Lockfile.model_validate_json(open(lockfile_path, encoding="utf-8").read())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to read or parse lockfile: {e}")
 
         drifted = False
         assets_status: dict[str, dict[str, Any]] = {}
@@ -241,8 +244,8 @@ class StatusService:
                     decrypted_sha = RestoreService.calculate_sha256(tmp_decrypted)
                     target_sha = RestoreService.calculate_sha256(abs_target)
                     return decrypted_sha != target_sha
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Decryption failed during status check, falling back to mtime: {e}")
 
         # Fallback if key missing or decryption fails: check mtime from lockfile entry
         if lock_entry:

@@ -309,8 +309,8 @@ class RestoreService:
                         priv_key = f.read().strip()
                         if priv_key.startswith("AGE-SECRET-KEY-"):
                             SecretScrubber.register_secret(priv_key)
-                except Exception:
-                    pass
+                except OSError as e:
+                    logger.debug(f"Failed to read identity file for scrubber: {e}")
 
             # Step 4 & 5: Dependency Validation & Secret Decryption (within planning/handling)
             logger.info("Step 4/14 & 5/14: Validating dependencies and handling decryption...")

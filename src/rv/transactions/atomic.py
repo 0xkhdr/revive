@@ -39,6 +39,6 @@ class AtomicWrite:
             if os.path.exists(temp_path):
                 try:
                     os.unlink(temp_path)
-                except Exception:
+                except OSError:
                     pass
             raise RuntimeError(f"Atomic write to {target_path} failed: {e}") from e

@@ -265,7 +265,7 @@ def test_age_encryptor_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     old_pyrage = sys.modules.get("pyrage")
 
     class MockPyrage:
-        class x25519:
+        class X25519:
             class Recipient:
                 @staticmethod
                 def from_str(s: str) -> str:
@@ -273,7 +273,7 @@ def test_age_encryptor_errors(monkeypatch: pytest.MonkeyPatch) -> None:
 
             class Identity:
                 @staticmethod
-                def generate() -> "MockIdentity":
+                def generate():
                     raise RuntimeError("pyrage generate error")
 
                 @staticmethod

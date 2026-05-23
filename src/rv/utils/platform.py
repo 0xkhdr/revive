@@ -47,7 +47,7 @@ class Platform:
                         if line.startswith("ID="):
                             cls._cached_distro = line.strip().split("=")[1].strip('"').lower()
                             return cls._cached_distro
-        except Exception:
+        except OSError:
             pass
 
         cls._cached_distro = "unknown"

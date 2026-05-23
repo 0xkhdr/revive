@@ -351,7 +351,6 @@ def test_builtin_plugins_mcp_config(temp_workspace: str) -> None:
     assert "skipping" in res["message"]
 
     # 2. MCP config exists in repo -> copies successfully
-    mcp_config_data = {"mcpServers": {"test": {"command": "echo"}}}
     with open(os.path.join(temp_workspace, "mcp-config.json"), "w") as f:
         json_data = {"mcpServers": {"test": {"command": "echo"}}}
         import json
@@ -359,7 +358,6 @@ def test_builtin_plugins_mcp_config(temp_workspace: str) -> None:
         json.dump(json_data, f)
 
     # Mock user directory and platform
-    target_path = os.path.join(temp_workspace, "mcp-target")
     with (
         patch("os.path.expanduser", return_value=temp_workspace),
         patch.dict(os.environ, {"HOME": temp_workspace}),

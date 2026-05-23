@@ -35,7 +35,7 @@ class SecureTempFile:
                             f.flush()
                             os.fsync(f.fileno())
                     os.unlink(path)
-            except Exception:
+            except OSError:
                 pass
 
     @staticmethod
@@ -64,8 +64,8 @@ class SecureTempFile:
                                         f.write(b"\x00" * size)
                                         f.flush()
                                         os.fsync(f.fileno())
-                            except Exception:
+                            except OSError:
                                 pass
                     shutil.rmtree(path)
-            except Exception:
+            except OSError:
                 pass

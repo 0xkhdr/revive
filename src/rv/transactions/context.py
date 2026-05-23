@@ -12,9 +12,12 @@ import time
 import uuid
 from typing import Any
 
+from rv.logging.audit import AuditLogger
 from rv.models.transaction import RollbackEntry, TransactionJournal
 from rv.security.permissions import PermissionEnforcer
 from rv.transactions.atomic import AtomicWrite
+
+logger = AuditLogger.get_logger("rv.transactions.context")
 
 
 class TransactionContext:
@@ -107,7 +110,7 @@ class TransactionContext:
 
                     # Store permissions
                     permissions = oct(os.stat(target).st_mode & 0o7777)
-                except Exception:
+                except OSError:
                     pass
 
                 # Back up existing files/symlinks
@@ -264,15 +267,15 @@ class TransactionContext:
         if os.path.exists(self.backup_dir):
             try:
                 shutil.rmtree(self.backup_dir)
-            except Exception:
-                pass
+            except OSError as e:
+                logger.debug(f"Failed to remove backup dir: {e}")
 
         # Remove the journal file upon successful commit
         if self.status == "committed" and os.path.exists(self.journal_path):
             try:
                 os.unlink(self.journal_path)
-            except Exception:
-                pass
+            except OSError as e:
+                logger.debug(f"Failed to remove journal: {e}")
 
     def rollback(self) -> None:
         """Reverts all changes made during the transaction to restore pre-existing state."""
@@ -314,8 +317,8 @@ class TransactionContext:
                                 if content.startswith("SYMLINK:"):
                                     is_symlink = True
                                     link_target = content[len("SYMLINK:") :]
-                        except Exception:
-                            pass
+                        except OSError as e:
+                            logger.debug(f"Failed to read backup for symlink check: {e}")
 
                         if is_symlink:
                             os.symlink(link_target, target)
@@ -327,9 +330,9 @@ class TransactionContext:
                         # Re-apply permissions if they existed
                         if permissions:
                             PermissionEnforcer.enforce(target, permissions)
-            except Exception:
+            except Exception as e:
                 # Log critical error during rollback
-                pass
+                logger.error(f"Critical error during rollback of {target}: {e}")
 
         self.status = "rolled_back"
         self._write_journal()
@@ -341,5 +344,5 @@ class TransactionContext:
                 tx_id=self.tx_id, timestamp=self.timestamp, status=self.status, entries=self.entries
             )
             AtomicWrite.write(self.journal_path, journal.model_dump_json(indent=2))
-        except Exception:
-            pass
+        except OSError as e:
+            logger.debug(f"Failed to write journal: {e}")

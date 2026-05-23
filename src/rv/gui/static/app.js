@@ -152,6 +152,22 @@ document.addEventListener("DOMContentLoaded", () => {
     el.btnCreateProfileModal.addEventListener("click", openCreateProfileModal);
     el.btnCloseProfileModal.addEventListener("click", () => closeModal(el.createProfileModal));
 
+    // Global Modal Escape Key
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+            document.querySelectorAll(".modal-overlay.visible").forEach(closeModal);
+        }
+    });
+
+    // Global Modal Backdrop Click
+    document.querySelectorAll(".modal-overlay").forEach(modal => {
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) {
+                closeModal(modal);
+            }
+        });
+    });
+
     // Secret Encryption key visual visibility
     el.importType.addEventListener("change", () => {
         if (el.importType.value === "secret") {
@@ -940,18 +956,72 @@ function triggerCelebrationConfetti() {
 
 // ─── 10. Helper Utilities ───
 
+// ARIA Live Announcer
+function announceMessage(msg) {
+    let announcer = document.getElementById("a11y-announcer");
+    if (!announcer) {
+        announcer = document.createElement("div");
+        announcer.id = "a11y-announcer";
+        announcer.setAttribute("aria-live", "polite");
+        announcer.setAttribute("aria-atomic", "true");
+        announcer.style.cssText = "position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0;";
+        document.body.appendChild(announcer);
+    }
+    announcer.textContent = msg;
+}
+
+let lastFocusedElement = null;
+
+function trapFocus(e) {
+    if (e.key !== 'Tab') return;
+    const focusableElements = e.currentTarget.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (focusableElements.length === 0) return;
+    
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    
+    if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+            lastElement.focus();
+            e.preventDefault();
+        }
+    } else {
+        if (document.activeElement === lastElement) {
+            firstElement.focus();
+            e.preventDefault();
+        }
+    }
+}
+
 function openModal(modal) {
+    lastFocusedElement = document.activeElement;
     modal.classList.add("visible");
+    modal.setAttribute("aria-hidden", "false");
+    
+    // Trap focus inside modal
+    const focusableElements = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (focusableElements.length > 0) {
+        focusableElements[0].focus();
+    }
+    modal.addEventListener("keydown", trapFocus);
+    announceMessage("Dialog opened");
 }
 
 function closeModal(modal) {
     modal.classList.remove("visible");
+    modal.setAttribute("aria-hidden", "true");
+    modal.removeEventListener("keydown", trapFocus);
+    if (lastFocusedElement) {
+        lastFocusedElement.focus();
+    }
+    
     if (modal === el.restoreModal) {
         // Clear terminal logging on close
         el.restoreLogsBody.innerHTML = "";
         el.restoreTerminalContainer.classList.add("hidden");
         el.restoreSuccessBanner.classList.add("hidden");
     }
+    announceMessage("Dialog closed");
 }
 
 function escapeHtml(str) {
@@ -971,8 +1041,10 @@ function switchTab(tabId) {
     el.navTabs.forEach(tab => {
         if (tab.getAttribute("data-tab") === tabId) {
             tab.classList.add("active");
+            tab.setAttribute("aria-selected", "true");
         } else {
             tab.classList.remove("active");
+            tab.setAttribute("aria-selected", "false");
         }
     });
 

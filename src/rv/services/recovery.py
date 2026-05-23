@@ -70,13 +70,13 @@ class RecoveryService:
             if os.path.exists(tx_context.journal_path):
                 try:
                     os.unlink(tx_context.journal_path)
-                except Exception:
-                    pass
+                except OSError as e:
+                    logger.warning(f"Could not delete journal {tx_context.journal_path}: {e}")
             if os.path.exists(tx_context.backup_dir):
                 try:
                     shutil.rmtree(tx_context.backup_dir)
-                except Exception:
-                    pass
+                except OSError as e:
+                    logger.warning(f"Could not delete backup dir {tx_context.backup_dir}: {e}")
         except Exception as e:
             logger.error(f"Failed to roll back transaction {journal.tx_id}: {e}")
             raise RuntimeError(f"Rollback failed: {e}") from e
@@ -94,11 +94,11 @@ class RecoveryService:
         if os.path.exists(tx_context.journal_path):
             try:
                 os.unlink(tx_context.journal_path)
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Could not delete journal {tx_context.journal_path}: {e}")
         if os.path.exists(tx_context.backup_dir):
             try:
                 shutil.rmtree(tx_context.backup_dir)
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Could not delete backup dir {tx_context.backup_dir}: {e}")
         logger.info(f"Transaction journal {journal.tx_id} discarded.")

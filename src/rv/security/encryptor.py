@@ -7,7 +7,10 @@ import os
 import re
 import subprocess
 
+from rv.logging.audit import AuditLogger
 from rv.utils.platform import Platform
+
+logger = AuditLogger.get_logger("rv.security.encryptor")
 
 
 class AgeEncryptor:
@@ -214,8 +217,8 @@ class AgeEncryptor:
                         match = re.search(r"public key:\s+(age1[a-zA-Z0-9]+)", line)
                         if match:
                             return match.group(1)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to parse public key comment: {e}")
         else:
             content = identity_path_or_str
 
@@ -227,8 +230,8 @@ class AgeEncryptor:
                 resolved_identity = cls.resolve_identity(identity_path_or_str)
                 identity_obj = pyrage.x25519.Identity.from_str(resolved_identity)
                 return str(identity_obj.to_public())
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"pyrage public key extraction failed: {e}")
 
         # 3. Try age-keygen CLI fallback
         if Platform.has_tool("age-keygen"):
@@ -252,8 +255,8 @@ class AgeEncryptor:
                     finally:
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"age-keygen fallback failed: {e}")
 
         raise RuntimeError(
             "Could not derive public key from identity (neither pyrage nor age-keygen -y succeeded, and no comment found)"

@@ -453,6 +453,7 @@ def test_status_relative_symlink(temp_workspace: str) -> None:
 
     # Create the expected lockfile to simulate a restored status check
     from rv.models.transaction import Lockfile, LockfileEntry
+
     lockfile_path = os.path.join(temp_workspace, "manifest.lock")
     entry = LockfileEntry(
         sha256_of_source="123",
@@ -470,4 +471,3 @@ def test_status_relative_symlink(temp_workspace: str) -> None:
     # Check status
     report = StatusService.get_status(temp_workspace, "base")
     assert report["assets"]["rel_link"]["status"] == "in_sync"
-

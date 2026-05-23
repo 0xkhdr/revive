@@ -148,6 +148,21 @@ class BackupService:
         targets = [item.target] if isinstance(item.target, str) else item.target
         abs_source = os.path.join(repo_dir, item.source)
 
+        # Determine if source should be treated as a directory
+        is_source_dir = os.path.isdir(abs_source) or item.source.endswith(("/", "\\"))
+        if not is_source_dir and isinstance(item.target, list):
+            basenames = set()
+            has_dir_target = False
+            for target_expr in targets:
+                interpolated_target = Interpolator.interpolate(target_expr)
+                abs_target = PathHelper.canonicalize(interpolated_target)
+                basenames.add(os.path.basename(abs_target))
+                if os.path.isdir(abs_target):
+                    has_dir_target = True
+
+            if has_dir_target or (len(basenames) > 1 and item.type != AssetType.SECRET):
+                is_source_dir = True
+
         for target_expr in targets:
             interpolated_target = Interpolator.interpolate(target_expr)
             abs_target = PathHelper.canonicalize(interpolated_target)
@@ -157,7 +172,6 @@ class BackupService:
                 continue
 
             # Determine where to write the backup file in the repository
-            is_source_dir = os.path.isdir(abs_source) or item.source.endswith(("/", "\\"))
             is_target_dir = os.path.isdir(abs_target)
 
             if is_source_dir and (isinstance(item.target, list) or not is_target_dir):

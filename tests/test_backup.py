@@ -205,7 +205,7 @@ profiles:
     # The broken symlink target doesn't exist, so it should be skipped with a warning.
     # Neither should fail or raise FileNotFoundError.
     backed_up = BackupService.backup(repo_dir, "base", identity_path=None, dry_run=False)
-    
+
     assert "relative_symlink_asset" in backed_up
     assert "broken_symlink_asset" in backed_up
 
@@ -251,7 +251,7 @@ profiles:
         # Since it processes both targets, it should encrypt twice to the SAME source path
         # first with .env, second with .env.deploy (so both should be encrypted to secrets/card_express_env)
         assert mock_encrypt.call_count == 2
-        
+
         # Verify first call
         first_call_args = mock_encrypt.call_args_list[0][0]
         assert first_call_args[0] == os.path.join(system_dir, ".env")
@@ -265,3 +265,53 @@ profiles:
         assert second_call_args[2] == ["age1_mock_pub"]
 
 
+def test_backup_multi_target_directory_resolution(temp_workspace):
+    repo_dir, system_dir, identity_file, tmpdir = temp_workspace
+
+    # Create manifest with an asset having a list of targets (directory and file)
+    manifest_path = os.path.join(repo_dir, "manifest.yaml")
+    manifest_content = f"""
+version: 2
+assets:
+  - id: card_express_assets
+    type: copy
+    source: assets/card_express
+    target:
+      - {system_dir}/compose
+      - {system_dir}/docker-compose.yml
+profiles:
+  base:
+    assets: [card_express_assets]
+"""
+    with open(manifest_path, "w") as f:
+        f.write(manifest_content)
+
+    # Note that assets/card_express DOES NOT exist in the repository yet.
+
+    # Create targets on system:
+    # 1. A directory named 'compose' containing a file
+    system_compose_dir = os.path.join(system_dir, "compose")
+    os.makedirs(system_compose_dir)
+    with open(os.path.join(system_compose_dir, "file_inside.txt"), "w") as f:
+        f.write("inside content")
+
+    # 2. A file named 'docker-compose.yml'
+    with open(os.path.join(system_dir, "docker-compose.yml"), "w") as f:
+        f.write("compose content")
+
+    # Run backup service
+    backed_up = BackupService.backup(repo_dir, "base", identity_path=None, dry_run=False)
+    assert "card_express_assets" in backed_up
+
+    # Verify that the repository directory assets/card_express is structured correctly:
+    # 1. assets/card_express/compose directory should exist with file_inside.txt
+    repo_compose_dir = os.path.join(repo_dir, "assets", "card_express", "compose")
+    assert os.path.isdir(repo_compose_dir)
+    with open(os.path.join(repo_compose_dir, "file_inside.txt")) as f:
+        assert f.read() == "inside content"
+
+    # 2. assets/card_express/docker-compose.yml file should exist
+    repo_compose_file = os.path.join(repo_dir, "assets", "card_express", "docker-compose.yml")
+    assert os.path.isfile(repo_compose_file)
+    with open(repo_compose_file) as f:
+        assert f.read() == "compose content"

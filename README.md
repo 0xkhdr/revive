@@ -349,7 +349,7 @@ Creates:
 - `assets/` — folder for managed files and templates
 - `secrets/` — folder for encrypted `.age` files
 - `machine/` — folder for host-specific override YAMLs
-- `AGENT.md` — instructions for AI agents working in the repository
+- `AGENTS.md` — instructions for AI agents working in the repository
 - `README.md` — basic project documentation template
 - `.gitignore` — repository ignores
 - `.env` & `.env.example` — environment variables for interpolation

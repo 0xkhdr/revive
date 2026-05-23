@@ -76,6 +76,7 @@ def init() -> None:
     os.makedirs(os.path.join(repo_dir, "assets"), exist_ok=True)
     os.makedirs(os.path.join(repo_dir, "secrets"), exist_ok=True)
     os.makedirs(os.path.join(repo_dir, "machine"), exist_ok=True)
+    os.makedirs(os.path.join(repo_dir, "skills", "rv"), exist_ok=True)
 
     # Basic manifest template
     manifest_template = """# Revive Configuration Manifest
@@ -164,21 +165,232 @@ __pycache__/
 *.pyc
 """
 
-    agent_md_template = """# AI Agent Instructions for Revive
+    agents_md_template = """# AI Agent Instructions for Revive (rv)
 
-This repository is managed by **Revive (`rv`)**, a declarative environment lifecycle manager.
+This repository is managed by **Revive (`rv`)**, a production-grade, declarative environment lifecycle manager. Any AI agent or assistant operating in this workspace must use `rv` to inspect, restore, backup, and manage configurations, packages, and secrets.
 
-## Agent Guidelines
+---
 
-1. **Architecture**: Revive ensures unidirectional sync (repo -> system). `manifest.yaml` is the source of truth.
-2. **Commands**:
-   - `rv status -p <profile>`: Check drift between the repo and the system.
-   - `rv restore <profile>`: Apply the repository state to the local system.
-   - `rv backup <profile>`: Capture system changes back to the repository.
-3. **Best Practices**:
-   - Always modify files in the `assets/` directory and run `rv restore` to apply them.
-   - Use `rv secret` to encrypt/decrypt sensitive files; do not commit plain text secrets.
-   - Follow the transactional model: if a deployment fails, Revive automatically rolls back.
+## 1. System Design & Philosophy
+
+1. **Unidirectional Sync (Primary Flow)**: State normally flows from the repository to the local system (`repo → system`). The repository's `manifest.yaml` is the single source of truth. Running `rv restore <profile>` applies changes to the system.
+2. **Bidirectional Sync (Optional Flow)**: State flows from the local system back into the repository (`system → repo`). Running `rv backup <profile>` captures live modifications of assets and encrypts updated secrets back into the repository.
+3. **Strict Transaction Safety**: Restore operations are performed inside a transactional container. If a single step fails (e.g., missing package, permission issue, or post-apply hook crash), Revive automatically performs a complete journal-based rollback of all affected assets to their previous system state.
+
+---
+
+## 2. Command Reference Dictionary
+
+Use this dictionary to formulate precise CLI operations when asked to perform environment setup, audits, or modifications.
+
+### 2.1 Synchronization & Lifecycle
+
+*   **`rv status`**
+    *   **Description**: Evaluate sync status and calculate drift between the repository profile and the local system.
+    *   **Syntax**: `rv status --profile <profile_name>` or `rv status -p <profile_name>`
+    *   **Options**:
+        *   `-i`, `--identity <file>`: Age private identity key file to verify and check secret drift.
+    *   **Example**: `rv status -p base`
+
+*   **`rv restore`**
+    *   **Description**: Synchronize the local system state to match the repository profile (`repo → system`).
+    *   **Syntax**: `rv restore <profile_name> [<profile_name2> ...]`
+    *   **Options**:
+        *   `-i`, `--identity <file>`: Path to Age private identity key file for decrypting secrets.
+        *   `--dry-run`: Plan and validate all transactions without mutating the system filesystem.
+        *   `--non-interactive`: Disable interactive prompts for file conflicts (useful in automation/CI).
+        *   `--no-plugins`: Skip executing any custom plugin hooks.
+    *   **Example**: `rv restore base --dry-run`
+
+*   **`rv backup`**
+    *   **Description**: Synchronize the local system state back into the repository (`system → repo`).
+    *   **Syntax**: `rv backup <profile_name> [<profile_name2> ...]`
+    *   **Options**:
+        *   `-i`, `--identity <file>`: Path to Age identity key to re-encrypt and store secrets.
+        *   `--dry-run`: Plan and validate backup operations without writing files to the repository.
+    *   **Example**: `rv backup base`
+
+*   **`rv diff`**
+    *   **Description**: Generate colored, side-by-side or unified diffs of drifted file assets.
+    *   **Syntax**: `rv diff --profile <profile_name>` or `rv diff -p <profile_name>`
+    *   **Options**:
+        *   `-i`, `--identity <file>`: Path to Age identity key to decrypt and diff encrypted secrets.
+        *   `-u`, `--unified`: Display diff in standard unified diff format instead of side-by-side.
+    *   **Example**: `rv diff -p base --unified`
+
+---
+
+### 2.2 System & Troubleshooting
+
+*   **`rv doctor`**
+    *   **Description**: Evaluate repository sanity, permission safety, system integration capabilities, and dependency readiness.
+    *   **Syntax**: `rv doctor`
+    *   **Options**:
+        *   `-p`, `--profile <profile>`: Optionally target checks for a specific profile's packages/dependencies.
+        *   `--json`: Output diagnostic reports in a structured JSON format.
+    *   **Example**: `rv doctor -p base`
+
+*   **`rv recover`**
+    *   **Description**: List, replay, or abort/rollback active or incomplete transactional journals left by system crashes.
+    *   **Syntax**: `rv recover`
+    *   **Options**:
+        *   `--auto`: Headless/CI auto-rollback of the latest incomplete transaction.
+    *   **Example**: `rv recover --auto`
+
+*   **`rv watch`**
+    *   **Description**: Launch an interactive watchdog daemon monitoring the workspace repository for changes, auto-restoring them.
+    *   **Syntax**: `rv watch --profile <profile_name>` or `rv watch -p <profile_name>`
+    *   **Options**:
+        *   `-i`, `--identity <file>`: Path to Age identity key for automatic secret decryption.
+        *   `-d`, `--debounce <seconds>`: Delay (default: 5.0s) before triggering the auto-restore transaction.
+    *   **Example**: `rv watch -p base -d 2`
+
+---
+
+### 2.3 Secrets Cryptography (`rv secret`)
+
+Revive utilizes Age cryptography for managing credentials without leaking them in plaintext.
+
+*   **`rv secret keygen`**
+    *   **Description**: Generate a new Age cryptographic public/private keypair.
+    *   **Syntax**: `rv secret keygen`
+    *   **Options**:
+        *   `-o`, `--output <file>`: Path to write the private key file safely (automatically applies secure 0600 permissions).
+    *   **Example**: `rv secret keygen -o ~/.config/rv/identity.txt`
+
+*   **`rv secret encrypt`**
+    *   **Description**: Encrypt a plaintext file into an Age-encrypted file using a public key.
+    *   **Syntax**: `rv secret encrypt <plaintext_file>`
+    *   **Options**:
+        *   `-o`, `--output <file>`: Target destination for the encrypted `.age` output.
+        *   `-r`, `--recipient <pub_key>`: Age public key recipient string (multiple allowed).
+    *   **Example**: `rv secret encrypt secrets/plain.txt -o secrets/secure.age -r age1yg7...`
+
+*   **`rv secret decrypt`**
+    *   **Description**: Decrypt an Age-encrypted `.age` secret file into a plaintext file using a private key.
+    *   **Syntax**: `rv secret decrypt <encrypted_file>`
+    *   **Options**:
+        *   `-o`, `--output <file>`: Target destination for the decrypted plaintext file.
+        *   `-i`, `--identity <file>`: Path to the private identity key file.
+    *   **Example**: `rv secret decrypt secrets/secure.age -o secrets/plain.txt -i ~/.config/rv/identity.txt`
+
+*   **`rv secret rotate`**
+    *   **Description**: Re-encrypt a secret file with new recipient public keys.
+    *   **Syntax**: `rv secret rotate <encrypted_file>`
+    *   **Options**:
+        *   `-i`, `--identity <file>`: Current private identity key file to decrypt the existing secret.
+        *   `-nr`, `--new-recipient <pub_key>`: New recipient public key string (multiple allowed).
+    *   **Example**: `rv secret rotate secrets/secure.age -i ~/.config/rv/identity.txt -nr age1new...`
+
+---
+
+### 2.4 Workspace & Installations
+
+*   **`rv workspace list`**
+    *   **Description**: List all workspaces registered in the global workspace registry (`~/.config/rv/workspaces.yaml`).
+    *   **Syntax**: `rv workspace list`
+
+*   **`rv workspace add`**
+    *   **Description**: Register an existing directory as a Revive workspace.
+    *   **Syntax**: `rv workspace add <directory_path>`
+    *   **Options**:
+        *   `-n`, `--name <friendly_name>`: Provide a custom friendly workspace identifier.
+    *   **Example**: `rv workspace add /var/www/html/rai/up/revive -n my-revive`
+
+*   **`rv workspace remove`**
+    *   **Description**: De-register a registered workspace using its friendly name.
+    *   **Syntax**: `rv workspace remove <workspace_name>`
+    *   **Example**: `rv workspace remove my-revive`
+
+*   **`rv self-install`**
+    *   **Description**: Install the `rv` global launcher wrapper to `~/.local/bin/rv` pointing to the current virtual environment/interpreter.
+    *   **Syntax**: `rv self-install`
+    *   **Options**:
+        *   `-f`, `--force`: Overwrite any pre-existing wrapper script.
+
+*   **`rv self-uninstall`**
+    *   **Description**: Remove the globally installed launcher wrapper and optional configurations.
+    *   **Syntax**: `rv self-uninstall`
+    *   **Options**:
+        *   `-f`, `--force`: Force remove even if wrapper doesn't look autogenerated.
+        *   `--purge-config`: Purge the entire global configurations directory `~/.config/rv`.
+
+*   **`rv gui`**
+    *   **Description**: Spin up a cosmic-dark web GUI dashboard to visually inspect drift, sync assets, and manage workspaces.
+    *   **Syntax**: `rv gui`
+    *   **Options**:
+        *   `-p`, `--port <port>`: Change the web server port (default: 8080).
+        *   `-h`, `--host <host>`: Bind to custom host address (default: 127.0.0.1).
+        *   `--no-browser`: Start the server without opening the web browser automatically.
+
+---
+
+## 3. Best Practices & Workflow Guidelines
+
+1. **Transactional Strategy**: Always perform structural or config updates inside the `assets/` or `secrets/` folders first, then commit them to git, and finally apply them locally with `rv restore <profile>`.
+2. **Conflict Resolution**: If files on the local system have drifted and conflict with repository assets, `rv restore` will prompt you by default. Set conflict strategies inside `manifest.yaml` (options: `prompt`, `overwrite`, or `keep`).
+3. **Custom Hooks & Plugins**: Use post-apply hooks or plugins to trigger environment-specific scripts. If `python-skills` is active, custom AI agent skills under the `skills/` directory of this repository will be synchronized automatically to `~/.config/rv/skills` upon restore.
+4. **Environment Variables**: Revive supports variable interpolation (e.g., `${USER_HOME}`) defined in local `.env` files. Do not commit sensitive values to `.env`; rely on `rv secret` instead.
+"""
+
+    skills_md_template = """---
+name: rv
+description: Run Revive lifecycle commands to manage assets, packages, and secrets
+---
+
+# Revive (`rv`) AI Agent Skill
+
+This skill enables any AI agent to use the **Revive (`rv`)** tool to inspect environment state, check configuration drift, restore assets, and encrypt/decrypt secure credentials.
+
+## When to Use
+Use this skill when you need to:
+1. Verify system synchronization or diagnose drift (`rv status`).
+2. Pull and apply the latest configurations or dotfiles from the repository to the local system (`rv restore`).
+3. Save local configuration updates or dotfiles back into the repository (`rv backup`).
+4. Generate cryptographic keypairs or manage encrypted secrets (`rv secret`).
+5. Run system diagnostics and verify dependencies (`rv doctor`).
+
+## Commands & Usage
+
+### Check Sync Status & Drift
+Check if local system files match the repository configuration:
+```bash
+rv status -p base
+```
+Generate unified diffs of all modifications:
+```bash
+rv diff -p base -u
+```
+
+### Apply Configuration (Repo -> System)
+Deploy assets and install packages defined in the repository:
+```bash
+rv restore base
+```
+Run a dry-run check without modifying system files:
+```bash
+rv restore base --dry-run
+```
+
+### Backup System Configs (System -> Repo)
+Backup local dotfile updates to the repository assets folder:
+```bash
+rv backup base
+```
+
+### Manage Secrets
+Generate a secure age key pair:
+```bash
+rv secret keygen -o ~/.config/rv/identity.txt
+```
+Encrypt a file:
+```bash
+rv secret encrypt secrets/plain.txt -o secrets/secure.age -r age1publickey...
+```
+Decrypt a file:
+```bash
+rv secret decrypt secrets/secure.age -o secrets/plain.txt -i ~/.config/rv/identity.txt
+```
 """
 
     readme_md_template = """# My Revive Environment
@@ -197,6 +409,7 @@ This repository contains my system configuration, managed by **Revive**.
 - `assets/`: Managed dotfiles and scripts.
 - `secrets/`: Encrypted credentials (requires an `age` identity to decrypt).
 - `machine/`: Machine-specific overrides.
+- `skills/`: Integrated agent skills.
 """
 
     env_template = """# Revive Environment Variables
@@ -226,8 +439,12 @@ USER_HOME="~"
     with open(os.path.join(repo_dir, ".gitignore"), "w", encoding="utf-8") as f:
         f.write(gitignore_template)
 
-    with open(os.path.join(repo_dir, "AGENT.md"), "w", encoding="utf-8") as f:
-        f.write(agent_md_template)
+    with open(os.path.join(repo_dir, "AGENTS.md"), "w", encoding="utf-8") as f:
+        f.write(agents_md_template)
+
+    skills_dir = os.path.join(repo_dir, "skills", "rv")
+    with open(os.path.join(skills_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+        f.write(skills_md_template)
 
     with open(os.path.join(repo_dir, "README.md"), "w", encoding="utf-8") as f:
         f.write(readme_md_template)
@@ -247,12 +464,14 @@ USER_HOME="~"
             "[bold white]Directories created:[/]\n"
             "  - [cyan]assets/[/] (file and symlink assets)\n"
             "  - [cyan]secrets/[/] (encrypted secrets)\n"
-            "  - [cyan]machine/[/] (host-specific overrides)\n\n"
+            "  - [cyan]machine/[/] (host-specific overrides)\n"
+            "  - [cyan]skills/[/] (integrated agent skills)\n\n"
             "[bold white]Files created:[/]\n"
             "  - [cyan]manifest.yaml[/] (your global config manifest)\n"
             "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n"
             "  - [cyan].gitignore[/] (repository ignores)\n"
-            "  - [cyan]AGENT.md[/] (instructions for AI agents)\n"
+            "  - [cyan]AGENTS.md[/] (instructions for AI agents)\n"
+            "  - [cyan]skills/rv/SKILL.md[/] (native AI agent skill configuration)\n"
             "  - [cyan]README.md[/] (project documentation)\n"
             "  - [cyan].env[/] and [cyan].env.example[/] (environment variables)\n\n"
             "Ready to manage! Try running [bold yellow]rv status --profile base[/]",

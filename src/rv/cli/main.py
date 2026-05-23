@@ -103,6 +103,63 @@ profiles:
       - brew
 """
 
+    gitignore_template = """# Revive repository ignores
+.DS_Store
+.rv.lock
+*~
+*.swp
+.env
+"""
+
+    agent_md_template = """# AI Agent Instructions for Revive
+
+This repository is managed by **Revive (`rv`)**, a declarative environment lifecycle manager.
+
+## Agent Guidelines
+
+1. **Architecture**: Revive ensures unidirectional sync (repo -> system). `manifest.yaml` is the source of truth.
+2. **Commands**:
+   - `rv status -p <profile>`: Check drift between the repo and the system.
+   - `rv restore <profile>`: Apply the repository state to the local system.
+   - `rv backup <profile>`: Capture system changes back to the repository.
+3. **Best Practices**:
+   - Always modify files in the `assets/` directory and run `rv restore` to apply them.
+   - Use `rv secret` to encrypt/decrypt sensitive files; do not commit plain text secrets.
+   - Follow the transactional model: if a deployment fails, Revive automatically rolls back.
+"""
+
+    readme_md_template = """# My Revive Environment
+
+This repository contains my system configuration, managed by **Revive**.
+
+## Quick Start
+
+1. Install Revive.
+2. Clone this repository.
+3. Review `manifest.yaml` for defined assets and packages.
+4. Run `rv status -p base` to see what will change.
+5. Run `rv restore base` to apply the configuration.
+
+## Directory Structure
+- `assets/`: Managed dotfiles and scripts.
+- `secrets/`: Encrypted credentials (requires an `age` identity to decrypt).
+- `machine/`: Machine-specific overrides.
+"""
+
+    env_template = """# Revive Environment Variables
+# Used by manifest.yaml for variable interpolation.
+# DO NOT commit sensitive secrets here! Use `rv secret` instead.
+
+# EXAMPLE_VAR="some_value"
+"""
+
+    env_example_template = """# Revive Environment Variables (Example)
+# Copy this file to .env and configure your variables.
+# DO NOT commit sensitive secrets here!
+
+# EXAMPLE_VAR="some_value"
+"""
+
     # Example zshrc asset
     example_zshrc_path = os.path.join(repo_dir, "assets", "example_zshrc")
     with open(example_zshrc_path, "w", encoding="utf-8") as f:
@@ -110,6 +167,21 @@ profiles:
 
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(manifest_template)
+
+    with open(os.path.join(repo_dir, ".gitignore"), "w", encoding="utf-8") as f:
+        f.write(gitignore_template)
+
+    with open(os.path.join(repo_dir, "AGENT.md"), "w", encoding="utf-8") as f:
+        f.write(agent_md_template)
+
+    with open(os.path.join(repo_dir, "README.md"), "w", encoding="utf-8") as f:
+        f.write(readme_md_template)
+
+    with open(os.path.join(repo_dir, ".env"), "w", encoding="utf-8") as f:
+        f.write(env_template)
+
+    with open(os.path.join(repo_dir, ".env.example"), "w", encoding="utf-8") as f:
+        f.write(env_example_template)
 
     # Register workspace
     WorkspaceService.register_workspace(repo_dir)
@@ -123,7 +195,11 @@ profiles:
             "  - [cyan]machine/[/] (host-specific overrides)\n\n"
             "[bold white]Files created:[/]\n"
             "  - [cyan]manifest.yaml[/] (your global config manifest)\n"
-            "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n\n"
+            "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n"
+            "  - [cyan].gitignore[/] (repository ignores)\n"
+            "  - [cyan]AGENT.md[/] (instructions for AI agents)\n"
+            "  - [cyan]README.md[/] (project documentation)\n"
+            "  - [cyan].env[/] and [cyan].env.example[/] (environment variables)\n\n"
             "Ready to manage! Try running [bold yellow]rv status --profile base[/]",
             title="Revive Initialized",
             border_style="green",

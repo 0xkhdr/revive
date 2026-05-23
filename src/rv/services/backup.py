@@ -160,7 +160,7 @@ class BackupService:
                 if os.path.isdir(abs_target):
                     has_dir_target = True
 
-            if has_dir_target or (len(basenames) > 1 and item.type != AssetType.SECRET):
+            if has_dir_target or len(basenames) > 1:
                 is_source_dir = True
 
         for target_expr in targets:
@@ -176,6 +176,8 @@ class BackupService:
 
             if is_source_dir and (isinstance(item.target, list) or not is_target_dir):
                 resolved_source = os.path.join(abs_source, os.path.basename(abs_target))
+                if item.encrypted and not resolved_source.endswith(".age"):
+                    resolved_source += ".age"
             else:
                 resolved_source = abs_source
 

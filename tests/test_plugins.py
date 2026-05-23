@@ -447,7 +447,6 @@ def test_builtin_plugins_python_skills(temp_workspace: str) -> None:
         assert os.path.exists(os.path.join(target_dir, "skill_a.py"))
 
     # Remove legacy skills and target directory
-    import shutil
     shutil.rmtree(skills_dir)
     shutil.rmtree(target_dir)
 

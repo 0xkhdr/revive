@@ -248,20 +248,20 @@ profiles:
         backed_up = BackupService.backup(repo_dir, "base", identity_path=identity_file, dry_run=False)
         assert "card_express_env" in backed_up
 
-        # Since it processes both targets, it should encrypt twice to the SAME source path
-        # first with .env, second with .env.deploy (so both should be encrypted to secrets/card_express_env)
+        # Since it processes both targets, it should encrypt each to separate files in the directory with .age suffix
+        # first with .env -> .env.age, second with .env.deploy -> .env.deploy.age
         assert mock_encrypt.call_count == 2
 
         # Verify first call
         first_call_args = mock_encrypt.call_args_list[0][0]
         assert first_call_args[0] == os.path.join(system_dir, ".env")
-        assert first_call_args[1] == os.path.join(repo_dir, "secrets", "card_express_env")
+        assert first_call_args[1] == os.path.join(repo_dir, "secrets", "card_express_env", ".env.age")
         assert first_call_args[2] == ["age1_mock_pub"]
 
         # Verify second call
         second_call_args = mock_encrypt.call_args_list[1][0]
         assert second_call_args[0] == os.path.join(system_dir, ".env.deploy")
-        assert second_call_args[1] == os.path.join(repo_dir, "secrets", "card_express_env")
+        assert second_call_args[1] == os.path.join(repo_dir, "secrets", "card_express_env", ".env.deploy.age")
         assert second_call_args[2] == ["age1_mock_pub"]
 
 

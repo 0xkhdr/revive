@@ -71,9 +71,15 @@ class AssetHandler:
             target_source = abs_source
             if os.path.isdir(abs_source):
                 basename = os.path.basename(abs_target)
-                potential_source = os.path.join(abs_source, basename)
-                if os.path.exists(potential_source):
-                    target_source = potential_source
+                potential_sources = []
+                if asset.encrypted:
+                    potential_sources.append(os.path.join(abs_source, f"{basename}.age"))
+                potential_sources.append(os.path.join(abs_source, basename))
+
+                for pot_src in potential_sources:
+                    if os.path.exists(pot_src):
+                        target_source = pot_src
+                        break
 
             # 3. Check for conflicts
             if os.path.exists(abs_target) or os.path.islink(abs_target):

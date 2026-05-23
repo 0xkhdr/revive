@@ -2,20 +2,21 @@
 
 import os
 import shutil
-import tempfile
 import subprocess
+import tempfile
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from rv.providers import (
-    BaseProvider,
-    ProviderError,
-    BrewProvider,
     AptProvider,
-    FlatpakProvider,
-    SnapProvider,
+    BaseProvider,
+    BrewProvider,
     DockerProvider,
+    FlatpakProvider,
     NodeProvider,
+    ProviderError,
+    SnapProvider,
 )
 
 
@@ -90,7 +91,7 @@ def test_brew_provider() -> None:
         mock_exec.assert_called_once_with(["brew", "bundle", "--file", temp_file])
 
         # Verify Brewfile contents
-        with open(temp_file, "r") as f:
+        with open(temp_file) as f:
             content = f.read()
             assert 'brew "git"' in content
             assert 'cask "code"' in content

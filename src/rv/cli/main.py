@@ -147,6 +147,38 @@ def restore(
         raise typer.Exit(code=2)
 
 
+@app.command("backup")
+def backup(
+    profile: str = typer.Argument(..., help="Name of the deployment profile to backup."),
+    identity: str | None = typer.Option(
+        None, "--identity", "-i", help="Path to age identity file for encrypting secrets."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Plan and validate backup operations without mutating the repository."
+    ),
+) -> None:
+    """Synchronize the local environment state back into the repository profile (system -> repo)."""
+    repo_dir = _get_repo_dir()
+
+    try:
+        from rv.services.backup import BackupService
+
+        backed_up = BackupService.backup(
+            repo_dir=repo_dir,
+            profile_name=profile,
+            identity_path=identity,
+            dry_run=dry_run,
+        )
+
+        if dry_run:
+            console.print("[yellow]Dry Run:[/] Backup completed successfully (no files written).")
+        else:
+            console.print(f"[bold green]Success![/] Backed up {len(backed_up)} asset(s)/secret(s) to repository.")
+    except Exception as e:
+        console.print(f"[bold red]Backup Failed:[/] {e}")
+        raise typer.Exit(code=2)
+
+
 @app.command("status")
 def status(
     profile: str = typer.Option(..., "--profile", "-p", help="Profile to evaluate sync status for."),

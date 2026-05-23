@@ -2,7 +2,8 @@
 
 import pytest
 from pydantic import ValidationError
-from rv.models.manifest import Asset, Secret, Manifest, AssetType, ConflictStrategy
+
+from rv.models.manifest import Asset, AssetType, ConflictStrategy, Manifest, Secret
 
 
 def test_asset_validation() -> None:

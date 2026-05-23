@@ -3,8 +3,9 @@
 import os
 import shutil
 import tempfile
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from rv.models.manifest import Asset, AssetType
 from rv.services.doctor import DoctorService

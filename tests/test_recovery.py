@@ -3,11 +3,11 @@
 from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
+from typer.testing import CliRunner
 
 from rv.cli.main import app
 from rv.models.transaction import TransactionJournal
 from rv.services.recovery import RecoveryService
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

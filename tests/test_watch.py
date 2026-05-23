@@ -5,12 +5,12 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
+from typer.testing import CliRunner
 from watchdog.events import FileSystemEvent
 
 from rv.cli.main import app
 from rv.transactions.lock import LockAcquisitionError
 from rv.watchers.daemon import RepoChangeHandler, WatchdogDaemon
-from typer.testing import CliRunner
 
 runner = CliRunner()
 

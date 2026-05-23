@@ -2,21 +2,22 @@
 
 import os
 import shutil
-import tempfile
-import pytest
-import jinja2
 import subprocess
-from typing import Generator
-from unittest.mock import patch, MagicMock
+import tempfile
+from collections.abc import Generator
+from unittest.mock import MagicMock, patch
+
+import jinja2
+import pytest
 
 from rv.models.manifest import Asset, AssetType, ConflictStrategy, Manifest, Profile, Secret
 from rv.models.transaction import Lockfile, LockfileEntry
-from rv.utils.path import PathHelper
-from rv.transactions.atomic import AtomicWrite
-from rv.transactions.lock import ProcessLock, LockAcquisitionError
 from rv.services.handlers import AssetHandler, AssetHandlerError
+from rv.services.restore import ProfileResolver, RestoreService
 from rv.services.status import StatusService
-from rv.services.restore import RestoreService, ProfileResolver
+from rv.transactions.atomic import AtomicWrite
+from rv.transactions.lock import LockAcquisitionError, ProcessLock
+from rv.utils.path import PathHelper
 
 
 @pytest.fixture
@@ -83,7 +84,7 @@ def test_atomic_write_error_unlink_fails() -> None:
     try:
         target = os.path.join(temp_dir, "test.txt")
         with (
-            patch("os.fsync", side_effect=IOError("Sync failed")),
+            patch("os.fsync", side_effect=OSError("Sync failed")),
             patch("os.unlink", side_effect=OSError("Unlink failed")),
         ):
             with pytest.raises(RuntimeError, match="Atomic write to .* failed"):
@@ -180,7 +181,7 @@ def test_asset_handler_template_read_fails() -> None:
     tx_context = MagicMock()
     with (
         patch("os.path.exists", side_effect=mock_exists_source_only),
-        patch("builtins.open", side_effect=IOError("Read failed")),
+        patch("builtins.open", side_effect=OSError("Read failed")),
     ):
         with pytest.raises(AssetHandlerError, match="Failed to read template source"):
             AssetHandler.handle(asset, "/tmp", tx_context)

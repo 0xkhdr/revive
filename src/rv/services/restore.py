@@ -260,6 +260,12 @@ class RestoreService:
                 else:
                     logger.debug(f"No host override found at {override_path}. Skipping.")
 
+            # Resolve identity path automatically if needed
+            has_encrypted = any(a.encrypted for a in resolved.assets.values()) or len(resolved.secrets) > 0
+            from rv.services.backup import BackupService
+
+            identity_path = BackupService.resolve_identity(identity_path, has_encrypted)
+
             # Register dynamic secrets to logging scrubber if identity is present
             if identity_path and os.path.exists(identity_path):
                 try:

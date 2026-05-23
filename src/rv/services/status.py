@@ -37,6 +37,10 @@ class StatusService:
         manifest = ManifestLoader.load(manifest_path)
         resolved = ProfileResolver.resolve(manifest, profile_name)
 
+        from rv.services.backup import BackupService
+
+        identity_path = BackupService.resolve_identity(identity_path, profile_has_encrypted=False)
+
         # 2. Load lockfile if exists
         lockfile = Lockfile()
         if os.path.exists(lockfile_path):
@@ -294,6 +298,10 @@ class StatusService:
 
         manifest = ManifestLoader.load(manifest_path)
         resolved = ProfileResolver.resolve(manifest, profile_name)
+
+        from rv.services.backup import BackupService
+
+        identity_path = BackupService.resolve_identity(identity_path, profile_has_encrypted=False)
 
         asset = resolved.assets.get(asset_id) or resolved.secrets.get(asset_id)
         if not asset:

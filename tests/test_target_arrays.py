@@ -1,14 +1,15 @@
 import os
 import shutil
 import tempfile
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from rv.models.manifest import Asset, AssetType, ConflictStrategy
 from rv.models.transaction import Lockfile, LockfileEntry
 from rv.services.handlers import AssetHandler
-from rv.services.status import StatusService
 from rv.services.restore import RestoreService
+from rv.services.status import StatusService
 from rv.transactions.context import TransactionContext
 
 

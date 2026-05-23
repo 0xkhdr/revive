@@ -2,10 +2,12 @@
 
 import os
 import tempfile
+
 import pytest
-from rv.transactions.lock import ProcessLock, LockAcquisitionError
+
 from rv.transactions.atomic import AtomicWrite
 from rv.transactions.context import TransactionContext
+from rv.transactions.lock import LockAcquisitionError, ProcessLock
 
 
 def test_process_lock() -> None:
@@ -30,7 +32,7 @@ def test_atomic_write() -> None:
         AtomicWrite.write(target, content)
 
         assert os.path.exists(target)
-        with open(target, "r") as f:
+        with open(target) as f:
             assert f.read() == content
 
 
@@ -106,7 +108,7 @@ def test_transaction_context_rollback() -> None:
 
         # 1. pre_existing.txt should have original content and original permissions restored
         assert os.path.exists(pre_existing)
-        with open(pre_existing, "r") as f:
+        with open(pre_existing) as f:
             assert f.read() == "original content"
         mode = os.stat(pre_existing).st_mode & 0o7777
         assert mode == 0o644

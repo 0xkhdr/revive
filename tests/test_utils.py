@@ -2,10 +2,12 @@
 
 import os
 import tempfile
+
 import pytest
-from rv.utils.platform import Platform
-from rv.utils.path import PathHelper
+
 from rv.utils.interpolate import Interpolator
+from rv.utils.path import PathHelper
+from rv.utils.platform import Platform
 
 
 def test_platform_detection() -> None:

@@ -4,7 +4,9 @@ import json
 import logging
 import os
 from typing import Any
+
 import pytest
+
 from rv.logging.audit import AuditLogger, JsonAuditFormatter
 
 
@@ -20,9 +22,9 @@ def test_json_audit_formatter() -> None:
         exc_info=None,
     )
     # Inject extra attributes
-    setattr(record, "tx_id", "12345-abcde")
-    setattr(record, "asset_id", "zshrc")
-    setattr(record, "op", "symlink")
+    record.tx_id = "12345-abcde"
+    record.asset_id = "zshrc"
+    record.op = "symlink"
 
     formatted = formatter.format(record)
     data = json.loads(formatted)
@@ -46,7 +48,7 @@ def test_audit_logger_setup_and_log(tmpdir: Any) -> None:
     assert os.path.exists(audit_file)
 
     # Read the last line of the audit file
-    with open(audit_file, "r") as f:
+    with open(audit_file) as f:
         lines = f.readlines()
         assert len(lines) > 0
         last_line = lines[-1]

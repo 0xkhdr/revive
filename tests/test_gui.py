@@ -1,17 +1,18 @@
 """Unit and integration tests for the Revive Web GUI HTTP server."""
 
+import json
 import os
-import time
 import socket
 import threading
-import json
-import urllib.request
+import time
 import urllib.error
+import urllib.request
+
 import pytest
 
 from rv.gui.server import start_gui_server
-from rv.services.workspace import WorkspaceService
 from rv.models.manifest import Manifest
+from rv.services.workspace import WorkspaceService
 
 
 def get_free_port() -> int:

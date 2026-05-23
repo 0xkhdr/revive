@@ -192,6 +192,74 @@ class AgeEncryptor:
         raise RuntimeError("Neither pyrage nor age-keygen CLI is available to generate keypairs")
 
     @classmethod
+    def get_public_key(cls, identity_path_or_str: str) -> str:
+        """Derives or extracts the public key from an identity path or identity string.
+
+        Args:
+            identity_path_or_str: Age identity file path OR identity private key string.
+
+        Returns:
+            The public key string (e.g. 'age1...').
+        """
+        # 1. Try to read from file if it exists
+        content = ""
+        if os.path.exists(identity_path_or_str) and os.path.isfile(identity_path_or_str):
+            try:
+                with open(identity_path_or_str, encoding="utf-8") as f:
+                    content = f.read()
+                # Try to parse public key from comments first
+                for line in content.splitlines():
+                    line = line.strip()
+                    if "public key:" in line:
+                        match = re.search(r"public key:\s+(age1[a-zA-Z0-9]+)", line)
+                        if match:
+                            return match.group(1)
+            except Exception:
+                pass
+        else:
+            content = identity_path_or_str
+
+        # 2. Try pyrage to derive public key from private key
+        if cls.is_pyrage_available():
+            try:
+                import pyrage
+
+                resolved_identity = cls.resolve_identity(identity_path_or_str)
+                identity_obj = pyrage.x25519.Identity.from_str(resolved_identity)
+                return str(identity_obj.to_public())
+            except Exception:
+                pass
+
+        # 3. Try age-keygen CLI fallback
+        if Platform.has_tool("age-keygen"):
+            try:
+                if os.path.exists(identity_path_or_str) and os.path.isfile(identity_path_or_str):
+                    result = subprocess.run(
+                        ["age-keygen", "-y", identity_path_or_str], capture_output=True, text=True, check=True
+                    )
+                    return result.stdout.strip()
+                else:
+                    import tempfile
+
+                    with tempfile.NamedTemporaryFile(mode="w", delete=False) as tf:
+                        tf.write(content)
+                        temp_path = tf.name
+                    try:
+                        result = subprocess.run(
+                            ["age-keygen", "-y", temp_path], capture_output=True, text=True, check=True
+                        )
+                        return result.stdout.strip()
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+            except Exception:
+                pass
+
+        raise RuntimeError(
+            "Could not derive public key from identity (neither pyrage nor age-keygen -y succeeded, and no comment found)"
+        )
+
+    @classmethod
     def _encrypt_file_cli(cls, in_path: str, out_path: str, recipients: list[str]) -> None:
         """Encrypts using the age system binary, specifying recipients on the command line."""
         if not Platform.has_tool("age"):

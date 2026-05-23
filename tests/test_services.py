@@ -4,17 +4,18 @@ import os
 import shutil
 import socket
 import tempfile
+from collections.abc import Generator
+from unittest.mock import MagicMock, patch
+
 import pytest
-from typing import Generator
-from unittest.mock import patch, MagicMock
 
 from rv.models.manifest import Asset, AssetType, ConflictStrategy, Manifest, Profile, Secret
 from rv.models.transaction import Lockfile
-from rv.services.restore import ManifestLoader, ProfileResolver, RestoreService, ResolvedProfile
-from rv.services.status import StatusService
+from rv.security.encryptor import AgeEncryptor
 from rv.services.doctor import DoctorService
 from rv.services.handlers import AssetHandler, AssetHandlerError
-from rv.security.encryptor import AgeEncryptor
+from rv.services.restore import ManifestLoader, ProfileResolver, ResolvedProfile, RestoreService
+from rv.services.status import StatusService
 
 
 @pytest.fixture
@@ -236,7 +237,7 @@ def test_restore_service_end_to_end(temp_repo: str) -> None:
     lockfile_path = os.path.join(temp_repo, "manifest.lock")
     assert os.path.exists(lockfile_path)
 
-    with open(lockfile_path, "r") as f:
+    with open(lockfile_path) as f:
         lockfile_data = Lockfile.model_validate_json(f.read())
         assert "bashrc_copy" in lockfile_data.entries
         assert "bashrc_link" in lockfile_data.entries

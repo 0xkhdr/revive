@@ -2,16 +2,17 @@
 
 import os
 import shutil
+import sys
 import tempfile
 import time
+from collections.abc import Generator
+from unittest.mock import MagicMock, patch
+
 import pytest
 import yaml
-import sys
-from typing import Generator
-from unittest.mock import patch, MagicMock
 
-from rv.plugins.loader import PluginLoader, PluginManifest, PluginPermissions, Plugin
 from rv.plugins.context import ReviveContext
+from rv.plugins.loader import Plugin, PluginLoader, PluginManifest, PluginPermissions
 from rv.plugins.sandbox import SandboxRunner
 from rv.services.restore import RestoreService
 from rv.transactions.context import TransactionContext
@@ -513,7 +514,6 @@ else:
 
 def test_sandbox_runner_malformed_args(temp_workspace: str) -> None:
     """Tests that the sandbox wrapper fails gracefully with invalid/malformed arguments."""
-    import sys
     import subprocess
 
     # 1. Less than 5 arguments

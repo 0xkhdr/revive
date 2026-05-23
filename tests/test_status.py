@@ -3,14 +3,15 @@
 import os
 import shutil
 import tempfile
+from unittest.mock import MagicMock, patch
+
 import pytest
 import yaml
-from unittest.mock import patch, MagicMock
 
 from rv.models.manifest import Asset, AssetType, Manifest, Profile, Secret
 from rv.models.transaction import Lockfile, LockfileEntry
-from rv.services.status import StatusService
 from rv.security.encryptor import AgeEncryptor
+from rv.services.status import StatusService
 
 
 @pytest.fixture
@@ -407,7 +408,7 @@ def test_diff_edge_cases(temp_workspace: str) -> None:
 
     def conditional_open(file, *args, **kwargs):
         if file == target_file:
-            raise IOError("Read permission denied")
+            raise OSError("Read permission denied")
         return original_open(file, *args, **kwargs)
 
     with patch("builtins.open", side_effect=conditional_open):

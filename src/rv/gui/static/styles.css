@@ -51,7 +51,6 @@ body {
     background-color: var(--bg-base);
     color: var(--color-text-primary);
     font-family: var(--font-sans);
-    overflow-x: hidden;
     min-height: 100vh;
 }
 
@@ -210,7 +209,7 @@ body {
     gap: 32px;
     max-width: 1600px;
     margin: 0 auto;
-    width: 100%;
+    min-width: 0;
 }
 
 .hub-header {

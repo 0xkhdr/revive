@@ -309,108 +309,109 @@ def test_status_encrypted_copy_and_secret_drift(temp_workspace: str) -> None:
 
 def test_diff_edge_cases(temp_workspace: str) -> None:
     """Tests all edge cases in get_diff including missing assets, failures, and file formats."""
-    target_file = os.path.join(temp_workspace, "system_file")
-    source_file = os.path.join(temp_workspace, "assets/bashrc_src")
-    identity_path = os.path.join(temp_workspace, "identity.txt")
+    with patch("os.path.expanduser", side_effect=lambda path: path.replace("~", os.path.join(temp_workspace, "empty_home"))):
+        target_file = os.path.join(temp_workspace, "system_file")
+        source_file = os.path.join(temp_workspace, "assets/bashrc_src")
+        identity_path = os.path.join(temp_workspace, "identity.txt")
 
-    manifest_data = {
-        "version": 2,
-        "assets": [
-            {
-                "id": "my_file",
-                "type": "copy",
-                "source": "assets/bashrc_src",
-                "target": target_file,
+        manifest_data = {
+            "version": 2,
+            "assets": [
+                {
+                    "id": "my_file",
+                    "type": "copy",
+                    "source": "assets/bashrc_src",
+                    "target": target_file,
+                },
+                {
+                    "id": "my_enc",
+                    "type": "copy",
+                    "source": "assets/bashrc_src.age",
+                    "target": target_file,
+                    "encrypted": True,
+                },
+                {
+                    "id": "my_tpl",
+                    "type": "template",
+                    "source": "assets/bashrc_src.j2",
+                    "target": target_file,
+                },
+                {
+                    "id": "my_link",
+                    "type": "symlink",
+                    "source": "assets/bashrc_src",
+                    "target": os.path.join(temp_workspace, "symlink_tgt"),
+                },
+            ],
+            "secrets": [
+                {
+                    "id": "my_sec",
+                    "source": "assets/secret.age",
+                    "target": target_file,
+                }
+            ],
+            "profiles": {
+                "base": {
+                    "assets": ["my_file", "my_enc", "my_tpl", "my_link"],
+                    "secrets": ["my_sec"],
+                }
             },
-            {
-                "id": "my_enc",
-                "type": "copy",
-                "source": "assets/bashrc_src.age",
-                "target": target_file,
-                "encrypted": True,
-            },
-            {
-                "id": "my_tpl",
-                "type": "template",
-                "source": "assets/bashrc_src.j2",
-                "target": target_file,
-            },
-            {
-                "id": "my_link",
-                "type": "symlink",
-                "source": "assets/bashrc_src",
-                "target": os.path.join(temp_workspace, "symlink_tgt"),
-            },
-        ],
-        "secrets": [
-            {
-                "id": "my_sec",
-                "source": "assets/secret.age",
-                "target": target_file,
-            }
-        ],
-        "profiles": {
-            "base": {
-                "assets": ["my_file", "my_enc", "my_tpl", "my_link"],
-                "secrets": ["my_sec"],
-            }
-        },
-    }
-    with open(os.path.join(temp_workspace, "manifest.yaml"), "w") as f:
-        yaml.safe_dump(manifest_data, f)
+        }
+        with open(os.path.join(temp_workspace, "manifest.yaml"), "w") as f:
+            yaml.safe_dump(manifest_data, f)
 
-    with open(identity_path, "w") as f:
-        f.write("identity key")
+        with open(identity_path, "w") as f:
+            f.write("identity key")
 
-    # 1. Non-existent asset
-    assert StatusService.get_diff(temp_workspace, "base", "non_existent") is None
+        # 1. Non-existent asset
+        assert StatusService.get_diff(temp_workspace, "base", "non_existent") is None
 
-    # 2. Path interpolation failure
-    with patch("rv.utils.path.PathHelper.canonicalize", side_effect=Exception("Path error")):
-        assert StatusService.get_diff(temp_workspace, "base", "my_file") is None
+        # 2. Path interpolation failure
+        with patch("rv.utils.path.PathHelper.canonicalize", side_effect=Exception("Path error")):
+            assert StatusService.get_diff(temp_workspace, "base", "my_file") is None
 
-    # 3. Target is missing or a symlink
-    assert StatusService.get_diff(temp_workspace, "base", "my_link") is None
+        # 3. Target is missing or a symlink
+        assert StatusService.get_diff(temp_workspace, "base", "my_link") is None
 
-    # Write target file for other checks
-    with open(target_file, "w") as f:
-        f.write("actual text content")
+        # Write target file for other checks
+        with open(target_file, "w") as f:
+            f.write("actual text content")
 
-    # 4. Decrypt encrypted copy without identity key
-    assert "[Cannot decrypt source" in StatusService.get_diff(temp_workspace, "base", "my_enc", identity_path=None)
+        # 4. Decrypt encrypted copy without identity key
+        assert "[Cannot decrypt source" in StatusService.get_diff(temp_workspace, "base", "my_enc", identity_path=None)
 
-    # 5. Decrypt encrypted copy where decryption raises exception
-    with patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("GPG error")):
-        assert "[Decryption failed" in StatusService.get_diff(
-            temp_workspace, "base", "my_enc", identity_path=identity_path
-        )
+        # 5. Decrypt encrypted copy where decryption raises exception
+        with patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("GPG error")):
+            assert "[Decryption failed" in StatusService.get_diff(
+                temp_workspace, "base", "my_enc", identity_path=identity_path
+            )
 
-    # 6. Decrypt secret without identity key
-    assert "[Cannot decrypt secret" in StatusService.get_diff(temp_workspace, "base", "my_sec", identity_path=None)
+        # 6. Decrypt secret without identity key
+        assert "[Cannot decrypt secret" in StatusService.get_diff(temp_workspace, "base", "my_sec", identity_path=None)
 
-    # 7. Decrypt secret where decryption raises exception
-    with patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("Decryption error")):
-        assert "[Decryption failed" in StatusService.get_diff(
-            temp_workspace, "base", "my_sec", identity_path=identity_path
-        )
+        # 7. Decrypt secret where decryption raises exception
+        with patch("rv.security.encryptor.AgeEncryptor.decrypt_file", side_effect=RuntimeError("Decryption error")):
+            assert "[Decryption failed" in StatusService.get_diff(
+                temp_workspace, "base", "my_sec", identity_path=identity_path
+            )
 
-    # 8. Template rendering failure inside get_diff
-    with open(os.path.join(temp_workspace, "assets/bashrc_src.j2"), "w") as f:
-        f.write("Hello {{ MISSING_VAR }}")
+        # 8. Template rendering failure inside get_diff
+        with open(os.path.join(temp_workspace, "assets/bashrc_src.j2"), "w") as f:
+            f.write("Hello {{ MISSING_VAR }}")
 
-    assert "[Template rendering failed" in StatusService.get_diff(temp_workspace, "base", "my_tpl")
+        assert "[Template rendering failed" in StatusService.get_diff(temp_workspace, "base", "my_tpl")
 
-    # 9. Failed to read target file (simulate IOError on read)
-    with open(source_file, "w") as f:
-        f.write("repo source text")
+        # 9. Failed to read target file (simulate IOError on read)
+        with open(source_file, "w") as f:
+            f.write("repo source text")
 
-    original_open = open
+        original_open = open
 
-    def conditional_open(file, *args, **kwargs):
-        if file == target_file:
-            raise OSError("Read permission denied")
-        return original_open(file, *args, **kwargs)
+        def conditional_open(file, *args, **kwargs):
+            if file == target_file:
+                raise OSError("Read permission denied")
+            return original_open(file, *args, **kwargs)
 
-    with patch("builtins.open", side_effect=conditional_open):
-        # Should raise IOError inside get_diff and return None
-        assert StatusService.get_diff(temp_workspace, "base", "my_file") is None
+        with patch("builtins.open", side_effect=conditional_open):
+            # Should raise IOError inside get_diff and return None
+            assert StatusService.get_diff(temp_workspace, "base", "my_file") is None

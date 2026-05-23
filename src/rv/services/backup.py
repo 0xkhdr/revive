@@ -24,7 +24,11 @@ class BackupService:
 
         If secrets are present and no identity is found, raises a clear instructive error.
         """
-        default_path = os.path.expanduser("~/.config/rv/identifier.txt")
+        default_paths = [
+            os.path.expanduser("~/.config/rv/identity.txt"),
+            os.path.expanduser("~/.config/rv/keys/identity.txt"),
+            os.path.expanduser("~/.config/rv/identifier.txt"),
+        ]
 
         if identity_path:
             abs_path = os.path.abspath(identity_path)
@@ -32,16 +36,17 @@ class BackupService:
                 raise FileNotFoundError(f"Age identity file not found at: {identity_path}")
             return abs_path
 
-        # Try default location
-        if os.path.exists(default_path):
-            return default_path
+        # Try default locations in order
+        for path in default_paths:
+            if os.path.exists(path):
+                return path
 
         # If we need it but don't have it, instruct the user
         if profile_has_encrypted:
             raise ValueError(
-                "Age identity file not found at default location '~/.config/rv/identifier.txt'.\n"
+                "Age identity file not found at default location '~/.config/rv/identity.txt'.\n"
                 "To manage secrets, please do one of the following:\n"
-                "  1. Create the identity file at '~/.config/rv/identifier.txt' with your age private key.\n"
+                "  1. Create the identity file at '~/.config/rv/identity.txt' with your age private key.\n"
                 "  2. Provide a custom identity file path using the '--identity' / '-i' option."
             )
 

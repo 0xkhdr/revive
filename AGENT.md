@@ -8,10 +8,11 @@ Welcome! This document serves as a comprehensive technical guide for any AI Agen
 
 Revive is a developer environment lifecycle manager designed for fast, secure, and transactional restores. Its operations are governed by several key principles:
 
-1. **Unidirectional Sync**: State always flows **from repository to system** (`repo → system`). Bidirectional sync is explicitly out of scope. State changes are introduced via Git commits and applied locally via `rv restore`.
-2. **Strict Transaction Boundaries**: All filesystem changes run inside a 7-step transaction context with complete journal-based rollback support. If *any* step fails (including post-apply package installs or plugin hooks), the system is reverted to its pre-existing state.
-3. **Defense-in-Depth Security**: Custom plugins run inside an isolated Python subprocess that restricts imports, blocks unauthorized filesystem paths, intercepts network/sockets, and prevents shell spawns. Secrets are decrypted directly to memory and zeroed out immediately after use.
-4. **Platform Neutrality (Unix-First)**: Target platforms are macOS and Linux. Windows support is deferred post-1.0.
+1. **Unidirectional Sync (Primary Flow)**: State normally flows **from repository to system** (`repo → system`). Git commits are the source of truth; `rv restore` applies them locally.
+2. **Bidirectional Capability**: `rv backup` provides an optional reverse operation (`system → repo`), capturing live system files and re-encrypting secrets back into the repository. This is the mechanism for capturing dotfile changes made directly on the system before committing.
+3. **Strict Transaction Boundaries**: All filesystem changes run inside a 7-step transaction context with complete journal-based rollback support. If *any* step fails (including post-apply package installs or plugin hooks), the system is reverted to its pre-existing state.
+4. **Defense-in-Depth Security**: Custom plugins run inside an isolated Python subprocess that restricts imports, blocks unauthorized filesystem paths, intercepts network/sockets, and prevents shell spawns. Secrets are decrypted directly to memory and zeroed out immediately after use.
+5. **Platform Neutrality (Unix-First)**: Target platforms are macOS and Linux. Windows support is deferred post-1.0.
 
 ---
 
@@ -26,9 +27,10 @@ src/rv/
 ├── cli/
 │   ├── __init__.py
 │   └── main.py        # Typer CLI application; handles console interaction and formatting
-├── core/
+├── gui/
 │   ├── __init__.py
-│   └── (integrated into services/restore.py) # Profile resolution and manifest parsing
+│   ├── server.py      # http.server-based Web GUI dashboard (rv gui)
+│   └── static/        # HTML/CSS/JS assets for the cosmic-dark dashboard
 ├── logging/
 │   ├── __init__.py
 │   └── audit.py       # Dual-logger: structured JSON audit logs + Rich console outputs
@@ -59,13 +61,14 @@ src/rv/
 │   ├── permissions.py # POSIX permission validator & enforcer (os.chmod wrapper)
 │   ├── scrubber.py    # Log/trace regex-based credential and secret scrubbers
 │   ├── tempfile.py    # Secure temp files created with 0600 permissions
-│   └── zerobuffer.py  # In-memory buffer clearing (explicit memory wipinng)
+│   └── zerobuffer.py  # In-memory buffer clearing (explicit memory wiping)
 ├── services/
 │   ├── __init__.py
+│   ├── backup.py      # BackupService: system → repo sync (rv backup)
 │   ├── doctor.py      # System diagnostic engine (rv doctor)
 │   ├── handlers.py    # Asset type executors (Copy, Symlink, Template, Secret)
 │   ├── recovery.py    # Transaction recovery and journal replay engine
-│   ├── restore.py     # 14-step unidirectional apply coordinator
+│   ├── restore.py     # 14-step unidirectional apply coordinator + ManifestLoader + ProfileResolver
 │   ├── status.py      # Drift analysis & colored diff generation
 │   └── workspace.py   # Workspace discovery and registration service
 ├── transactions/
@@ -183,7 +186,16 @@ class MyManagerProvider(BaseProvider):
 
 Then, register the new provider in the `RestoreService.restore` flow inside `src/rv/services/restore.py` and the `DoctorService` inside `src/rv/services/doctor.py`.
 
-### 5.2 Adding a Custom Asset Handler
+### 5.3 Extending BackupService
+
+`BackupService` in `src/rv/services/backup.py` handles the `system → repo` direction. Unlike `RestoreService`, it does **not** use `TransactionContext` — it writes directly to the repository with `shutil.copy2` / `shutil.copytree` and delegates encryption to `AgeEncryptor`.
+
+Key extension points:
+- **`_backup_item()`** — processes a single `Asset | Secret`. Add new logic here for new asset types that need custom back-copy behavior.
+- **`resolve_identity()`** — controls how the age identity file is located. The default path is `~/.config/rv/identity.txt`.
+- Template assets (`AssetType.TEMPLATE`) are intentionally skipped — rendered outputs cannot be trivially reversed to the original template. If you add a new asset type that is also non-reversible, add a corresponding guard in the `backup()` method.
+
+### 5.4 Adding a Custom Asset Handler
 If a new file type (e.g. `download` or `git-repo`) is introduced:
 1. Register the enum value in `AssetType` inside `src/rv/models/manifest.py`.
 2. Add the planning method to `AssetHandler` inside `src/rv/services/handlers.py`.
@@ -207,7 +219,7 @@ def _handle_download(cls, asset: Asset, abs_source: str, abs_target: str, tx_con
     )
 ```
 
-### 5.3 Writing a Custom Plugin
+### 5.5 Writing a Custom Plugin
 Create a subdirectory under `plugins/` in your revive repository or custom plugin directory.
 
 `plugin.yaml`:
@@ -259,7 +271,7 @@ Any agent working on the Revive codebase must adhere to the following **non-nego
 1. **Strict Type Safety**: All source code (`src/rv/`) must be strictly type-annotated. `mypy --strict src/rv` must pass with zero warnings/errors.
 2. **Deterministic Code Formats**: Formatting is managed by Ruff. Line length is locked at 120. Run format and check:
    - `ruff format src/rv tests`
-   - `ruff check src/rv`
+   - `ruff check src/rv tests`
 3. **No Shell Executions**: Never execute subprocesses with `shell=True`. Always pass arguments as lists: `["cmd", "arg1", "arg2"]`.
 4. **Never Bypass Validations**: Pydantic models are defined with `strict=True`. Never suppress errors or use raw dictionaries where models are expected.
 5. **No Secret Leaks**: All secrets must be registered with `SecretScrubber`. Ensure logs and traces run through the scrubber to prevent plaintext exposure.
@@ -269,5 +281,5 @@ Any agent working on the Revive codebase must adhere to the following **non-nego
 ### 6.1 Diagnostic Commands
 *   **Run Test Suite**: `.venv/bin/pytest --cov=src/rv`
 *   **Static Type Checking**: `.venv/bin/mypy src/rv`
-*   **Code Quality Audit**: `.venv/bin/ruff check src/rv`
+*   **Code Quality Audit**: `.venv/bin/ruff check src/rv tests`
 *   **Security Vulnerability Scan**: `.venv/bin/bandit -r src/rv`

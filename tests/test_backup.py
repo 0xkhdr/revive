@@ -22,16 +22,16 @@ def temp_workspace():
         os.makedirs(os.path.join(repo_dir, "secrets"))
         os.makedirs(system_dir)
 
-        # Write dummy identifier file
+        # Write dummy identity file
         config_dir = os.path.join(tmpdir, "config")
         os.makedirs(config_dir)
-        identifier_file = os.path.join(config_dir, "identifier.txt")
+        identity_file = os.path.join(config_dir, "identity.txt")
 
-        yield repo_dir, system_dir, identifier_file, tmpdir
+        yield repo_dir, system_dir, identity_file, tmpdir
 
 
 def test_resolve_identity_path(temp_workspace):
-    repo_dir, system_dir, identifier_file, tmpdir = temp_workspace
+    repo_dir, system_dir, identity_file, tmpdir = temp_workspace
 
     # 1. Custom path exists
     custom_path = os.path.join(tmpdir, "custom_key.txt")
@@ -47,15 +47,31 @@ def test_resolve_identity_path(temp_workspace):
 
     # 3. Default path lookup
     with patch("os.path.expanduser", side_effect=lambda path: path.replace("~", tmpdir)):
-        # Default ~/.config/rv/identifier.txt resolves to tmpdir + /.config/rv/identifier.txt
         default_dir = os.path.join(tmpdir, ".config", "rv")
-        os.makedirs(default_dir, exist_ok=True)
-        default_file = os.path.join(default_dir, "identifier.txt")
-        with open(default_file, "w") as f:
-            f.write("AGE-SECRET-KEY-1...")
+        keys_dir = os.path.join(default_dir, "keys")
+        os.makedirs(keys_dir, exist_ok=True)
 
-        resolved = BackupService.resolve_identity(None, True)
-        assert resolved == default_file
+        identity_file = os.path.join(default_dir, "identity.txt")
+        keys_identity_file = os.path.join(keys_dir, "identity.txt")
+        identifier_file = os.path.join(default_dir, "identifier.txt")
+
+        # 3.1. identity.txt exists (highest preference)
+        with open(identity_file, "w") as f:
+            f.write("AGE-SECRET-KEY-1...")
+        assert BackupService.resolve_identity(None, True) == identity_file
+        os.remove(identity_file)
+
+        # 3.2. keys/identity.txt exists (middle preference)
+        with open(keys_identity_file, "w") as f:
+            f.write("AGE-SECRET-KEY-1...")
+        assert BackupService.resolve_identity(None, True) == keys_identity_file
+        os.remove(keys_identity_file)
+
+        # 3.3. identifier.txt exists (lowest preference)
+        with open(identifier_file, "w") as f:
+            f.write("AGE-SECRET-KEY-1...")
+        assert BackupService.resolve_identity(None, True) == identifier_file
+        os.remove(identifier_file)
 
     # 4. Default path does not exist, but no encrypted profile exists
     with patch("os.path.expanduser", side_effect=lambda path: path.replace("~", os.path.join(tmpdir, "empty_home"))):
@@ -69,7 +85,7 @@ def test_resolve_identity_path(temp_workspace):
 
 
 def test_backup_flow(temp_workspace):
-    repo_dir, system_dir, identifier_file, tmpdir = temp_workspace
+    repo_dir, system_dir, identity_file, tmpdir = temp_workspace
 
     # Mock AgeEncryptor methods
     with (
@@ -114,11 +130,11 @@ profiles:
             f.write("secret content")
 
         # Create a mock identity file
-        with open(identifier_file, "w") as f:
+        with open(identity_file, "w") as f:
             f.write("AGE-SECRET-KEY-1...")
 
         # Run backup service in dry-run
-        backed_up = BackupService.backup(repo_dir, "base", identity_path=identifier_file, dry_run=True)
+        backed_up = BackupService.backup(repo_dir, "base", identity_path=identity_file, dry_run=True)
         assert "my_zshrc" in backed_up
         assert "my_symlink" in backed_up
         assert "my_secret" in backed_up
@@ -126,7 +142,7 @@ profiles:
         assert not os.path.exists(os.path.join(repo_dir, "assets", "zshrc"))
 
         # Run active backup
-        backed_up = BackupService.backup(repo_dir, "base", identity_path=identifier_file, dry_run=False)
+        backed_up = BackupService.backup(repo_dir, "base", identity_path=identity_file, dry_run=False)
         assert "my_zshrc" in backed_up
         assert "my_symlink" in backed_up
         assert "my_secret" in backed_up

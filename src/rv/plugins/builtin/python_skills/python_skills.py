@@ -27,10 +27,12 @@ def main() -> None:
         sys.exit(1)
 
     # Source directory in repository
-    src_dir = os.path.join(repo_dir, "skills")
+    src_dir = os.path.join(repo_dir, ".agents", "skills")
     if not os.path.isdir(src_dir):
-        print(json.dumps({"status": "success", "message": "No skills directory in repo, skipping."}))
-        sys.exit(0)
+        src_dir = os.path.join(repo_dir, "skills")
+        if not os.path.isdir(src_dir):
+            print(json.dumps({"status": "success", "message": "No skills directory in repo, skipping."}))
+            sys.exit(0)
 
     home = os.path.expanduser("~")
     target_dir = os.path.join(home, ".config", "rv", "skills")

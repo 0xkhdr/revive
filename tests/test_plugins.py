@@ -430,7 +430,7 @@ def test_builtin_plugins_python_skills(temp_workspace: str) -> None:
     assert res["status"] == "success"
     assert "skipping" in res["message"]
 
-    # Create skills in repo
+    # 1. Test fallback to legacy skills in repo
     skills_dir = os.path.join(temp_workspace, "skills")
     os.makedirs(skills_dir, exist_ok=True)
     with open(os.path.join(skills_dir, "skill_a.py"), "w") as f:
@@ -445,6 +445,27 @@ def test_builtin_plugins_python_skills(temp_workspace: str) -> None:
         res = SandboxRunner.run_plugin(skills_plugin, context)
         assert res["status"] == "success"
         assert os.path.exists(os.path.join(target_dir, "skill_a.py"))
+
+    # Remove legacy skills and target directory
+    import shutil
+    shutil.rmtree(skills_dir)
+    shutil.rmtree(target_dir)
+
+    # 2. Test prioritized .agents/skills in repo
+    agents_skills_dir = os.path.join(temp_workspace, ".agents", "skills")
+    os.makedirs(agents_skills_dir, exist_ok=True)
+    with open(os.path.join(agents_skills_dir, "skill_b.py"), "w") as f:
+        f.write("class SkillB:")
+
+    with patch("os.path.expanduser", return_value=temp_workspace), patch.dict(os.environ, {"HOME": temp_workspace}):
+        skills_plugin.manifest.permissions.allowed_paths = [temp_workspace]
+
+        target_dir = os.path.join(temp_workspace, ".config", "rv", "skills")
+        os.makedirs(os.path.dirname(target_dir), exist_ok=True)
+
+        res = SandboxRunner.run_plugin(skills_plugin, context)
+        assert res["status"] == "success"
+        assert os.path.exists(os.path.join(target_dir, "skill_b.py"))
 
 
 def test_sandbox_runner_os_functions_block(temp_workspace: str) -> None:

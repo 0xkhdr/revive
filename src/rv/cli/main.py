@@ -76,7 +76,7 @@ def init() -> None:
     os.makedirs(os.path.join(repo_dir, "assets"), exist_ok=True)
     os.makedirs(os.path.join(repo_dir, "secrets"), exist_ok=True)
     os.makedirs(os.path.join(repo_dir, "machine"), exist_ok=True)
-    os.makedirs(os.path.join(repo_dir, "skills", "rv"), exist_ok=True)
+    os.makedirs(os.path.join(repo_dir, ".agents", "skills", "rv"), exist_ok=True)
 
     # Basic manifest template
     manifest_template = """# Revive Configuration Manifest
@@ -329,7 +329,7 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
 
 1. **Transactional Strategy**: Always perform structural or config updates inside the `assets/` or `secrets/` folders first, then commit them to git, and finally apply them locally with `rv restore <profile>`.
 2. **Conflict Resolution**: If files on the local system have drifted and conflict with repository assets, `rv restore` will prompt you by default. Set conflict strategies inside `manifest.yaml` (options: `prompt`, `overwrite`, or `keep`).
-3. **Custom Hooks & Plugins**: Use post-apply hooks or plugins to trigger environment-specific scripts. If `python-skills` is active, custom AI agent skills under the `skills/` directory of this repository will be synchronized automatically to `~/.config/rv/skills` upon restore.
+3. **Custom Hooks & Plugins**: Use post-apply hooks or plugins to trigger environment-specific scripts. If `python-skills` is active, custom AI agent skills under the `.agents/skills/` directory of this repository will be synchronized automatically to `~/.config/rv/skills` upon restore.
 4. **Environment Variables**: Revive supports variable interpolation (e.g., `${USER_HOME}`) defined in local `.env` files. Do not commit sensitive values to `.env`; rely on `rv secret` instead.
 """
 
@@ -409,7 +409,7 @@ This repository contains my system configuration, managed by **Revive**.
 - `assets/`: Managed dotfiles and scripts.
 - `secrets/`: Encrypted credentials (requires an `age` identity to decrypt).
 - `machine/`: Machine-specific overrides.
-- `skills/`: Integrated agent skills.
+- `.agents/skills/`: Integrated agent skills.
 """
 
     env_template = """# Revive Environment Variables
@@ -442,7 +442,7 @@ USER_HOME="~"
     with open(os.path.join(repo_dir, "AGENTS.md"), "w", encoding="utf-8") as f:
         f.write(agents_md_template)
 
-    skills_dir = os.path.join(repo_dir, "skills", "rv")
+    skills_dir = os.path.join(repo_dir, ".agents", "skills", "rv")
     with open(os.path.join(skills_dir, "SKILL.md"), "w", encoding="utf-8") as f:
         f.write(skills_md_template)
 
@@ -455,6 +455,27 @@ USER_HOME="~"
     with open(os.path.join(repo_dir, ".env.example"), "w", encoding="utf-8") as f:
         f.write(env_example_template)
 
+    # Initialize Git repository if not already one
+    git_msg = ""
+    if not os.path.exists(os.path.join(repo_dir, ".git")):
+        import subprocess
+
+        try:
+            subprocess.run(["git", "init"], cwd=repo_dir, capture_output=True, check=True)
+            subprocess.run(["git", "add", "."], cwd=repo_dir, capture_output=True, check=True)
+            try:
+                subprocess.run(
+                    ["git", "commit", "-m", "Initial commit from Revive init"],
+                    cwd=repo_dir,
+                    capture_output=True,
+                    check=True,
+                )
+                git_msg = "\n  - [bold green]Git repository initialized with initial commit.[/]"
+            except subprocess.CalledProcessError:
+                git_msg = "\n  - [bold yellow]Git repository initialized, files staged (commit requires configured git identity).[/]"
+        except Exception as e:
+            git_msg = f"\n  - [bold red]Failed to initialize git repository: {e}[/]"
+
     # Register workspace
     WorkspaceService.register_workspace(repo_dir)
 
@@ -465,15 +486,16 @@ USER_HOME="~"
             "  - [cyan]assets/[/] (file and symlink assets)\n"
             "  - [cyan]secrets/[/] (encrypted secrets)\n"
             "  - [cyan]machine/[/] (host-specific overrides)\n"
-            "  - [cyan]skills/[/] (integrated agent skills)\n\n"
+            "  - [cyan].agents/skills/[/] (integrated agent skills)\n\n"
             "[bold white]Files created:[/]\n"
             "  - [cyan]manifest.yaml[/] (your global config manifest)\n"
             "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n"
             "  - [cyan].gitignore[/] (repository ignores)\n"
             "  - [cyan]AGENTS.md[/] (instructions for AI agents)\n"
-            "  - [cyan]skills/rv/SKILL.md[/] (native AI agent skill configuration)\n"
+            "  - [cyan].agents/skills/rv/SKILL.md[/] (native AI agent skill configuration)\n"
             "  - [cyan]README.md[/] (project documentation)\n"
-            "  - [cyan].env[/] and [cyan].env.example[/] (environment variables)\n\n"
+            "  - [cyan].env[/] and [cyan].env.example[/] (environment variables)\n"
+            f"{git_msg}\n\n"
             "Ready to manage! Try running [bold yellow]rv status --profile base[/]",
             title="Revive Initialized",
             border_style="green",

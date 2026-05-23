@@ -29,7 +29,7 @@ def test_cli_init(temp_repo: str) -> None:
         assert os.path.exists(os.path.join(temp_repo, "manifest.yaml"))
         assert os.path.exists(os.path.join(temp_repo, "assets", "example_zshrc"))
         assert os.path.exists(os.path.join(temp_repo, "AGENTS.md"))
-        assert os.path.exists(os.path.join(temp_repo, "skills", "rv", "SKILL.md"))
+        assert os.path.exists(os.path.join(temp_repo, ".agents", "skills", "rv", "SKILL.md"))
 
         # Verify gitignore has proper ignoring for AI agents, IDEs, and local state/secrets
         gitignore_path = os.path.join(temp_repo, ".gitignore")

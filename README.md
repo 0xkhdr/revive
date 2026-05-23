@@ -258,6 +258,17 @@ packages:
     - curl
     - git
     - build-essential
+  pacman:
+    - ripgrep
+    - starship
+  dnf:
+    - curl
+  nix:
+    - ripgrep
+  cargo:
+    - ripgrep
+  pip:
+    - black
   flatpak:
     - com.spotify.Client
   snap:
@@ -382,6 +393,10 @@ rv restore <profile> [<profile2> ...] [options]
 | `--dry-run` | Plan and validate without mutating the filesystem |
 | `--interactive` / `--non-interactive` | Toggle interactive prompting for file conflicts (default: interactive) |
 | `--no-plugins` | Skip all plugin hook execution |
+| `--force-packages` | Bypass and invalidate the package status cache to force package reinstalls |
+| `--preview` | Show a beautiful color-coded summary of system/repo differences without applying changes |
+| `--parallel` / `--sequential` | Controls parallel planning of assets (ThreadPoolExecutor max 8 threads, default: parallel) |
+| `--prune` | Perform automatic retention-based pruning of old backup snapshots |
 
 **Examples:**
 
@@ -607,6 +622,31 @@ rv recover --auto
 
 ---
 
+### `rv prune`
+
+Prune old transaction backups under `~/.config/rv/backups/` manually or based on manifest retention settings.
+
+```bash
+rv prune [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Preview deleted backup folders without removing them |
+| `--confirm` | Skip interactive confirmation prompts |
+
+**Examples:**
+
+```bash
+# Interactively prune old backups
+rv prune
+
+# Dry-run preview of what would be pruned
+rv prune --dry-run
+```
+
+---
+
 ### `rv gui`
 
 Launch the interactive Revive Web GUI dashboard locally.
@@ -620,6 +660,7 @@ rv gui [options]
 | `--port`, `-p <int>` | Port to run the server on (default: `8080`) |
 | `--host`, `-h <addr>` | Host address to bind to (default: `127.0.0.1`) |
 | `--no-browser` | Do not auto-open the browser |
+| `--auth-token <string>` | Set or override the API access authentication token (defaults to an auto-generated secure 32-character random hex token) |
 
 **Example:**
 
@@ -724,8 +765,10 @@ rv secret rotate <file> --identity <path> --new-recipient <key> [--new-recipient
 | Argument/Flag | Description |
 |---------------|-------------|
 | `<file>` | **Required.** Path to the encrypted `.age` file to rotate |
-| `--identity`, `-i <path>` | **Required.** Current age identity to decrypt with |
+| `--identity`, `-i <path>` | Current age identity to decrypt with (optional if using `--from-plaintext`) |
 | `--new-recipient`, `-nr <key>` | **Required.** New public key recipient (repeat for multiple) |
+| `--from-plaintext <file>` | Rotate a secret starting directly from a plaintext source file (useful if the old private key is lost). Securely shreds/wipes the plaintext source file after successful encryption. |
+| `--confirm` | Required when rotating from a plaintext file to confirm secure shredding |
 
 ```bash
 rv secret rotate secrets/aws_creds.age \
@@ -777,6 +820,27 @@ rv workspace remove <name>
 
 ```bash
 rv workspace remove personal-dotfiles
+```
+
+#### `rv workspace sync`
+
+Pull and synchronize all registered workspaces sequentially. Exits with code 1 if any workspace fails.
+
+```bash
+rv workspace sync [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Preview pull and restore changes without making modifications |
+| `--profile <profile>` | Override the default profile to restore for all workspaces |
+
+```bash
+# Sync all registered workspaces
+rv workspace sync
+
+# Dry-run sync across all workspaces
+rv workspace sync --dry-run
 ```
 
 ---

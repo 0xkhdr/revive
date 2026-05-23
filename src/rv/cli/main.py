@@ -201,6 +201,10 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
         *   `--dry-run`: Plan and validate all transactions without mutating the system filesystem.
         *   `--non-interactive`: Disable interactive prompts for file conflicts (useful in automation/CI).
         *   `--no-plugins`: Skip executing any custom plugin hooks.
+        *   `--force-packages`: Bypass and invalidate the package status cache to force package reinstalls.
+        *   `--preview`: Render a beautiful color-coded summary comparing the repository against the live system without mutating any files.
+        *   `--parallel` / `--sequential`: Controls parallel planning of assets (ThreadPoolExecutor max 8 threads, default: parallel enabled).
+        *   `--prune`: Performs automatic retention-based pruning of old backup snapshots.
     *   **Example**: `rv restore base --dry-run`
 
 *   **`rv backup`**
@@ -246,6 +250,14 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
         *   `-d`, `--debounce <seconds>`: Delay (default: 5.0s) before triggering the auto-restore transaction.
     *   **Example**: `rv watch -p base -d 2`
 
+*   **`rv prune`**
+    *   **Description**: Prune old transaction backups from `~/.config/rv/backups/` manually or based on manifest retention settings.
+    *   **Syntax**: `rv prune`
+    *   **Options**:
+        *   `--dry-run`: Preview deleted backup folders.
+        *   `--confirm`: Skip interactive confirmation prompt.
+    *   **Example**: `rv prune --dry-run`
+
 ---
 
 ### 2.3 Secrets Cryptography (`rv secret`)
@@ -279,9 +291,11 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
     *   **Description**: Re-encrypt a secret file with new recipient public keys.
     *   **Syntax**: `rv secret rotate <encrypted_file>`
     *   **Options**:
-        *   `-i`, `--identity <file>`: Current private identity key file to decrypt the existing secret.
+        *   `-i`, `--identity <file>`: Current private identity key file to decrypt the existing secret (optional if using `--from-plaintext`).
         *   `-nr`, `--new-recipient <pub_key>`: New recipient public key string (multiple allowed).
-    *   **Example**: `rv secret rotate secrets/secure.age -i ~/.config/rv/identity.txt -nr age1new...`
+        *   `--from-plaintext <file>`: Re-encrypt and rotate a secret starting directly from a plaintext source file (useful if the old private key is lost). Securely shreds/wipes the plaintext source file after successful encryption.
+        *   `--confirm`: Required when rotating directly from a plaintext file to confirm secure shredding.
+    *   **Example**: `rv secret rotate secrets/secure.age -nr age1new... --from-plaintext ~/.aws/credentials --confirm`
 
 ---
 
@@ -303,6 +317,14 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
     *   **Syntax**: `rv workspace remove <workspace_name>`
     *   **Example**: `rv workspace remove my-revive`
 
+*   **`rv workspace sync`**
+    *   **Description**: Pull and synchronize all registered Revive workspaces sequentially. Exits with a non-zero code if any workspace fails.
+    *   **Syntax**: `rv workspace sync`
+    *   **Options**:
+        *   `--dry-run`: Preview pull/restore across all workspaces without applying mutations.
+        *   `--profile <profile>`: Override profile name to restore.
+    *   **Example**: `rv workspace sync`
+
 *   **`rv self-install`**
     *   **Description**: Install the `rv` global launcher wrapper to `~/.local/bin/rv` pointing to the current virtual environment/interpreter.
     *   **Syntax**: `rv self-install`
@@ -323,6 +345,7 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
         *   `-p`, `--port <port>`: Change the web server port (default: 8080).
         *   `-h`, `--host <host>`: Bind to custom host address (default: 127.0.0.1).
         *   `--no-browser`: Start the server without opening the web browser automatically.
+        *   `--auth-token <token>`: Set or override the API access authentication token (defaults to an auto-generated secure 32-character random hex token if not supplied).
 
 ---
 
@@ -332,6 +355,9 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
 2. **Conflict Resolution**: If files on the local system have drifted and conflict with repository assets, `rv restore` will prompt you by default. Set conflict strategies inside `manifest.yaml` (options: `prompt`, `overwrite`, or `keep`).
 3. **Custom Hooks & Plugins**: Use post-apply hooks or plugins to trigger environment-specific scripts. If `python-skills` is active, custom AI agent skills under the `.agents/skills/` directory of this repository will be synchronized automatically to `~/.config/rv/skills` upon restore.
 4. **Environment Variables**: Revive supports variable interpolation (e.g., `${USER_HOME}`) defined in local `.env` files. Do not commit sensitive values to `.env`; rely on `rv secret` instead.
+5. **Package Cache**: Package manager installations are cached locally at `~/.config/rv/package-cache.json` with a 24-hour TTL to avoid repetitive system queries. Invalidate via `rv restore --force-packages`.
+6. **Per-Asset Hooks**: Individual assets can define pre-restore/post-restore commands or plugin hooks in `manifest.yaml` for granular, in-transaction automation. A non-zero hook exit code triggers transaction rollback.
+
 """
 
     skills_md_template = """---

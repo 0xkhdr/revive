@@ -7,7 +7,7 @@ Revive (`rv`) is a production-grade CLI tool that enforces a **unidirectional st
 ## Table of Contents
 
 - [Installation](#-installation)
-  - [1-Second Install (Linux)](#1-second-install-linux)
+  - [1-Second Install (Linux/macOS)](#1-second-install-linuxmacos)
   - [Manual Install from Source](#manual-install-from-source)
   - [Uninstall](#uninstall)
 - [Core Concepts](#-core-concepts)
@@ -22,6 +22,7 @@ Revive (`rv`) is a production-grade CLI tool that enforces a **unidirectional st
   - [Global Flags](#global-flags)
   - [`rv init`](#rv-init)
   - [`rv restore`](#rv-restore)
+  - [`rv backup`](#rv-backup)
   - [`rv status`](#rv-status)
   - [`rv diff`](#rv-diff)
   - [`rv doctor`](#rv-doctor)
@@ -49,7 +50,7 @@ Revive (`rv`) is a production-grade CLI tool that enforces a **unidirectional st
 
 ## 📦 Installation
 
-### 1-Second Install (Linux)
+### 1-Second Install (Linux/macOS)
 
 Installs `rv` globally to `~/.local/bin/rv` with an isolated virtual environment at `~/.local/share/rv`:
 
@@ -105,13 +106,26 @@ curl -fsSL https://raw.githubusercontent.com/0xkhdr/revive/main/scripts/uninstal
 
 | Concept | Description |
 |---------|-------------|
-| **Unidirectional Sync** | State always flows `repository → system`. Git commits are the source of truth. |
+| **Unidirectional Sync** | Primary flow: state flows `repository → system`. Git commits are the source of truth; `rv restore` applies them. |
+| **Bidirectional Capability** | `rv backup` captures live system files and secrets back into the repository (`system → repo`). Use this to preserve dotfile edits made directly on the system before committing. |
 | **Profile** | A named set of assets, secrets, and packages that can be restored as a unit. |
 | **Asset** | A file/directory managed as a symlink, copy, or Jinja2 template. |
 | **Secret** | An age-encrypted file decrypted directly to memory during restore, never written to disk in plaintext. |
 | **Transaction** | A 7-step atomic execution context. Every mutation is journaled; any failure triggers a full rollback. |
 | **Machine Overrides** | Host-specific `manifest.yaml` fragments that override values at restore time. |
 | **Plugin** | A sandboxed Python script invoked on `pre-restore` or `post-restore` hooks. |
+
+### Typical Bidirectional Workflow
+
+```bash
+# On machine A: edit dotfiles directly, then capture changes back into the repo
+rv backup base --identity ~/.config/rv/identity.txt
+git add -A && git commit -m "chore: update dotfiles" && git push
+
+# On machine B: pull and apply
+git pull
+rv restore base --identity ~/.config/rv/identity.txt
+```
 
 ---
 
@@ -348,12 +362,12 @@ Also registers the current directory as a workspace in `~/.config/rv/workspaces.
 Synchronize the local system state to match the repository profile (`repo → system`).
 
 ```bash
-rv restore <profile> [options]
+rv restore <profile> [<profile2> ...] [options]
 ```
 
 | Argument/Flag | Description |
 |---------------|-------------|
-| `<profile>` | **Required.** Name of the profile to restore (e.g. `base`) |
+| `<profile>` | **Required.** Name(s) of the profile(s) to restore. Multiple profiles or comma-separated values are accepted (e.g. `rv restore base work` or `rv restore base,work`). |
 | `--identity`, `-i <path>` | Path to age identity file for decrypting secrets |
 | `--dry-run` | Plan and validate without mutating the filesystem |
 | `--interactive` / `--non-interactive` | Toggle interactive prompting for file conflicts (default: interactive) |
@@ -424,7 +438,7 @@ rv status -p base
 rv status -p base --identity ~/.config/rv/identity.txt
 ```
 
-Exit code is `0` whether in sync or drifted (drift is reported as a warning). Use `rv diff` for detailed file-level diffs.
+Exit code is `0` whether in sync or drifted (drift is reported as a warning). Use `rv diff` for file-level diffs. For CI drift gating (exit `1` on issues), use `rv doctor`.
 
 ---
 
@@ -507,6 +521,47 @@ rv watch -p base --identity ~/.config/rv/identity.txt --debounce 3.0
 ```
 
 Press `Ctrl+C` to stop the daemon.
+
+---
+
+### `rv backup`
+
+Synchronize live system state back into the repository (`system → repo`). Use this to capture dotfile edits made directly on the system before committing.
+
+```bash
+rv backup <profile> [<profile2> ...] [options]
+```
+
+| Argument/Flag | Description |
+|---------------|-------------|
+| `<profile>` | **Required.** Name(s) of the profile(s) to back up. Multiple profiles and comma-separated values accepted. |
+| `--identity`, `-i <path>` | Path to age identity file for re-encrypting secrets back into the repo. Defaults to `~/.config/rv/identity.txt`. |
+| `--dry-run` | Preview what would be copied/encrypted without writing to the repository. |
+
+**Behavior by asset type:**
+
+| Asset Type | Behavior |
+|------------|----------|
+| `copy` | Copies the live system file to the repo source path. |
+| `symlink` | Follows the symlink to copy the actual file content to the repo. Skipped if the symlink already points to the repo source (already in sync). |
+| `template` | **Skipped** — rendered outputs cannot be reversed to source templates. |
+| `secret` | Derives the public key from the identity file and re-encrypts the live system file to the repo `.age` path. |
+
+**Examples:**
+
+```bash
+# Preview what would be captured
+rv backup base --dry-run
+
+# Capture live dotfiles and secrets into the repo
+rv backup base --identity ~/.config/rv/identity.txt
+
+# Capture multiple profiles at once
+rv backup base,work --identity ~/.config/rv/identity.txt
+```
+
+> [!NOTE]
+> After running `rv backup`, commit and push the repository changes to propagate them to other machines.
 
 ---
 
@@ -832,7 +887,7 @@ if __name__ == "__main__":
 | `repo_dir` | `str` | Absolute path to the repository |
 | `profile_name` | `str` | Active deployment profile name |
 | `dry_run` | `bool` | Whether this is a dry-run |
-| `targets` | `list[str]` | Filesystem paths affected by this transaction |
+| `targets` | `list[str]` | Filesystem paths that will be (pre-restore) or were (post-restore) mutated by this transaction. Empty list for `pre-restore` hooks if no assets have been processed yet. |
 | `hook_type` | `str` | The hook name (`pre-restore` or `post-restore`) |
 
 ### Plugin Discovery Order
@@ -878,6 +933,9 @@ Revive is built with defense-in-depth from the ground up:
 | **Path Traversal Prevention** | All `source` paths in manifest assets are validated to be relative and free of `..` components. |
 | **Process Lock** | `ProcessLock` uses `flock` on `~/.config/rv/rv.lock` to prevent concurrent restore operations. |
 | **No `shell=True`** | All subprocess invocations pass argument lists — never shell strings. |
+
+> [!TIP]
+> Store your age identity key at `~/.config/rv/identity.txt` (created via `rv secret keygen --output ~/.config/rv/identity.txt`). This is the default path used by both `rv restore` and `rv backup` when `--identity` is omitted.
 
 ---
 

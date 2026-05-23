@@ -160,7 +160,7 @@ class BackupService:
             is_source_dir = os.path.isdir(abs_source) or item.source.endswith(("/", "\\"))
             is_target_dir = os.path.isdir(abs_target)
 
-            if isinstance(item.target, list) or (is_source_dir and not is_target_dir):
+            if is_source_dir and (isinstance(item.target, list) or not is_target_dir):
                 resolved_source = os.path.join(abs_source, os.path.basename(abs_target))
             else:
                 resolved_source = abs_source

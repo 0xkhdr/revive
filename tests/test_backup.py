@@ -209,3 +209,59 @@ profiles:
     assert "relative_symlink_asset" in backed_up
     assert "broken_symlink_asset" in backed_up
 
+
+def test_backup_multi_target_secrets(temp_workspace):
+    repo_dir, system_dir, identity_file, tmpdir = temp_workspace
+
+    with (
+        patch.object(AgeEncryptor, "get_public_key", return_value="age1_mock_pub"),
+        patch.object(AgeEncryptor, "encrypt_file") as mock_encrypt,
+    ):
+        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        manifest_content = f"""
+version: 2
+secrets:
+  - id: card_express_env
+    source: secrets/card_express_env
+    target:
+      - {system_dir}/.env
+      - {system_dir}/.env.deploy
+    permissions: "0600"
+profiles:
+  base:
+    secrets: [card_express_env]
+"""
+        with open(manifest_path, "w") as f:
+            f.write(manifest_content)
+
+        # Create both target files on system
+        with open(os.path.join(system_dir, ".env"), "w") as f:
+            f.write("env content")
+        with open(os.path.join(system_dir, ".env.deploy"), "w") as f:
+            f.write("deploy content")
+
+        # Create a mock identity file
+        with open(identity_file, "w") as f:
+            f.write("AGE-SECRET-KEY-1...")
+
+        # Run backup service
+        backed_up = BackupService.backup(repo_dir, "base", identity_path=identity_file, dry_run=False)
+        assert "card_express_env" in backed_up
+
+        # Since it processes both targets, it should encrypt twice to the SAME source path
+        # first with .env, second with .env.deploy (so both should be encrypted to secrets/card_express_env)
+        assert mock_encrypt.call_count == 2
+        
+        # Verify first call
+        first_call_args = mock_encrypt.call_args_list[0][0]
+        assert first_call_args[0] == os.path.join(system_dir, ".env")
+        assert first_call_args[1] == os.path.join(repo_dir, "secrets", "card_express_env")
+        assert first_call_args[2] == ["age1_mock_pub"]
+
+        # Verify second call
+        second_call_args = mock_encrypt.call_args_list[1][0]
+        assert second_call_args[0] == os.path.join(system_dir, ".env.deploy")
+        assert second_call_args[1] == os.path.join(repo_dir, "secrets", "card_express_env")
+        assert second_call_args[2] == ["age1_mock_pub"]
+
+

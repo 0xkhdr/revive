@@ -31,6 +31,7 @@ def _get_repo_dir() -> str:
     repo_dir = os.getcwd()
     try:
         from rv.utils.interpolate import load_env
+
         load_env(repo_dir)
     except ImportError:
         pass
@@ -109,12 +110,58 @@ profiles:
       - brew
 """
 
-    gitignore_template = """# Revive repository ignores
-.DS_Store
+    gitignore_template = """# ==========================================
+# Revive Workspace Version Control Ignores
+# ==========================================
+
+# Revive State & Security (CRITICAL)
+# ------------------------------------------
+# NEVER commit raw Age identity keys, local lockfiles, or transactional states.
 .rv.lock
-*~
-*.swp
+manifest.lock
+identity.txt
+*.key
+keys/
 .env
+
+# Modern IDEs
+# ------------------------------------------
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+*~
+.DS_Store
+
+# AI Coding Agents & Copilots
+# ------------------------------------------
+# Ignore caches, history logs, and runtime state of modern AI agents.
+.claude/
+.claude.json
+.cline/
+.cline_history
+.roo/
+.roo_history
+.copilot/
+.windsurf/
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache
+.antigravitycli/
+.swe-agent/
+.gpt-engineer/
+
+# Python Virtual Environments & Packages
+# ------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
 """
 
     agent_md_template = """# AI Agent Instructions for Revive

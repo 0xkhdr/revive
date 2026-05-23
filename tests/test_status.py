@@ -309,7 +309,9 @@ def test_status_encrypted_copy_and_secret_drift(temp_workspace: str) -> None:
 
 def test_diff_edge_cases(temp_workspace: str) -> None:
     """Tests all edge cases in get_diff including missing assets, failures, and file formats."""
-    with patch("os.path.expanduser", side_effect=lambda path: path.replace("~", os.path.join(temp_workspace, "empty_home"))):
+    with patch(
+        "os.path.expanduser", side_effect=lambda path: path.replace("~", os.path.join(temp_workspace, "empty_home"))
+    ):
         target_file = os.path.join(temp_workspace, "system_file")
         source_file = os.path.join(temp_workspace, "assets/bashrc_src")
         identity_path = os.path.join(temp_workspace, "identity.txt")

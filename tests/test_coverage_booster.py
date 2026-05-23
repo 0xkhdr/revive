@@ -270,8 +270,8 @@ def test_restore_service_machine_overrides(temp_repo: str) -> None:
 
     with (
         patch("socket.gethostname", return_value=hostname),
-        patch("rv.providers.brew.BrewProvider.install") as mock_brew,
-        patch("rv.providers.docker.DockerProvider.install") as mock_docker,
+        patch("rv.providers.brew.BrewProvider.install"),
+        patch("rv.providers.docker.DockerProvider.install"),
     ):
         tx_id = RestoreService.restore(temp_repo, "base", interactive=False)
         assert tx_id is not None

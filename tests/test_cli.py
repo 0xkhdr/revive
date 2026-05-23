@@ -29,6 +29,18 @@ def test_cli_init(temp_repo: str) -> None:
         assert os.path.exists(os.path.join(temp_repo, "manifest.yaml"))
         assert os.path.exists(os.path.join(temp_repo, "assets", "example_zshrc"))
 
+        # Verify gitignore has proper ignoring for AI agents, IDEs, and local state/secrets
+        gitignore_path = os.path.join(temp_repo, ".gitignore")
+        assert os.path.exists(gitignore_path)
+        with open(gitignore_path, encoding="utf-8") as f:
+            content = f.read()
+            assert ".claude/" in content
+            assert ".cline/" in content
+            assert ".vscode/" in content
+            assert ".idea/" in content
+            assert "identity.txt" in content
+            assert ".antigravitycli/" in content
+
         # Running again should fail
         result_again = runner.invoke(app, ["init"])
         assert result_again.exit_code == 1
@@ -175,7 +187,7 @@ def test_cli_diff(temp_repo: str) -> None:
             # 2b. Diffs present (Side-by-side default)
             with patch(
                 "rv.services.status.StatusService.get_contents_for_diff", return_value=("old\nline1", "new\nline1")
-            ) as mock_contents:
+            ):
                 result = runner.invoke(app, ["diff", "-p", "base"])
                 assert result.exit_code == 0
                 assert "Expected" in result.stdout
@@ -185,7 +197,7 @@ def test_cli_diff(temp_repo: str) -> None:
             with patch(
                 "rv.services.status.StatusService.get_contents_for_diff",
                 return_value=("[Cannot decrypt source: identity file missing]", ""),
-            ) as mock_contents:
+            ):
                 result = runner.invoke(app, ["diff", "-p", "base"])
                 assert result.exit_code == 0
                 assert "Error rendering diff" in result.stdout

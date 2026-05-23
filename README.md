@@ -1,6 +1,6 @@
 # Revive (`rv`) — Developer Environment Lifecycle Manager
 
-Revive (`rv`) is a production-grade CLI tool that enforces a **unidirectional state engine** (`repository → system`) to synchronize developer workspaces, dotfiles, application configurations, encrypted secrets, and package managers — **atomically**. If any part of a synchronization fails, Revive automatically rolls back all filesystem mutations to the pre-existing state.
+Revive (`rv`) is a transaction-safe developer environment manager. It synchronizes your dotfiles, application configs, encrypted secrets, system packages, and AI agent skills directly from your Git repository. To guarantee system stability, Revive operates on a strict transactional model: if any symlink, copy, package installation, or plugin hook fails, the entire run is rolled back, ensuring your machine is never left in a broken, half-configured state.
 
 ---
 
@@ -227,17 +227,22 @@ assets:
 
 Secrets are age-encrypted files. They are decrypted to an in-memory buffer during restore and written to the target path, then the buffer is zeroed. **Plaintext is never written to disk or logs.**
 
+Like assets, secrets support **target arrays** (multiple destinations). If `source` is a directory and `target` is a list of paths, Revive matches each target path's basename with the corresponding `.age` file in the source directory during restore (or appends `.age` to decrypt it).
+
 ```yaml
 secrets:
   - id: aws_credentials
-    source: secrets/aws_creds.age   # Encrypted .age file in the repo
-    target: ~/.aws/credentials      # System destination
+    source: secrets/aws_creds       # Can be a directory containing encrypted files
+    target:
+      - ~/.aws/credentials          # Decrypted from secrets/aws_creds/credentials.age
+      - ~/.aws/credentials.deploy   # Decrypted from secrets/aws_creds/credentials.deploy.age
     permissions: "0600"             # Must be group/world restrictive (no 077 bits)
     owner: null
 ```
 
 > [!IMPORTANT]
-> Secrets enforce strict permissions. The `permissions` field must restrict group and world access (e.g. `"0600"` or `"0700"`). Setting world-readable permissions will fail Pydantic validation.
+> * **Permissions**: Secrets enforce strict permissions. The `permissions` field must restrict group and world access (e.g. `"0600"` or `"0700"`). Setting world-readable permissions will fail Pydantic validation.
+> * **Bidirectional Backup**: During `rv backup`, if a secret has multiple targets, the live files on the system are encrypted to separate files under the secret's repository directory with a `.age` suffix (e.g., `credentials` -> `credentials.age`).
 
 ### Packages
 
@@ -338,7 +343,7 @@ rv [--verbose] [--headless] <command> [options]
 
 ### `rv init`
 
-Scaffold a new Revive repository in the current directory.
+Scaffold a new Revive repository in the current directory. It automatically initializes a new local Git repository (`git init`) and stages/commits the generated files (or stages them if a Git identity is not yet configured).
 
 ```bash
 rv init
@@ -349,10 +354,11 @@ Creates:
 - `assets/` — folder for managed files and templates
 - `secrets/` — folder for encrypted `.age` files
 - `machine/` — folder for host-specific override YAMLs
+- `.agents/skills/` — folder for AI agent skill definitions (with a default `rv/SKILL.md` skill template)
 - `AGENTS.md` — instructions for AI agents working in the repository
 - `README.md` — basic project documentation template
 - `.gitignore` — repository ignores
-- `.env` & `.env.example` — environment variables for interpolation
+- `.env` & `.env.example` — environment variables for interpolation (Revive automatically loads `.env` on CLI entry)
 
 Also registers the current directory as a workspace in `~/.config/rv/workspaces.yaml`.
 
@@ -422,7 +428,7 @@ rv status --profile <profile> [options]
 
 | Flag | Description |
 |------|-------------|
-| `--profile`, `-p <profile>` | **Required.** Profile to evaluate |
+| `--profile`, `-p <profile>` | **Required.** Profile(s) to evaluate. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file to also check secret drift |
 
 **Drift status values:**
@@ -456,7 +462,7 @@ rv diff --profile <profile> [options]
 
 | Flag | Description |
 |------|-------------|
-| `--profile`, `-p <profile>` | **Required.** Profile name to diff |
+| `--profile`, `-p <profile>` | **Required.** Profile name(s) to diff. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file to diff encrypted secrets |
 | `--unified`, `-u` | Display standard unified diff format instead of side-by-side |
 
@@ -485,7 +491,7 @@ rv doctor [options]
 
 | Flag | Description |
 |------|-------------|
-| `--profile`, `-p <profile>` | Optionally scope checks to a specific profile |
+| `--profile`, `-p <profile>` | Optionally scope checks to specific profile(s). Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--json` | Output the diagnostic report in structured JSON |
 
 Checks include: manifest validity, tool availability (brew, apt, flatpak, snap, docker, age, nvm/fnm), permission safety, and asset source file existence.
@@ -512,7 +518,7 @@ rv watch --profile <profile> [options]
 
 | Flag | Description |
 |------|-------------|
-| `--profile`, `-p <profile>` | **Required.** Profile to monitor and auto-apply |
+| `--profile`, `-p <profile>` | **Required.** Profile(s) to monitor and auto-apply. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file for decrypting secrets |
 | `--debounce`, `-d <seconds>` | Debounce delay before triggering restore (default: `5.0`) |
 
@@ -622,7 +628,11 @@ rv gui
 rv gui --port 9000 --no-browser
 ```
 
-The GUI provides a cosmic-dark dashboard for managing workspaces, inspecting profile inheritance, and reviewing assets.
+The GUI provides a cosmic-dark dashboard that supports:
+- **Workspace Management**: Easily register and switch between multiple Revive repositories.
+- **Visual Profile Analysis**: Inspect profile inheritance maps, resolve configuration states, and preview assets.
+- **Cryptographic Key Management**: Generate new Age private/public keypairs natively via a clean web interface.
+- **Active Transaction Recovery**: Interactively view incomplete transaction journals and trigger transactional rollbacks or discard states directly from the web dashboard.
 
 ---
 

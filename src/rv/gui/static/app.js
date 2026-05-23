@@ -11,6 +11,8 @@ const state = {
     driftReport: null,
     diagnosticsReport: null,
     isRestoring: false,
+    isManageMode: false,
+    selectedWorkspaces: new Set(),
 };
 
 // ─── 2. DOM Elements ───
@@ -22,6 +24,17 @@ const el = {
     wsRegisterForm: document.getElementById("ws-register-form"),
     newWsPath: document.getElementById("new-ws-path"),
     newWsName: document.getElementById("new-ws-name"),
+    btnManageWorkspaces: document.getElementById("btn-manage-workspaces"),
+    wsManageActions: document.getElementById("ws-manage-actions"),
+    btnDeleteSelectedWs: document.getElementById("btn-delete-selected-ws"),
+    
+    // Edit Workspace Modal
+    editWorkspaceModal: document.getElementById("edit-workspace-modal"),
+    btnCloseEditWsModal: document.getElementById("btn-close-edit-ws-modal"),
+    editWorkspaceForm: document.getElementById("edit-workspace-form"),
+    editWsOriginalPath: document.getElementById("edit-ws-original-path"),
+    editWsName: document.getElementById("edit-ws-name"),
+    editWsPath: document.getElementById("edit-ws-path"),
     
     // Profiles & Navigation
     profilesGrid: document.getElementById("profiles-grid"),
@@ -286,21 +299,75 @@ function updateWorkspaceUI() {
 
     // Render other workspaces
     el.workspacesList.innerHTML = "";
+    
+    // Manage actions visibility
+    if (state.isManageMode) {
+        el.wsManageActions.classList.remove("hidden");
+        el.btnManageWorkspaces.textContent = "Done";
+        el.btnManageWorkspaces.classList.add("accent-text");
+    } else {
+        el.wsManageActions.classList.add("hidden");
+        el.btnManageWorkspaces.textContent = "Manage";
+        el.btnManageWorkspaces.classList.remove("accent-text");
+        state.selectedWorkspaces.clear();
+    }
+
     state.registeredWorkspaces.forEach(ws => {
-        if (state.activeWorkspace && ws.path === state.activeWorkspace.path) return;
+        if (state.activeWorkspace && ws.path === state.activeWorkspace.path && !state.isManageMode) return;
         
         const wsCard = document.createElement("div");
         wsCard.className = "workspace-card";
-        wsCard.innerHTML = `
-            <div class="ws-info">
-                <span class="ws-icon">📁</span>
-                <div class="ws-details">
-                    <span class="ws-name">${escapeHtml(ws.name)}</span>
-                    <span class="ws-path">${escapeHtml(ws.path)}</span>
+        if (state.activeWorkspace && ws.path === state.activeWorkspace.path) {
+            wsCard.classList.add("active");
+        }
+        
+        let manageHtml = "";
+        if (state.isManageMode) {
+            const isChecked = state.selectedWorkspaces.has(ws.path) ? "checked" : "";
+            manageHtml = `
+                <div class="ws-manage-controls">
+                    <button class="btn-edit-ws" data-name="${escapeHtml(ws.name)}" data-path="${escapeHtml(ws.path)}" aria-label="Edit Workspace" title="Edit Workspace">✎</button>
+                    <input type="checkbox" class="ws-checkbox" data-path="${escapeHtml(ws.path)}" ${isChecked}>
                 </div>
+            `;
+        }
+
+        wsCard.innerHTML = `
+            <div class="flex-between">
+                <div class="ws-info">
+                    <span class="ws-icon">📁</span>
+                    <div class="ws-details">
+                        <span class="ws-name">${escapeHtml(ws.name)}</span>
+                        <span class="ws-path">${escapeHtml(ws.path)}</span>
+                    </div>
+                </div>
+                ${manageHtml}
             </div>
         `;
-        wsCard.addEventListener("click", () => handleWorkspaceSwitch(ws.name));
+        
+        if (!state.isManageMode) {
+            wsCard.addEventListener("click", () => handleWorkspaceSwitch(ws.name));
+        } else {
+            const checkbox = wsCard.querySelector(".ws-checkbox");
+            const editBtn = wsCard.querySelector(".btn-edit-ws");
+            
+            if (checkbox) {
+                checkbox.addEventListener("change", (e) => {
+                    if (e.target.checked) {
+                        state.selectedWorkspaces.add(ws.path);
+                    } else {
+                        state.selectedWorkspaces.delete(ws.path);
+                    }
+                });
+            }
+            
+            if (editBtn) {
+                editBtn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    openEditWorkspaceModal(editBtn.dataset.name, editBtn.dataset.path);
+                });
+            }
+        }
         el.workspacesList.appendChild(wsCard);
     });
 }

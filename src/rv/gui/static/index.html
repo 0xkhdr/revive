@@ -58,7 +58,14 @@
 
             <!-- Workspace Section -->
             <section class="sidebar-section">
-                <h2 class="section-title">Global Workspaces</h2>
+                <div class="flex-between" style="margin-bottom: 14px;">
+                    <h2 class="section-title" style="margin-bottom: 0;">Global Workspaces</h2>
+                    <button class="cyber-btn sm borderless" id="btn-manage-workspaces" style="padding: 2px 8px; font-size: 0.7rem;">Manage</button>
+                </div>
+
+                <div id="ws-manage-actions" class="hidden" style="margin-bottom: 10px; display: flex; gap: 8px;">
+                    <button class="cyber-btn sm red fill" id="btn-delete-selected-ws">Delete Selected</button>
+                </div>
                 <div class="workspace-card active" id="active-workspace-card">
                     <div class="ws-info">
                         <span class="ws-icon">📁</span>
@@ -471,6 +478,33 @@
                     <button type="submit" class="cyber-btn purple fill">
                         <span class="btn-glow"></span>
                         <span>Save Manifest & Register Profile</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Edit Workspace Modal ─── -->
+    <div class="modal-overlay" id="edit-workspace-modal" role="dialog" aria-modal="true" aria-labelledby="edit-ws-modal-title">
+        <div class="modal-box glass-panel glow-card">
+            <div class="modal-header">
+                <h2 id="edit-ws-modal-title">Edit Workspace</h2>
+                <button class="close-btn" id="btn-close-edit-ws-modal" aria-label="Close dialog">×</button>
+            </div>
+            <div class="modal-content">
+                <form id="edit-workspace-form">
+                    <input type="hidden" id="edit-ws-original-path">
+                    <div class="form-group">
+                        <label for="edit-ws-name">Workspace Name</label>
+                        <input type="text" id="edit-ws-name" required autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-ws-path">Absolute Workspace Path</label>
+                        <input type="text" id="edit-ws-path" required autocomplete="off">
+                    </div>
+                    <button type="submit" class="cyber-btn purple fill">
+                        <span class="btn-glow"></span>
+                        <span>Save Changes</span>
                     </button>
                 </form>
             </div>

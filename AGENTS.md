@@ -192,7 +192,7 @@ Then, register the new provider in the `RestoreService.restore` flow inside `src
 
 Key extension points:
 - **`_backup_item()`** — processes a single `Asset | Secret`. Add new logic here for new asset types that need custom back-copy behavior.
-- **`resolve_identity()`** — controls how the age identity file is located. The default path is `~/.config/rv/identity.txt`.
+- **`resolve_identity()`** — controls how the age identity file is located. By default, it checks `~/.config/rv/identity.txt`, `~/.config/rv/keys/identity.txt`, and `~/.config/rv/identifier.txt` in order of preference.
 - Template assets (`AssetType.TEMPLATE`) are intentionally skipped — rendered outputs cannot be trivially reversed to the original template. If you add a new asset type that is also non-reversible, add a corresponding guard in the `backup()` method.
 
 ### 5.4 Adding a Custom Asset Handler

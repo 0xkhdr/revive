@@ -6,7 +6,7 @@ This master walkthrough is a comprehensive, production-grade guide designed to w
 
 ## System Architecture Overview
 
-Revive enforces a strict **unidirectional state engine** ($\text{Repository State} \rightarrow \text{Local System State}$). Git acts as the transport layer between machines, while the `rv` binary orchestrates atomic, transactional environment state application.
+Revive ensures that your local system state always matches the repository configuration. Git acts as the transport layer between machines, while the `rv` binary orchestrates atomic, transaction-bound environment restoration to keep your configuration completely predictable and safe.
 
 ```mermaid
 graph TD
@@ -169,13 +169,13 @@ Create `claude-prompts/developer-rules.md`:
 
 ### 3. Local AI Python Skills
 If you have utility python skills or local prompt scripts:
-Create a directory named `skills/` in your repository root, and place your Python scripts in it:
+Create a directory named `.agents/skills/` in your repository root, and place your Python scripts in it:
 
 ```bash
-mkdir -p skills
+mkdir -p .agents/skills
 ```
 
-Create `skills/explain.py`:
+Create `.agents/skills/explain.py`:
 ```python
 # A simple skill helper
 import sys

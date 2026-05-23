@@ -94,3 +94,31 @@ class WorkspaceService:
             cls.save_config(config)
             return True
         return False
+
+    @classmethod
+    def update_workspace(cls, original_path: str, new_name: str | None = None, new_path: str | None = None) -> Workspace | None:
+        """Updates a workspace's name and/or path."""
+        config = cls.load_config()
+        for ws in config.workspaces:
+            if ws.path == original_path:
+                if new_name:
+                    ws.name = new_name
+                if new_path:
+                    abs_new_path = os.path.abspath(os.path.expanduser(new_path))
+                    ws.path = abs_new_path
+                ws.last_accessed = datetime.now()
+                cls.save_config(config)
+                return ws
+        return None
+
+    @classmethod
+    def remove_workspaces(cls, paths: list[str]) -> int:
+        """Removes workspaces by their paths."""
+        config = cls.load_config()
+        initial_count = len(config.workspaces)
+        config.workspaces = [ws for ws in config.workspaces if ws.path not in paths]
+
+        removed = initial_count - len(config.workspaces)
+        if removed > 0:
+            cls.save_config(config)
+        return removed

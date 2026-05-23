@@ -424,6 +424,43 @@ input[type="text"]:focus, select:focus, textarea:focus {
     color: var(--accent-purple);
 }
 
+.cyber-btn.red {
+    border-color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.04);
+}
+
+.cyber-btn.red:hover {
+    background: var(--accent-red);
+    box-shadow: 0 0 15px var(--accent-red-glow);
+}
+
+.ws-manage-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.ws-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--accent-purple);
+}
+
+.btn-edit-ws {
+    background: none;
+    border: none;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 4px;
+    transition: var(--transition-smooth);
+}
+
+.btn-edit-ws:hover {
+    color: var(--accent-cyan);
+}
+
 /* ─── 6. Workspaces & Profiles Cards ─── */
 .workspace-card {
     padding: 14px 16px;

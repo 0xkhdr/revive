@@ -86,6 +86,44 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Not Found")
 
+    def do_PUT(self) -> None:
+        """Handle PUT requests for APIs."""
+        parsed_url = urllib.parse.urlparse(self.path)
+        path = parsed_url.path
+
+        if path.startswith("/api/"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
+
+            try:
+                payload = json.loads(post_data) if post_data else {}
+            except ValueError:
+                self._send_response_json({"error": "Invalid JSON format"}, 400)
+                return
+
+            self._handle_api_put(path, payload)
+        else:
+            self.send_error(404, "Not Found")
+
+    def do_DELETE(self) -> None:
+        """Handle DELETE requests for APIs."""
+        parsed_url = urllib.parse.urlparse(self.path)
+        path = parsed_url.path
+
+        if path.startswith("/api/"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else ""
+
+            try:
+                payload = json.loads(post_data) if post_data else {}
+            except ValueError:
+                self._send_response_json({"error": "Invalid JSON format"}, 400)
+                return
+
+            self._handle_api_delete(path, payload)
+        else:
+            self.send_error(404, "Not Found")
+
     def _serve_static_file(self, path: str) -> None:
         """Serve files from the local static directory safely."""
         # Sanitize path to prevent directory traversal
@@ -183,6 +221,46 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
 
         else:
             self.send_error(404, "Not Found")
+
+    def _handle_api_put(self, path: str, payload: dict[str, Any]) -> None:
+        """Route and handle API PUT requests."""
+        if path == "/api/workspace":
+            original_path = payload.get("original_path")
+            new_name = payload.get("name")
+            new_path = payload.get("path")
+            
+            if not original_path:
+                self._send_response_json({"error": "Original workspace path is required for updating"}, 400)
+                return
+                
+            try:
+                ws = WorkspaceService.update_workspace(original_path, new_name, new_path)
+                if ws:
+                    self._send_response_json({"success": True, "workspace": {"name": ws.name, "path": ws.path}})
+                else:
+                    self._send_response_json({"error": "Workspace not found"}, 404)
+            except Exception as e:
+                self._send_response_json({"error": f"Failed to update workspace: {e}"}, 500)
+            return
+            
+        self.send_error(404, "Not Found")
+
+    def _handle_api_delete(self, path: str, payload: dict[str, Any]) -> None:
+        """Route and handle API DELETE requests."""
+        if path == "/api/workspace":
+            paths = payload.get("paths", [])
+            if not paths or not isinstance(paths, list):
+                self._send_response_json({"error": "A list of workspace paths is required"}, 400)
+                return
+                
+            try:
+                removed_count = WorkspaceService.remove_workspaces(paths)
+                self._send_response_json({"success": True, "removed_count": removed_count})
+            except Exception as e:
+                self._send_response_json({"error": f"Failed to delete workspaces: {e}"}, 500)
+            return
+            
+        self.send_error(404, "Not Found")
 
     def _handle_api_post(self, path: str, payload: dict[str, Any]) -> None:
         """Route and handle API POST requests."""

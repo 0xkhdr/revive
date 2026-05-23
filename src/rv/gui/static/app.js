@@ -165,6 +165,23 @@ document.addEventListener("DOMContentLoaded", () => {
     el.btnCreateProfileModal.addEventListener("click", openCreateProfileModal);
     el.btnCloseProfileModal.addEventListener("click", () => closeModal(el.createProfileModal));
 
+    // Workspace Manage Mode
+    if (el.btnManageWorkspaces) {
+        el.btnManageWorkspaces.addEventListener("click", () => {
+            state.isManageMode = !state.isManageMode;
+            renderWorkspaces();
+        });
+    }
+    if (el.btnDeleteSelectedWs) {
+        el.btnDeleteSelectedWs.addEventListener("click", handleWorkspaceDelete);
+    }
+    if (el.btnCloseEditWsModal) {
+        el.btnCloseEditWsModal.addEventListener("click", () => closeModal(el.editWorkspaceModal));
+    }
+    if (el.editWorkspaceForm) {
+        el.editWorkspaceForm.addEventListener("submit", handleWorkspaceEdit);
+    }
+
     // Global Modal Escape Key
     document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
@@ -640,6 +657,54 @@ async function handleWorkspaceRegister(e) {
         await loadWorkspaceStatus();
     } catch (err) {
         console.error("Workspace registration failed:", err);
+    }
+}
+
+async function handleWorkspaceDelete() {
+    if (state.selectedWorkspaces.size === 0) return;
+    
+    if (!confirm(`Are you sure you want to delete ${state.selectedWorkspaces.size} workspace(s)?`)) {
+        return;
+    }
+    
+    try {
+        await apiRequest("/api/workspace", {
+            method: "DELETE",
+            body: JSON.stringify({ paths: Array.from(state.selectedWorkspaces) }),
+        });
+        
+        state.selectedWorkspaces.clear();
+        await loadWorkspaceStatus();
+    } catch (err) {
+        console.error("Failed to delete workspaces:", err);
+    }
+}
+
+function openEditWorkspaceModal(name, path) {
+    el.editWsOriginalPath.value = path;
+    el.editWsName.value = name || "";
+    el.editWsPath.value = path || "";
+    openModal(el.editWorkspaceModal);
+}
+
+async function handleWorkspaceEdit(e) {
+    e.preventDefault();
+    const originalPath = el.editWsOriginalPath.value;
+    const name = el.editWsName.value.trim() || null;
+    const newPath = el.editWsPath.value.trim();
+
+    if (!originalPath || !newPath) return;
+
+    try {
+        await apiRequest("/api/workspace", {
+            method: "PUT",
+            body: JSON.stringify({ original_path: originalPath, name, path: newPath }),
+        });
+
+        closeModal(el.editWorkspaceModal);
+        await loadWorkspaceStatus();
+    } catch (err) {
+        console.error("Workspace update failed:", err);
     }
 }
 

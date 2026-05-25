@@ -1619,7 +1619,7 @@ exec "{python_bin}" -m rv "$@"
             f.write(wrapper_content)
 
         # Make the target file executable (0755)
-        os.chmod(target_path, 0o755)  # noqa: S103
+        os.chmod(target_path, 0o755)  # noqa: S103 # nosec
 
         console.print(
             Panel(
@@ -1743,11 +1743,19 @@ def gui(
         "--auth-token",
         help="Authentication token for API access. Auto-generated if not provided. Pass '' to disable auth.",
     ),
+    cors_wildcard: bool = typer.Option(
+        False,
+        "--cors-wildcard",
+        help="Allow any CORS origin (development only). By default CORS is restricted to loopback.",
+        hidden=True,
+    ),
 ) -> None:
     """Launch the interactive Revive Web GUI."""
     from rv.gui.server import start_gui_server
 
-    start_gui_server(host=host, port=port, open_browser=not no_browser, auth_token=auth_token)
+    start_gui_server(
+        host=host, port=port, open_browser=not no_browser, auth_token=auth_token, cors_wildcard=cors_wildcard
+    )
 
 
 @app.command("prune")
@@ -1880,6 +1888,10 @@ def workspace_sync(
     profile: str | None = typer.Option(None, "--profile", "-p", help="Profile name to restore after git pull."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview sync operations without executing."),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Path to age identity file for secrets."),
+    force_packages: bool = typer.Option(
+        False, "--force-packages", help="Bypass package cache and reinstall all packages."
+    ),
+    no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip all plugin hook execution during restore."),
 ) -> None:
     """Pull latest changes and restore all registered workspaces (git pull → rv restore).
 
@@ -1966,7 +1978,8 @@ def workspace_sync(
                         identity_path=identity,
                         interactive=False,
                         dry_run=False,
-                        no_plugins=False,
+                        no_plugins=no_plugins,
+                        force_packages=force_packages,
                     )
                     restore_status = "[green]✓[/]"
                 except Exception as e:

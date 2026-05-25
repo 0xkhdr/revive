@@ -59,14 +59,24 @@ class ZeroBuffer:
     def zero_bytes(data: bytes, length: int | None = None) -> None:
         """Attempts to overwrite a bytes object's internal buffer with zeros.
 
-        Note: bytes objects are immutable in Python. This method uses ctypes to
-        bypass Python's immutability at the C level. This is best-effort and
-        NOT guaranteed to work across all Python implementations or versions.
-        It should be used as a defense-in-depth measure, not as a primary security control.
+        Note: bytes objects are immutable in Python. This method uses CPython
+        internals to bypass Python's immutability at the C level. This is
+        **best-effort and NOT guaranteed** to work across all Python
+        implementations or versions. It serves as a defense-in-depth measure
+        only — the garbage collector will eventually collect the object and
+        reclaim the memory regardless.
+
+        Implementation note (CPython 3.11+):
+            The PyBytesObject struct is: ob_refcnt, ob_type, ob_size, ob_shash,
+            ob_val[]. The offset to ob_val from the PyObject base is fixed at
+            ``sys.getsizeof(b"") - 1`` bytes (the struct overhead minus the
+            NUL terminator that is always counted in getsizeof but not in len).
+            We derive the address via ``id(data)`` (which returns the PyObject*
+            address in CPython), then add the struct overhead.
 
         Args:
             data: The bytes object to attempt to zero.
-            length: Optional explicit length. Defaults to len(data).
+            length: Optional explicit length override. Defaults to len(data).
         """
         if not data:
             return
@@ -74,12 +84,14 @@ class ZeroBuffer:
         effective_length = length if length is not None else len(data)
 
         try:
-            # Obtain the PyObject's ob_val pointer via id() + struct offset
-            # This is CPython-specific: the bytes data starts at offset 33 (Python 3.11+)
-            # We use ctypes.memset to zero the memory region
-            addr = id(data) + sys.getsizeof(b"") - effective_length
+            # CPython-specific: id() returns the PyObject* address.
+            # The ob_val field starts at offset (getsizeof(b"") - 1) from the
+            # base because getsizeof includes the NUL terminator byte.
+            # This is valid for CPython 3.11, 3.12, and 3.13.
+            struct_overhead = sys.getsizeof(b"") - 1  # subtract the NUL terminator
+            addr = id(data) + struct_overhead
             ctypes.memset(addr, 0, effective_length)
         except Exception:
-            # Best-effort: if we can't zero the bytes object, move on
-            # The GC will eventually collect it; this is defense-in-depth only
+            # Best-effort: if we can't zero the bytes object, move on.
+            # The GC will eventually collect it; this is defense-in-depth only.
             pass

@@ -32,6 +32,11 @@ logger = logging.getLogger("rv.gui.server")
 # Set by start_gui_server() before the server starts.
 _AUTH_TOKEN: str | None = None
 
+# Module-level CORS origin — restricted to the loopback address the server is bound on.
+# Set by start_gui_server() to prevent cross-origin requests from malicious web pages.
+# Only set to "*" when explicitly requested via --cors-wildcard.
+_ALLOWED_ORIGIN: str = "http://127.0.0.1:8080"
+
 
 class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
     """Custom request handler that serves both Web GUI static files and REST API endpoints."""
@@ -76,7 +81,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             body = json.dumps(data)
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Origin", _ALLOWED_ORIGIN)
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
             self.send_header("Content-Length", str(len(body)))
@@ -88,9 +93,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         """Handle CORS pre-flight requests."""
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", _ALLOWED_ORIGIN)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Auth-Token")
         self.end_headers()
 
     def do_GET(self) -> None:
@@ -633,6 +638,7 @@ def start_gui_server(
     port: int = 8080,
     open_browser: bool = True,
     auth_token: str | None = None,
+    cors_wildcard: bool = False,
 ) -> None:
     """Instantiate and start the TCPServer serving the GUI.
 
@@ -643,8 +649,27 @@ def start_gui_server(
         auth_token: Optional authentication token for API access.
             If None, a 32-character random hex token is auto-generated and printed.
             If empty string (''), authentication is disabled entirely.
+        cors_wildcard: If True, allow any origin via CORS (development only).
+            When False (default), CORS is restricted to the loopback origin.
     """
-    global _AUTH_TOKEN
+    global _AUTH_TOKEN, _ALLOWED_ORIGIN
+
+    loopback_hosts = {"127.0.0.1", "::1", "localhost"}
+    if host not in loopback_hosts:
+        print(
+            f"\n[SECURITY WARNING] GUI server is binding to '{host}' (not loopback). "
+            "The API will be accessible from the local network. "
+            "Ensure your firewall rules are correct before proceeding.",
+            file=sys.stderr,
+        )
+
+    # T-002: Set CORS origin to loopback-only unless --cors-wildcard is explicitly requested.
+    if cors_wildcard:
+        _ALLOWED_ORIGIN = "*"
+        logger.warning("CORS wildcard enabled (--cors-wildcard). All origins are permitted.")
+    else:
+        scheme = "http"
+        _ALLOWED_ORIGIN = f"{scheme}://{host}:{port}"
 
     # Configure authentication
     if auth_token == "":

@@ -213,17 +213,15 @@ class AssetHandler:
                     ) from e
 
             elif isinstance(hook, AssetHookPlugin):
-                # Plugin references at per-asset level require the repo_dir which is not
-                # available here; log a warning and skip. Profile-level plugin hooks
-                # (pre-restore / post-restore) are the correct mechanism for plugin hooks.
-                _hook_logger.warning(
-                    f"Asset '{asset_id}' {stage}-hook references plugin '{hook.plugin}'. "
-                    f"Per-asset plugin hooks are executed at the profile level only. "
-                    f"Use profile hooks for plugin references."
-                )
-                _hook_logger.log(
-                    logging.DEBUG,
-                    f"Skipping per-asset plugin hook '{hook.plugin}' for asset '{asset_id}'.",
+                # Per-asset plugin hooks require repo_dir to be available and are not yet
+                # supported at this level. Raise an error so the transaction is rolled back
+                # immediately, rather than silently dropping the hook (which would violate
+                # the acceptance criterion that "failed hook triggers transaction rollback").
+                # Users should migrate per-asset plugin hooks to profile-level pre/post-restore hooks.
+                raise AssetHandlerError(
+                    f"Asset '{asset_id}' {stage}-hook references plugin '{hook.plugin}', but "
+                    f"per-asset plugin hooks are not supported. "
+                    f"Use profile-level 'pre-restore' / 'post-restore' hooks for plugin references."
                 )
 
     @classmethod

@@ -29,11 +29,13 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-timeout>=2.0.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
     "bandit>=1.7.0",
     "pyinstaller>=6.0.0",
     "types-jinja2",
+    "types-PyYAML",
 ]
 
 [project.scripts]
@@ -71,3 +73,4 @@ exclude = ["tests/"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "--strict-markers"
+timeout = 60

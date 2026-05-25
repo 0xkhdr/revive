@@ -26,6 +26,7 @@ from rv.providers.pip import PipProvider
 from rv.providers.snap import SnapProvider
 from rv.security.scrubber import SecretScrubber
 from rv.services.handlers import AssetHandler
+from rv.services.recovery import BackupPruner
 from rv.transactions.atomic import AtomicWrite
 from rv.transactions.context import TransactionContext
 from rv.transactions.lock import ProcessLock
@@ -250,35 +251,6 @@ class RestoreService:
             for chunk in iter(lambda: f.read(4096), b""):
                 hasher.update(chunk)
         return hasher.hexdigest()
-
-    @classmethod
-    def _plan_asset_parallel(
-        cls,
-        asset: Asset | Secret,
-        repo_dir: str,
-        identity_path: str | None,
-        interactive: bool,
-    ) -> tuple[str, bool, dict[str, str]]:
-        """Plans a single asset in an isolated TransactionContext snapshot.
-
-        Used by the parallel planning stage. Returns the asset/secret ID, whether it
-        was successfully planned, and any rendered checksums captured during planning.
-
-        Note: each call uses a *fresh* disposable TransactionContext so that planned
-        operations can be collected and replayed sequentially into the real context.
-        The returned operations are dictionaries safe to pass across thread boundaries.
-
-        Args:
-            asset: Asset or Secret to plan.
-            repo_dir: Canonical repository path.
-            identity_path: Optional age identity file path.
-            interactive: Whether to prompt on conflicts.
-
-        Returns:
-            Tuple of (asset_id, was_planned, rendered_checksums, planned_ops).
-        """
-        # Unused — implemented inline via _plan_one_asset for simpler return type.
-        raise NotImplementedError  # pragma: no cover
 
     @classmethod
     def _plan_one_asset(
@@ -623,6 +595,15 @@ class RestoreService:
 
             # Finalize cleanup
             tx_context.cleanup()
+
+            # Auto-prune backup snapshots per manifest retention policy
+            try:
+                BackupPruner.prune(
+                    max_count=manifest.backup_retention.max_count,
+                    max_age_days=manifest.backup_retention.max_age_days,
+                )
+            except Exception as prune_err:
+                logger.warning(f"Backup pruning post-restore raised an error (non-fatal): {prune_err}")
 
             logger.info(f"Restore transaction {tx_context.tx_id} committed successfully!")
             return tx_context.tx_id

@@ -293,6 +293,7 @@ class RestoreService:
         no_plugins: bool = False,
         parallel: bool = True,
         force_packages: bool = False,
+        manifest_path: str | None = None,
     ) -> str:
         """Runs the entire restore lifecycle under flock process protection.
 
@@ -302,13 +303,21 @@ class RestoreService:
             identity_path: Optional path to age identity file.
             interactive: Whether to prompt on conflicts.
             dry_run: If True, plans and validates without modifying filesystem.
+            no_plugins: If True, skips plugin execution.
+            parallel: Whether to plan assets in parallel.
+            force_packages: Whether to ignore package caching.
+            manifest_path: Optional path to a custom manifest file.
 
         Returns:
             The transaction ID of the executed context.
         """
         # Ensure we canonicalize the repository path
         repo_dir = os.path.abspath(repo_dir)
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        if manifest_path is None:
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        else:
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
 
         # Step 0: Acquire process lock (flock-based serialization)
         lock_path = os.path.expanduser("~/.config/rv/rv.lock")
@@ -316,7 +325,7 @@ class RestoreService:
         logger.info(f"Acquiring revive process lock at {lock_path}...")
         with ProcessLock(lock_path, blocking=False):
             # Step 1: Manifest Validation
-            logger.info("Step 1/14: Loading and validating manifest.yaml...")
+            logger.info(f"Step 1/14: Loading and validating {os.path.basename(manifest_path)}...")
             manifest = ManifestLoader.load(manifest_path)
 
             # Step 2: Profile Resolution
@@ -502,8 +511,8 @@ class RestoreService:
                 raise RuntimeError(f"Restore failed during post-execution/package steps: {e}") from e
 
             # Step 13: Update manifest.lock SHA-256 map
-            logger.info("Step 13/14: Updating manifest.lock sync states...")
-            lockfile_path = os.path.join(repo_dir, "manifest.lock")
+            lockfile_path = os.path.splitext(manifest_path)[0] + ".lock"
+            logger.info(f"Step 13/14: Updating {os.path.basename(lockfile_path)} sync states...")
 
             # Load existing lockfile if it exists
             lockfile = Lockfile()

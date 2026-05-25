@@ -42,10 +42,24 @@ def _get_repo_dir() -> str:
 def complete_profile(ctx: typer.Context, incomplete: str) -> list[str]:
     """Provide shell autocompletion for profile names."""
     try:
+        import sys
+
         from rv.services.restore import ManifestLoader
 
         repo_dir = _get_repo_dir()
         manifest_path = os.path.join(repo_dir, "manifest.yaml")
+
+        # Parse command line args to see if a custom manifest path was passed
+        args = sys.argv
+        for i, arg in enumerate(args):
+            if arg in ("-m", "--manifest") and i + 1 < len(args):
+                custom_path = args[i + 1]
+                if not os.path.isabs(custom_path):
+                    manifest_path = os.path.join(repo_dir, custom_path)
+                else:
+                    manifest_path = custom_path
+                break
+
         if os.path.exists(manifest_path):
             manifest = ManifestLoader.load(manifest_path)
             return [name for name in manifest.profiles.keys() if name.startswith(incomplete)]
@@ -68,9 +82,14 @@ def init() -> None:
     """Scaffold a new revive repository in the current directory."""
     repo_dir = _get_repo_dir()
     manifest_path = os.path.join(repo_dir, "manifest.yaml")
+    manifest_build_path = os.path.join(repo_dir, "manifest-build.yaml")
+    manifest_restore_path = os.path.join(repo_dir, "manifest-restore.yaml")
 
-    if os.path.exists(manifest_path):
-        console.print(f"[bold red]Error:[/] A revive repository already exists at '{repo_dir}' (manifest.yaml exists).")
+    if os.path.exists(manifest_path) or os.path.exists(manifest_build_path) or os.path.exists(manifest_restore_path):
+        console.print(
+            f"[bold red]Error:[/] A revive repository already exists at '{repo_dir}' "
+            "(one of manifest.yaml, manifest-build.yaml, or manifest-restore.yaml exists)."
+        )
         raise typer.Exit(code=1)
 
     # Scaffold directories
@@ -112,6 +131,74 @@ profiles:
       - brew
 """
 
+    manifest_build_template = """# Revive Configuration Manifest (Build/Development Profile)
+version: 2
+
+assets:
+  - id: example_zshrc
+    type: symlink
+    source: assets/example_zshrc
+    target: ${USER_HOME}/.zshrc
+    permissions: "0644"
+    conflict_strategy: prompt
+
+secrets: []
+
+packages:
+  brew:
+    - git
+    - curl
+  apt:
+    - git
+    - curl
+  flatpak: []
+  snap: []
+  docker:
+    images: []
+  node:
+    version_file: .nvmrc
+
+profiles:
+  base:
+    assets:
+      - example_zshrc
+    secrets: []
+    packages:
+      - brew
+      - apt
+"""
+
+    manifest_restore_template = """# Revive Configuration Manifest (Restore/System Profile)
+version: 2
+
+assets:
+  - id: example_zshrc
+    type: symlink
+    source: assets/example_zshrc
+    target: ${USER_HOME}/.zshrc
+    permissions: "0644"
+    conflict_strategy: prompt
+
+secrets: []
+
+packages:
+  brew: []
+  apt: []
+  flatpak: []
+  snap: []
+  docker:
+    images: []
+  node:
+    version_file: .nvmrc
+
+profiles:
+  base:
+    assets:
+      - example_zshrc
+    secrets: []
+    packages: []
+"""
+
     gitignore_template = """# ==========================================
 # Revive Workspace Version Control Ignores
 # ==========================================
@@ -120,7 +207,7 @@ profiles:
 # ------------------------------------------
 # NEVER commit raw Age identity keys, local lockfiles, or transactional states.
 .rv.lock
-manifest.lock
+manifest*.lock
 identity.txt
 *.key
 keys/
@@ -191,6 +278,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv status --profile <profile_name>` or `rv status -p <profile_name>`
     *   **Options**:
         *   `-i`, `--identity <file>`: Age private identity key file to verify and check secret drift.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
     *   **Example**: `rv status -p base`
 
 *   **`rv restore`**
@@ -198,6 +286,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv restore <profile_name> [<profile_name2> ...]`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age private identity key file for decrypting secrets.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `--dry-run`: Plan and validate all transactions without mutating the system filesystem.
         *   `--non-interactive`: Disable interactive prompts for file conflicts (useful in automation/CI).
         *   `--no-plugins`: Skip executing any custom plugin hooks.
@@ -212,6 +301,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv backup <profile_name> [<profile_name2> ...]`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age identity key to re-encrypt and store secrets.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `--dry-run`: Plan and validate backup operations without writing files to the repository.
     *   **Example**: `rv backup base`
 
@@ -220,6 +310,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv diff --profile <profile_name>` or `rv diff -p <profile_name>`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age identity key to decrypt and diff encrypted secrets.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `-u`, `--unified`: Display diff in standard unified diff format instead of side-by-side.
     *   **Example**: `rv diff -p base --unified`
 
@@ -232,6 +323,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv doctor`
     *   **Options**:
         *   `-p`, `--profile <profile>`: Optionally target checks for a specific profile's packages/dependencies.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `--json`: Output diagnostic reports in a structured JSON format.
     *   **Example**: `rv doctor -p base`
 
@@ -247,6 +339,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv watch --profile <profile_name>` or `rv watch -p <profile_name>`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age identity key for automatic secret decryption.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `-d`, `--debounce <seconds>`: Delay (default: 5.0s) before triggering the auto-restore transaction.
     *   **Example**: `rv watch -p base -d 2`
 
@@ -323,6 +416,7 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
     *   **Options**:
         *   `--dry-run`: Preview pull/restore across all workspaces without applying mutations.
         *   `--profile <profile>`: Override profile name to restore.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
     *   **Example**: `rv workspace sync`
 
 *   **`rv self-install`**
@@ -346,6 +440,7 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
         *   `-h`, `--host <host>`: Bind to custom host address (default: 127.0.0.1).
         *   `--no-browser`: Start the server without opening the web browser automatically.
         *   `--auth-token <token>`: Set or override the API access authentication token (defaults to an auto-generated secure 32-character random hex token if not supplied).
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
 
 ---
 
@@ -463,6 +558,12 @@ USER_HOME="~"
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(manifest_template)
 
+    with open(manifest_build_path, "w", encoding="utf-8") as f:
+        f.write(manifest_build_template)
+
+    with open(manifest_restore_path, "w", encoding="utf-8") as f:
+        f.write(manifest_restore_template)
+
     with open(os.path.join(repo_dir, ".gitignore"), "w", encoding="utf-8") as f:
         f.write(gitignore_template)
 
@@ -515,7 +616,10 @@ USER_HOME="~"
             "  - [cyan]machine/[/] (host-specific overrides)\n"
             "  - [cyan].agents/skills/[/] (integrated agent skills)\n\n"
             "[bold white]Files created:[/]\n"
-            "  - [cyan]manifest.yaml[/] (your global config manifest)\n"
+            "[bold white]Files created:[/]\n"
+            "  - [cyan]manifest.yaml[/] (your default configuration manifest)\n"
+            "  - [cyan]manifest-build.yaml[/] (your build/development configuration manifest)\n"
+            "  - [cyan]manifest-restore.yaml[/] (your restore/system configuration manifest)\n"
             "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n"
             "  - [cyan].gitignore[/] (repository ignores)\n"
             "  - [cyan]AGENTS.md[/] (instructions for AI agents)\n"
@@ -523,7 +627,8 @@ USER_HOME="~"
             "  - [cyan]README.md[/] (project documentation)\n"
             "  - [cyan].env[/] and [cyan].env.example[/] (environment variables)\n"
             f"{git_msg}\n\n"
-            "Ready to manage! Try running [bold yellow]rv status --profile base[/]",
+            "Ready to manage! Try running [bold yellow]rv status --profile base[/]\n"
+            "To target a specific manifest, run: [bold yellow]rv status -p base -m manifest-build.yaml[/]",
             title="Revive Initialized",
             border_style="green",
         )
@@ -559,6 +664,9 @@ def restore(
         "--force-packages",
         help="Bypass the package idempotency cache and re-query all providers. Invalidates cache before installing.",
     ),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
+    ),
 ) -> None:
     """Synchronize the local environment state to match the repository profile (repo → system)."""
     repo_dir = _get_repo_dir()
@@ -581,7 +689,7 @@ def restore(
             from rv.services.status import StatusService
 
             status_result = StatusService.get_status(
-                repo_dir=repo_dir, profile_name=profile_str, identity_path=identity
+                repo_dir=repo_dir, profile_name=profile_str, identity_path=identity, manifest_path=manifest
             )
             assets_status: dict[str, dict[str, Any]] = status_result.get("assets", {})
             if not status_result.get("drifted"):
@@ -620,15 +728,18 @@ def restore(
             no_plugins=no_plugins,
             parallel=parallel,
             force_packages=force_packages,
+            manifest_path=manifest,
         )
 
         # Resolve the profile to summarize what was restored if manifest exists
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        manifest_path = manifest or os.path.join(repo_dir, "manifest.yaml")
+        if not os.path.isabs(manifest_path):
+            manifest_path = os.path.join(repo_dir, manifest_path)
         if os.path.exists(manifest_path):
             from rv.services.restore import ManifestLoader, ProfileResolver
 
-            manifest = ManifestLoader.load(manifest_path)
-            resolved = ProfileResolver.resolve(manifest, profile_str)
+            manifest_obj = ManifestLoader.load(manifest_path)
+            resolved = ProfileResolver.resolve(manifest_obj, profile_str)
 
             # Build list of assets restored
             assets_summary = []
@@ -711,12 +822,14 @@ def restore(
             from rv.services.recovery import BackupPruner
             from rv.services.restore import ManifestLoader
 
-            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+            manifest_path = manifest or os.path.join(repo_dir, "manifest.yaml")
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
             if os.path.exists(manifest_path):
-                manifest = ManifestLoader.load(manifest_path)
+                manifest_obj = ManifestLoader.load(manifest_path)
                 deleted = BackupPruner.prune(
-                    max_count=manifest.backup_retention.max_count,
-                    max_age_days=manifest.backup_retention.max_age_days,
+                    max_count=manifest_obj.backup_retention.max_count,
+                    max_age_days=manifest_obj.backup_retention.max_age_days,
                 )
                 if deleted:
                     console.print(f"[dim]Pruned {len(deleted)} old backup snapshot(s).[/]")
@@ -734,6 +847,9 @@ def backup(
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan and validate backup operations without mutating the repository."
+    ),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
     ),
 ) -> None:
     """Synchronize the local environment state back into the repository profile (system -> repo)."""
@@ -759,6 +875,7 @@ def backup(
             profile_name=profile_str,
             identity_path=identity,
             dry_run=dry_run,
+            manifest_path=manifest,
         )
 
         if dry_run:
@@ -814,6 +931,9 @@ def status(
         ..., "--profile", "-p", help="Profile(s) to evaluate sync status for.", autocompletion=complete_profile
     ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to check secret drift."),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
+    ),
 ) -> None:
     """Compare system state against repository profile and calculate drift."""
     repo_dir = _get_repo_dir()
@@ -831,7 +951,7 @@ def status(
     profile_str = ",".join(profile_list)
 
     try:
-        report = StatusService.get_status(repo_dir, profile_str, identity)
+        report = StatusService.get_status(repo_dir, profile_str, identity, manifest_path=manifest)
     except Exception as e:
         console.print(f"[bold red]Status check failed:[/] {e}")
         raise typer.Exit(code=1)
@@ -967,6 +1087,9 @@ def diff(
     ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to diff encrypted secrets."),
     unified: bool = typer.Option(False, "--unified", "-u", help="Display standard unified diff format."),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
+    ),
 ) -> None:
     """Print colored diffs of all modified file assets on the filesystem."""
     repo_dir = _get_repo_dir()
@@ -984,7 +1107,7 @@ def diff(
     profile_str = ",".join(profile_list)
 
     try:
-        report = StatusService.get_status(repo_dir, profile_str, identity)
+        report = StatusService.get_status(repo_dir, profile_str, identity, manifest_path=manifest)
     except Exception as e:
         console.print(f"[bold red]Failed to get drift status:[/] {e}")
         raise typer.Exit(code=1)
@@ -994,7 +1117,7 @@ def diff(
     for asset_id, info in report["assets"].items():
         if info["status"] == "modified":
             if unified:
-                diff_text = StatusService.get_diff(repo_dir, profile_str, asset_id, identity)
+                diff_text = StatusService.get_diff(repo_dir, profile_str, asset_id, identity, manifest_path=manifest)
                 if diff_text:
                     has_diffs = True
                     console.print(
@@ -1005,7 +1128,7 @@ def diff(
                         )
                     )
             else:
-                contents = StatusService.get_contents_for_diff(repo_dir, profile_str, asset_id, identity)
+                contents = StatusService.get_contents_for_diff(repo_dir, profile_str, asset_id, identity, manifest_path=manifest)
                 if contents:
                     expected_text, actual_text = contents
                     if not actual_text and expected_text.startswith("["):
@@ -1023,9 +1146,11 @@ def diff(
 
                         source_name = f"repo://{asset_id}"
                         try:
-                            manifest_path = os.path.join(repo_dir, "manifest.yaml")
-                            manifest = ManifestLoader.load(manifest_path)
-                            resolved = ProfileResolver.resolve(manifest, profile_str)
+                            manifest_path = manifest or os.path.join(repo_dir, "manifest.yaml")
+                            if not os.path.isabs(manifest_path):
+                                manifest_path = os.path.join(repo_dir, manifest_path)
+                            manifest_obj = ManifestLoader.load(manifest_path)
+                            resolved = ProfileResolver.resolve(manifest_obj, profile_str)
                             asset = resolved.assets.get(asset_id) or resolved.secrets.get(asset_id)
                             if asset:
                                 source_name = f"repo://{asset.source}"
@@ -1062,6 +1187,9 @@ def doctor(
         autocompletion=complete_profile,
     ),
     json_format: bool = typer.Option(False, "--json", help="Output diagnostic report in structured JSON format."),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
+    ),
 ) -> None:
     """Evaluate repository sanity, permission safety, and system capabilities."""
     repo_dir = _get_repo_dir()
@@ -1076,7 +1204,7 @@ def doctor(
         if profile_list:
             profile_str = ",".join(profile_list)
 
-    report = DoctorService.check_health(repo_dir, profile_str)
+    report = DoctorService.check_health(repo_dir, profile_str, manifest_path=manifest)
 
     if json_format:
         import json
@@ -1417,6 +1545,9 @@ def watch(
     debounce: float = typer.Option(
         5.0, "--debounce", "-d", help="Debounce delay in seconds before triggering auto-apply."
     ),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
+    ),
 ) -> None:
     """Watch directory for changes and automatically run restore on update."""
     import time
@@ -1450,7 +1581,11 @@ def watch(
     )
 
     daemon = WatchdogDaemon(
-        repo_dir=repo_dir, profile_name=profile_str, identity_path=identity, debounce_seconds=debounce
+        repo_dir=repo_dir,
+        profile_name=profile_str,
+        identity_path=identity,
+        debounce_seconds=debounce,
+        manifest_path=manifest,
     )
     try:
         daemon.start()
@@ -1749,12 +1884,20 @@ def gui(
         help="Allow any CORS origin (development only). By default CORS is restricted to loopback.",
         hidden=True,
     ),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
+    ),
 ) -> None:
     """Launch the interactive Revive Web GUI."""
     from rv.gui.server import start_gui_server
 
     start_gui_server(
-        host=host, port=port, open_browser=not no_browser, auth_token=auth_token, cors_wildcard=cors_wildcard
+        host=host,
+        port=port,
+        open_browser=not no_browser,
+        auth_token=auth_token,
+        cors_wildcard=cors_wildcard,
+        manifest_name=os.path.basename(manifest) if manifest else None,
     )
 
 
@@ -1892,6 +2035,9 @@ def workspace_sync(
         False, "--force-packages", help="Bypass package cache and reinstall all packages."
     ),
     no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip all plugin hook execution during restore."),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file."
+    ),
 ) -> None:
     """Pull latest changes and restore all registered workspaces (git pull → rv restore).
 
@@ -1961,11 +2107,13 @@ def workspace_sync(
             try:
                 from rv.services.restore import ManifestLoader
 
-                manifest_path = os.path.join(ws.path, "manifest.yaml")
+                manifest_path = manifest or os.path.join(ws.path, "manifest.yaml")
                 if os.path.exists(manifest_path):
-                    manifest = ManifestLoader.load(manifest_path)
-                    if manifest.profiles:
-                        restore_profile = next(iter(manifest.profiles))
+                    if not os.path.isabs(manifest_path):
+                        manifest_path = os.path.join(ws.path, manifest_path)
+                    manifest_obj = ManifestLoader.load(manifest_path)
+                    if manifest_obj.profiles:
+                        restore_profile = next(iter(manifest_obj.profiles))
             except Exception:
                 pass
 
@@ -1980,6 +2128,7 @@ def workspace_sync(
                         dry_run=False,
                         no_plugins=no_plugins,
                         force_packages=force_packages,
+                        manifest_path=manifest,
                     )
                     restore_status = "[green]✓[/]"
                 except Exception as e:

@@ -140,6 +140,14 @@ Revive supports fine-grained automation via asset-level pre-restore and post-res
 *   **Per-Asset Hooks (`AssetHooks`)**: Declared directly on individual assets, supporting either raw shell command lists or custom plugins. These hooks run during step 9. They inject environmental variables like `RV_ASSET_ID`, `RV_ASSET_TARGET`, `RV_TX_ID`, and `RV_HOOK_STAGE`. A failed hook command (non-zero exit) raises `AssetHandlerError` and triggers transaction rollback.
 *   **Lockfile Hashing for Templates**: Successful Jinja template renders have their output SHA-256 hashes recorded inside `manifest.lock` in the `rendered_checksums` field, allowing downstream drift checks to detect rendering differences.
 
+### 3.6 Custom Manifests & Dynamic Lockfile Resolution
+Revive allows users to separate configurations (e.g., `manifest-build.yaml` for development, `manifest-restore.yaml` for production) by passing a custom manifest path via the `-m` or `--manifest` option.
+*   **Dynamic Lockfiles**: Lockfile paths are dynamically derived from the active manifest path. If the manifest path is `/path/to/manifest-custom.yaml`, the corresponding lockfile will be resolved to `/path/to/manifest-custom.lock`. This prevents different manifests from overwriting each other's lock/sync states.
+*   **Init Scaffolding**: The `rv init` command automatically scaffolds three distinct manifests to support standard workflows:
+    1.  `manifest.yaml`: The default manifest.
+    2.  `manifest-build.yaml`: Intended for build-time/development environments.
+    3.  `manifest-restore.yaml`: Intended for runtime/production restore environments.
+
 ---
 
 ## 4. Plugin Security Sandbox

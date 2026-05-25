@@ -37,6 +37,10 @@ _AUTH_TOKEN: str | None = None
 # Only set to "*" when explicitly requested via --cors-wildcard.
 _ALLOWED_ORIGIN: str = "http://127.0.0.1:8080"
 
+# Module-level manifest file name — defaults to manifest.yaml.
+# Can be overridden dynamically via start_gui_server().
+_MANIFEST_NAME: str = "manifest.yaml"
+
 
 class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
     """Custom request handler that serves both Web GUI static files and REST API endpoints."""
@@ -261,9 +265,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 )
                 return
 
-            manifest_path = os.path.join(active_ws.path, "manifest.yaml")
+            manifest_path = os.path.join(active_ws.path, _MANIFEST_NAME)
             if not os.path.exists(manifest_path):
-                self._send_response_json({"error": f"manifest.yaml not found in workspace path: {active_ws.path}"}, 404)
+                self._send_response_json({"error": f"{_MANIFEST_NAME} not found in workspace path: {active_ws.path}"}, 404)
                 return
 
             try:
@@ -374,7 +378,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_response_json({"error": "Active workspace not selected"}, 400)
             return
 
-        manifest_path = os.path.join(active_ws.path, "manifest.yaml")
+        manifest_path = os.path.join(active_ws.path, _MANIFEST_NAME)
 
         if path == "/api/manifest":
             try:
@@ -487,7 +491,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             identity = payload.get("identity")
 
             try:
-                report = StatusService.get_status(active_ws.path, profile, identity)
+                report = StatusService.get_status(active_ws.path, profile, identity, manifest_path=manifest_path)
                 self._send_response_json(report)
             except Exception as e:
                 self._send_response_json({"error": f"Status drift analysis failed: {e}"}, 500)
@@ -502,7 +506,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             try:
-                diff_text = StatusService.get_diff(active_ws.path, profile, asset_id, identity)
+                diff_text = StatusService.get_diff(active_ws.path, profile, asset_id, identity, manifest_path=manifest_path)
                 lines = diff_text.splitlines() if diff_text else []
                 self._send_response_json({"diff_lines": lines})
             except Exception as e:
@@ -512,7 +516,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
             profile = payload.get("profile")
 
             try:
-                report = DoctorService.check_health(active_ws.path, profile)
+                report = DoctorService.check_health(active_ws.path, profile, manifest_path=manifest_path)
                 self._send_response_json(report)
             except Exception as e:
                 self._send_response_json({"error": f"Diagnostics clinic run failed: {e}"}, 500)
@@ -541,6 +545,7 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                     interactive=False,
                     dry_run=dry_run,
                     no_plugins=False,
+                    manifest_path=manifest_path,
                 )
             except Exception as e:
                 error = str(e)
@@ -639,6 +644,7 @@ def start_gui_server(
     open_browser: bool = True,
     auth_token: str | None = None,
     cors_wildcard: bool = False,
+    manifest_name: str | None = None,
 ) -> None:
     """Instantiate and start the TCPServer serving the GUI.
 
@@ -651,8 +657,12 @@ def start_gui_server(
             If empty string (''), authentication is disabled entirely.
         cors_wildcard: If True, allow any origin via CORS (development only).
             When False (default), CORS is restricted to the loopback origin.
+        manifest_name: Optional custom manifest file name.
     """
-    global _AUTH_TOKEN, _ALLOWED_ORIGIN
+    global _AUTH_TOKEN, _ALLOWED_ORIGIN, _MANIFEST_NAME
+
+    if manifest_name:
+        _MANIFEST_NAME = manifest_name
 
     loopback_hosts = {"127.0.0.1", "::1", "localhost"}
     if host not in loopback_hosts:

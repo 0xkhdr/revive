@@ -361,7 +361,9 @@ rv init
 ```
 
 Creates:
-- `manifest.yaml` — pre-populated template manifest
+- `manifest.yaml` — your default configuration manifest
+- `manifest-build.yaml` — your build/development configuration manifest
+- `manifest-restore.yaml` — your restore/system configuration manifest
 - `assets/` — folder for managed files and templates
 - `secrets/` — folder for encrypted `.age` files
 - `machine/` — folder for host-specific override YAMLs
@@ -374,7 +376,7 @@ Creates:
 Also registers the current directory as a workspace in `~/.config/rv/workspaces.yaml`.
 
 > [!NOTE]
-> Running `rv init` in a directory that already contains a `manifest.yaml` will exit with an error.
+> Running `rv init` in a directory that already contains manifest.yaml, manifest-build.yaml, or manifest-restore.yaml will exit with an error.
 
 ---
 
@@ -397,6 +399,7 @@ rv restore <profile> [<profile2> ...] [options]
 | `--preview` | Show a beautiful color-coded summary of system/repo differences without applying changes |
 | `--parallel` / `--sequential` | Controls parallel planning of assets (ThreadPoolExecutor max 8 threads, default: parallel) |
 | `--prune` | Perform automatic retention-based pruning of old backup snapshots |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Examples:**
 
@@ -445,6 +448,7 @@ rv status --profile <profile> [options]
 |------|-------------|
 | `--profile`, `-p <profile>` | **Required.** Profile(s) to evaluate. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file to also check secret drift |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Drift status values:**
 
@@ -480,6 +484,7 @@ rv diff --profile <profile> [options]
 | `--profile`, `-p <profile>` | **Required.** Profile name(s) to diff. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file to diff encrypted secrets |
 | `--unified`, `-u` | Display standard unified diff format instead of side-by-side |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Examples:**
 
@@ -508,6 +513,7 @@ rv doctor [options]
 |------|-------------|
 | `--profile`, `-p <profile>` | Optionally scope checks to specific profile(s). Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--json` | Output the diagnostic report in structured JSON |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 Checks include: manifest validity, tool availability (brew, apt, flatpak, snap, docker, age, nvm/fnm), permission safety, and asset source file existence.
 
@@ -536,6 +542,7 @@ rv watch --profile <profile> [options]
 | `--profile`, `-p <profile>` | **Required.** Profile(s) to monitor and auto-apply. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file for decrypting secrets |
 | `--debounce`, `-d <seconds>` | Debounce delay before triggering restore (default: `5.0`) |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 Changes to `.git/` are automatically ignored. Restores are debounced to avoid rapid re-triggering during batch saves.
 
@@ -562,6 +569,7 @@ rv backup <profile> [<profile2> ...] [options]
 | `<profile>` | **Required.** Name(s) of the profile(s) to back up. Multiple profiles and comma-separated values accepted. |
 | `--identity`, `-i <path>` | Path to age identity file for re-encrypting secrets back into the repo. Defaults to `~/.config/rv/identity.txt`. |
 | `--dry-run` | Preview what would be copied/encrypted without writing to the repository. |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Behavior by asset type:**
 
@@ -661,6 +669,7 @@ rv gui [options]
 | `--host`, `-h <addr>` | Host address to bind to (default: `127.0.0.1`) |
 | `--no-browser` | Do not auto-open the browser |
 | `--auth-token <string>` | Set or override the API access authentication token (defaults to an auto-generated secure 32-character random hex token) |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Example:**
 
@@ -834,6 +843,7 @@ rv workspace sync [options]
 |------|-------------|
 | `--dry-run` | Preview pull and restore changes without making modifications |
 | `--profile <profile>` | Override the default profile to restore for all workspaces |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 ```bash
 # Sync all registered workspaces

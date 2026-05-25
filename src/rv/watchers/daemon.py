@@ -23,7 +23,12 @@ class RepoChangeHandler(PatternMatchingEventHandler):
     """Handles filesystem events in the revive repository, ignoring .git changes."""
 
     def __init__(
-        self, repo_dir: str, profile_name: str, identity_path: str | None = None, debounce_seconds: float = 5.0
+        self,
+        repo_dir: str,
+        profile_name: str,
+        identity_path: str | None = None,
+        debounce_seconds: float = 5.0,
+        manifest_path: str | None = None,
     ):
         # Exclude .git directory changes at the observer level using PatternMatchingEventHandler
         super().__init__(
@@ -36,6 +41,7 @@ class RepoChangeHandler(PatternMatchingEventHandler):
         self.profile_name = profile_name
         self.identity_path = identity_path
         self.debounce_seconds = debounce_seconds
+        self.manifest_path = manifest_path
 
         self._last_event_time: float | None = None
         self._lock = threading.Lock()
@@ -83,6 +89,7 @@ class RepoChangeHandler(PatternMatchingEventHandler):
                 interactive=False,  # Headless auto-apply must not prompt for conflicts
                 dry_run=False,
                 no_plugins=False,
+                manifest_path=self.manifest_path,
             )
             logger.info("Auto-restore completed successfully.")
         except LockAcquisitionError:
@@ -100,12 +107,18 @@ class WatchdogDaemon:
     """Watchdog daemon coordinating filesystem observation with graceful signal handling."""
 
     def __init__(
-        self, repo_dir: str, profile_name: str, identity_path: str | None = None, debounce_seconds: float = 5.0
+        self,
+        repo_dir: str,
+        profile_name: str,
+        identity_path: str | None = None,
+        debounce_seconds: float = 5.0,
+        manifest_path: str | None = None,
     ):
         self.repo_dir = repo_dir
         self.profile_name = profile_name
         self.identity_path = identity_path
         self.debounce_seconds = debounce_seconds
+        self.manifest_path = manifest_path
         self._observer: Any = None
         self._handler: RepoChangeHandler | None = None
         self._shutdown_event = threading.Event()
@@ -118,6 +131,7 @@ class WatchdogDaemon:
             profile_name=self.profile_name,
             identity_path=self.identity_path,
             debounce_seconds=self.debounce_seconds,
+            manifest_path=self.manifest_path,
         )
         self._observer = Observer()
         self._observer.schedule(self._handler, self.repo_dir, recursive=True)

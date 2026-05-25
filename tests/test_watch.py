@@ -65,6 +65,7 @@ def test_repo_change_handler_debounce_triggers_restore() -> None:
                 interactive=False,
                 dry_run=False,
                 no_plugins=False,
+                manifest_path=None,
             )
         finally:
             handler.stop()

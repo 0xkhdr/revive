@@ -27,6 +27,8 @@ def test_cli_init(temp_repo: str) -> None:
         assert result.exit_code == 0
         assert "Success!" in result.stdout
         assert os.path.exists(os.path.join(temp_repo, "manifest.yaml"))
+        assert os.path.exists(os.path.join(temp_repo, "manifest-build.yaml"))
+        assert os.path.exists(os.path.join(temp_repo, "manifest-restore.yaml"))
         assert os.path.exists(os.path.join(temp_repo, "assets", "example_zshrc"))
         assert os.path.exists(os.path.join(temp_repo, "AGENTS.md"))
         assert os.path.exists(os.path.join(temp_repo, ".agents", "skills", "rv", "SKILL.md"))
@@ -65,6 +67,7 @@ def test_cli_restore(temp_repo: str) -> None:
                 no_plugins=False,
                 parallel=True,
                 force_packages=False,
+                manifest_path=None,
             )
 
         # 2. Success case with options
@@ -80,6 +83,7 @@ def test_cli_restore(temp_repo: str) -> None:
                 no_plugins=False,
                 parallel=True,
                 force_packages=False,
+                manifest_path=None,
             )
 
         # 3. Success case with no-plugins option
@@ -95,6 +99,7 @@ def test_cli_restore(temp_repo: str) -> None:
                 no_plugins=True,
                 parallel=True,
                 force_packages=False,
+                manifest_path=None,
             )
 
         # 4. Failure case
@@ -124,7 +129,7 @@ def test_cli_status(temp_repo: str) -> None:
             assert result.exit_code == 0
             assert "In Sync" in result.stdout
             assert "test_zshrc" in result.stdout
-            mock_status.assert_called_once_with(temp_repo, "base", None)
+            mock_status.assert_called_once_with(temp_repo, "base", None, manifest_path=None)
 
         # 2. Drifted case
         report_drifted = {
@@ -190,7 +195,7 @@ def test_cli_diff(temp_repo: str) -> None:
                 assert result.exit_code == 0
                 assert "Drift Diff: test_zshrc" in result.stdout
                 assert "- old" in result.stdout
-                mock_diff.assert_called_once_with(temp_repo, "base", "test_zshrc", None)
+                mock_diff.assert_called_once_with(temp_repo, "base", "test_zshrc", None, manifest_path=None)
 
             # 2b. Diffs present (Side-by-side default)
             with patch(
@@ -396,6 +401,7 @@ def test_cli_restore_multiple_profiles(temp_repo: str) -> None:
                 no_plugins=False,
                 parallel=True,
                 force_packages=False,
+                manifest_path=None,
             )
 
 
@@ -406,7 +412,7 @@ def test_cli_status_multiple_profiles(temp_repo: str) -> None:
             mock_status.return_value = {"drifted": False, "assets": {}}
             result = runner.invoke(app, ["status", "-p", "base", "-p", "work"])
             assert result.exit_code == 0
-            mock_status.assert_called_once_with(temp_repo, "base,work", None)
+            mock_status.assert_called_once_with(temp_repo, "base,work", None, manifest_path=None)
 
 
 def test_complete_profile_callback(temp_repo: str) -> None:
@@ -448,6 +454,7 @@ def test_cli_backup(temp_repo: str) -> None:
                 profile_name="base",
                 identity_path=None,
                 dry_run=False,
+                manifest_path=None,
             )
             assert "Successfully backed up 1 item(s)" in result.stdout
 
@@ -460,6 +467,7 @@ def test_cli_backup(temp_repo: str) -> None:
                 profile_name="base",
                 identity_path=None,
                 dry_run=True,
+                manifest_path=None,
             )
             assert "Revive Backup Plan (Dry Run)" in result.stdout
 
@@ -523,6 +531,7 @@ def test_cli_watch(temp_repo: str) -> None:
                 profile_name="base",
                 identity_path=None,
                 debounce_seconds=5.0,
+                manifest_path=None,
             )
 
         # 2. Empty profile case
@@ -585,6 +594,7 @@ def test_cli_gui() -> None:
             open_browser=False,  # open_browser=not no_browser (not True is False)
             auth_token="test-token",  # noqa: S106
             cors_wildcard=True,
+            manifest_name=None,
         )
 
 
@@ -668,6 +678,7 @@ def test_cli_workspace_commands(temp_repo: str) -> None:
             dry_run=False,
             no_plugins=True,
             force_packages=True,
+            manifest_path=None,
         )
 
     # 4b. sync empty workspaces
@@ -675,3 +686,43 @@ def test_cli_workspace_commands(temp_repo: str) -> None:
         result = runner.invoke(app, ["workspace", "sync"])
         assert result.exit_code == 0
         assert "No workspaces registered" in result.stdout
+
+
+def test_cli_manifest_option(temp_repo: str) -> None:
+    """Tests that CLI commands accept --manifest option and pass it correctly."""
+    with patch("os.getcwd", return_value=temp_repo):
+        # 1. Test restore --manifest
+        with patch("rv.services.restore.RestoreService.restore") as mock_restore:
+            result = runner.invoke(app, ["restore", "base", "--manifest", "manifest-build.yaml"])
+            assert result.exit_code == 0
+            mock_restore.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base",
+                identity_path=None,
+                interactive=True,
+                dry_run=False,
+                no_plugins=False,
+                parallel=True,
+                force_packages=False,
+                manifest_path="manifest-build.yaml",
+            )
+
+        # 2. Test backup -m
+        with patch("rv.services.backup.BackupService.backup", return_value=["asset_1"]) as mock_backup:
+            result = runner.invoke(app, ["backup", "base", "-m", "manifest-restore.yaml"])
+            assert result.exit_code == 0
+            mock_backup.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base",
+                identity_path=None,
+                dry_run=False,
+                manifest_path="manifest-restore.yaml",
+            )
+
+        # 3. Test status -m
+        with patch("rv.services.status.StatusService.get_status") as mock_status:
+            mock_status.return_value = {"drifted": False, "assets": {}}
+            result = runner.invoke(app, ["status", "-p", "base", "-m", "manifest-build.yaml"])
+            assert result.exit_code == 0
+            mock_status.assert_called_once_with(temp_repo, "base", None, manifest_path="manifest-build.yaml")
+

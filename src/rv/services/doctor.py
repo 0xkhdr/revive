@@ -14,19 +14,26 @@ class DoctorService:
     """Diagnoses the health of the revive repository configuration and system integration."""
 
     @classmethod
-    def check_health(cls, repo_dir: str, profile_name: str | None = None) -> dict[str, Any]:
+    def check_health(
+        cls, repo_dir: str, profile_name: str | None = None, manifest_path: str | None = None
+    ) -> dict[str, Any]:
         """Runs health checks on the repository and active system profile.
 
         Args:
             repo_dir: Absolute path to the source repository.
             profile_name: Optional profile name to check specifically.
+            manifest_path: Optional path to a custom manifest file.
 
         Returns:
             A diagnostic dictionary report with categories.
         """
         repo_dir = os.path.abspath(repo_dir)
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
-        lockfile_path = os.path.join(repo_dir, "manifest.lock")
+        if manifest_path is None:
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        else:
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
+        lockfile_path = os.path.splitext(manifest_path)[0] + ".lock"
 
         issues: list[dict[str, str]] = []
         checks_run = 0
@@ -34,12 +41,13 @@ class DoctorService:
         # 1. Manifest Checks
         checks_run += 1
         manifest = None
+        manifest_filename = os.path.basename(manifest_path)
         if not os.path.exists(manifest_path):
             issues.append(
                 {
                     "category": "manifest",
                     "severity": "critical",
-                    "message": f"manifest.yaml not found at {manifest_path}. Repository must be initialized.",
+                    "message": f"{manifest_filename} not found at {manifest_path}. Repository must be initialized.",
                 }
             )
         else:
@@ -50,12 +58,13 @@ class DoctorService:
                     {
                         "category": "manifest",
                         "severity": "critical",
-                        "message": f"Failed to load or validate manifest.yaml: {e}",
+                        "message": f"Failed to load or validate {manifest_filename}: {e}",
                     }
                 )
 
         # 2. Lockfile Checks
         checks_run += 1
+        lock_filename = os.path.basename(lockfile_path)
         if os.path.exists(lockfile_path):
             try:
                 with open(lockfile_path, encoding="utf-8") as f:
@@ -65,7 +74,7 @@ class DoctorService:
                     {
                         "category": "lockfile",
                         "severity": "warning",
-                        "message": f"manifest.lock is corrupt or invalid: {e}",
+                        "message": f"{lock_filename} is corrupt or invalid: {e}",
                     }
                 )
 

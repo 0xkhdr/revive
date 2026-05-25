@@ -101,7 +101,10 @@ cd ~/workspace/my-revive-backup
 rv init
 ```
 
-This scaffolds the repository layout and **automatically registers** the directory in your global workspace registry (`~/.config/rv/workspaces.yaml`).
+This scaffolds the repository layout, **automatically registers** the directory in your global workspace registry (`~/.config/rv/workspaces.yaml`), and creates three distinct manifests to support decoupled development and restoration profiles:
+*   `manifest.yaml` (default configurations)
+*   `manifest-build.yaml` (for developer tools and packages)
+*   `manifest-restore.yaml` (for minimal runtime/restore requirements)
 
 ---
 
@@ -187,7 +190,9 @@ print(f"Analyzing codebase path: {sys.argv[1] if len(sys.argv) > 1 else '.'}")
 
 ## Phase 4: Constructing the Manifest (`manifest.yaml`)
 
-Now, map all assets, secrets, native OS packages, and profiles within `manifest.yaml`. 
+Now, map all assets, secrets, native OS packages, and profiles within `manifest.yaml`.
+
+### 1. The Default Manifest
 
 Update `manifest.yaml` in your repository root with this complete template:
 
@@ -255,6 +260,27 @@ profiles:
       - node
 ```
 
+### 2. Multi-Manifest Isolation & Dynamic Lockfiles
+
+If you need to keep separate configurations for development/build and clean/runtime restore environments, Revive makes this extremely easy.
+
+When running `rv init`, it automatically scaffolds three distinct manifest files:
+1.  `manifest.yaml`: Your default workspace configuration.
+2.  `manifest-build.yaml`: Optimized for developer tools, packages, and custom hooks.
+3.  `manifest-restore.yaml`: Retains only minimal runtime essentials for clean restorations.
+
+You can target a custom manifest using the `-m` or `--manifest` option across all status, diff, backup, and restore commands:
+
+```bash
+# Verify drift against your development manifest
+rv status -p base -m manifest-build.yaml
+
+# Apply the clean runtime configuration on a fresh machine
+rv restore base -m manifest-restore.yaml -i ~/.config/rv/keys/identity.txt
+```
+
+When you target a custom manifest, Revive dynamically creates and manages its corresponding lockfile (e.g. `manifest-build.lock` or `manifest-restore.lock` instead of `manifest.lock`), ensuring your environment sync states never conflict or overwrite each other.
+
 ---
 
 ## Phase 5: Version Control & GitHub Synchronization
@@ -281,7 +307,7 @@ keys/
 # Ignore local database states and lockfiles
 .antigravitycli/
 ~/.config/rv/journals/
-manifest.lock
+manifest*.lock
 ```
 
 ### 2. Push to GitHub

@@ -664,9 +664,7 @@ def restore(
         "--force-packages",
         help="Bypass the package idempotency cache and re-query all providers. Invalidates cache before installing.",
     ),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
-    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Synchronize the local environment state to match the repository profile (repo → system)."""
     repo_dir = _get_repo_dir()
@@ -848,9 +846,7 @@ def backup(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan and validate backup operations without mutating the repository."
     ),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
-    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Synchronize the local environment state back into the repository profile (system -> repo)."""
     repo_dir = _get_repo_dir()
@@ -931,9 +927,7 @@ def status(
         ..., "--profile", "-p", help="Profile(s) to evaluate sync status for.", autocompletion=complete_profile
     ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to check secret drift."),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
-    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Compare system state against repository profile and calculate drift."""
     repo_dir = _get_repo_dir()
@@ -1087,9 +1081,7 @@ def diff(
     ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to diff encrypted secrets."),
     unified: bool = typer.Option(False, "--unified", "-u", help="Display standard unified diff format."),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
-    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Print colored diffs of all modified file assets on the filesystem."""
     repo_dir = _get_repo_dir()
@@ -1128,7 +1120,9 @@ def diff(
                         )
                     )
             else:
-                contents = StatusService.get_contents_for_diff(repo_dir, profile_str, asset_id, identity, manifest_path=manifest)
+                contents = StatusService.get_contents_for_diff(
+                    repo_dir, profile_str, asset_id, identity, manifest_path=manifest
+                )
                 if contents:
                     expected_text, actual_text = contents
                     if not actual_text and expected_text.startswith("["):
@@ -1187,9 +1181,7 @@ def doctor(
         autocompletion=complete_profile,
     ),
     json_format: bool = typer.Option(False, "--json", help="Output diagnostic report in structured JSON format."),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
-    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Evaluate repository sanity, permission safety, and system capabilities."""
     repo_dir = _get_repo_dir()
@@ -1545,9 +1537,7 @@ def watch(
     debounce: float = typer.Option(
         5.0, "--debounce", "-d", help="Debounce delay in seconds before triggering auto-apply."
     ),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
-    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Watch directory for changes and automatically run restore on update."""
     import time
@@ -1884,21 +1874,124 @@ def gui(
         help="Allow any CORS origin (development only). By default CORS is restricted to loopback.",
         hidden=True,
     ),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
+    i_understand_no_tls: bool = typer.Option(
+        False,
+        "--i-understand-no-tls",
+        help=(
+            "[INSECURE] Allow GUI to bind to non-loopback addresses without TLS. "
+            "Only use this in trusted, firewalled environments where you explicitly "
+            "accept the risk of token exposure over plain HTTP."
+        ),
+        hidden=True,
     ),
 ) -> None:
     """Launch the interactive Revive Web GUI."""
     from rv.gui.server import start_gui_server
 
-    start_gui_server(
-        host=host,
-        port=port,
-        open_browser=not no_browser,
-        auth_token=auth_token,
-        cors_wildcard=cors_wildcard,
-        manifest_name=os.path.basename(manifest) if manifest else None,
-    )
+    try:
+        start_gui_server(
+            host=host,
+            port=port,
+            open_browser=not no_browser,
+            auth_token=auth_token,
+            cors_wildcard=cors_wildcard,
+            manifest_name=os.path.basename(manifest) if manifest else None,
+            i_understand_no_tls=i_understand_no_tls,
+        )
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command("clone")
+def clone(
+    repo_url: str = typer.Argument(..., help="Git repository URL to clone (e.g. git@github.com:user/dotfiles.git)."),
+    dest: str | None = typer.Argument(
+        None,
+        help="Destination directory. Defaults to the repository name in the current directory.",
+    ),
+    restore_profile: str | None = typer.Option(
+        None,
+        "--restore",
+        "-r",
+        help="Automatically run 'rv restore <profile>' after cloning.",
+    ),
+    identity: str | None = typer.Option(
+        None, "--identity", "-i", help="Path to age identity file for decrypting secrets during auto-restore."
+    ),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file for auto-restore."
+    ),
+) -> None:
+    """Clone a revive repository and register it as a workspace.
+
+    This is the golden-path command for bootstrapping a new machine:
+
+        rv clone git@github.com:user/dotfiles.git
+        rv clone git@github.com:user/dotfiles.git --restore base
+    """
+    import subprocess as _subprocess
+
+    # Determine destination path
+    if dest is None:
+        # Derive from repo URL basename, strip .git suffix
+        repo_name = os.path.basename(repo_url)
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+        dest = os.path.join(os.getcwd(), repo_name)
+
+    abs_dest = os.path.abspath(dest)
+
+    console.print(f"[bold cyan]Cloning[/] {repo_url} → {abs_dest}")
+
+    try:
+        _subprocess.run(
+            ["git", "clone", repo_url, abs_dest],
+            check=True,
+            capture_output=False,
+        )
+    except _subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Error:[/] git clone failed with exit code {e.returncode}.")
+        raise typer.Exit(code=1)
+    except FileNotFoundError:
+        console.print("[bold red]Error:[/] 'git' is not installed or not in PATH.")
+        raise typer.Exit(code=1)
+
+    # Register as a workspace
+    WorkspaceService.register_workspace(abs_dest)
+    console.print(f"[green]✓[/] Workspace registered: {abs_dest}")
+
+    # Optional: auto-restore
+    if restore_profile:
+        console.print(f"[bold cyan]Restoring[/] profile '{restore_profile}'...")
+        try:
+            tx_id = RestoreService.restore(
+                repo_dir=abs_dest,
+                profile_name=restore_profile,
+                identity_path=identity,
+                interactive=False,
+                manifest_path=manifest,
+            )
+            console.print(
+                Panel(
+                    f"[green]✓ Restore complete. Transaction: {tx_id}[/]",
+                    title=f"rv clone → restore {restore_profile}",
+                    border_style="green",
+                )
+            )
+        except Exception as e:
+            console.print(f"[bold red]Restore failed:[/] {e}")
+            raise typer.Exit(code=1)
+    else:
+        console.print(
+            Panel(
+                f"[green]✓ Repository cloned to {abs_dest}[/]\n"
+                f"Run [bold]rv restore <profile>[/] to apply your environment.",
+                title="rv clone complete",
+                border_style="green",
+            )
+        )
 
 
 @app.command("prune")
@@ -2035,9 +2128,7 @@ def workspace_sync(
         False, "--force-packages", help="Bypass package cache and reinstall all packages."
     ),
     no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip all plugin hook execution during restore."),
-    manifest: str | None = typer.Option(
-        None, "--manifest", "-m", help="Path to custom manifest file."
-    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Pull latest changes and restore all registered workspaces (git pull → rv restore).
 

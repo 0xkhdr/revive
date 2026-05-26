@@ -50,7 +50,8 @@ def test_manifest_loader_errors(temp_repo: str) -> None:
     # 4. Pydantic validation failure
     invalid_pydantic_path = os.path.join(temp_repo, "invalid_pydantic.yaml")
     with open(invalid_pydantic_path, "w") as f:
-        f.write("assets:\n  - id: 1\n    type: invalid_type\n")
+        # version: 2 is required to pass the schema version guard before Pydantic validates
+        f.write("version: 2\nassets:\n  - id: bad_asset\n    type: invalid_type\n")
     with pytest.raises(ValueError, match="Manifest validation failed"):
         ManifestLoader.load(invalid_pydantic_path)
 
@@ -480,3 +481,326 @@ def test_parallel_planning_faster_than_sequential(temp_repo: str) -> None:
         f"Parallel planning ({parallel_time:.3f}s) must be at least 15% faster than "
         f"sequential planning ({sequential_time:.3f}s). Ratio: {ratio:.2f}"
     )
+
+
+# =============================================================================
+# A-004: restore.py gap tests — L202–247 (ProfileResolver multi-profile & edges)
+# =============================================================================
+
+
+def _make_manifest_with_profiles(extra_profiles: dict[str, dict[object, object]] | None = None) -> Manifest:
+    """Helper: builds a minimal Manifest with configurable profiles for resolver tests."""
+    import yaml
+
+    profiles_data: dict[str, object] = {
+        "base": {"assets": ["asset_a"], "secrets": [], "packages": []},
+        "extra": {"assets": ["asset_b"], "secrets": [], "packages": []},
+    }
+    if extra_profiles:
+        profiles_data.update(extra_profiles)
+
+    raw: dict[str, object] = {
+        "version": 2,
+        "assets": [
+            {"id": "asset_a", "type": "copy", "source": "assets/a", "target": "/tmp/a"},
+            {"id": "asset_b", "type": "copy", "source": "assets/b", "target": "/tmp/b"},
+        ],
+        "secrets": [],
+        "packages": {"brew": [], "apt": [], "flatpak": [], "snap": [], "docker": {"images": []}, "node": {}},
+        "profiles": profiles_data,
+    }
+    return Manifest.model_validate(raw)
+
+
+def test_profile_resolver_multi_profile_merge() -> None:
+    """Comma-separated profile names are each resolved and merged (last-write-wins for assets)."""
+    manifest = _make_manifest_with_profiles()
+    resolved = ProfileResolver.resolve(manifest, "base,extra")
+
+    assert "asset_a" in resolved.assets
+    assert "asset_b" in resolved.assets
+
+
+def test_profile_resolver_empty_profile_name_raises() -> None:
+    """An empty profile name (whitespace-only) raises ValueError."""
+    manifest = _make_manifest_with_profiles()
+    with pytest.raises(ValueError, match="No profile names provided"):
+        ProfileResolver.resolve(manifest, "   ")
+
+
+def test_profile_resolver_unknown_profile_raises() -> None:
+    """Referencing a non-existent profile by name raises ValueError."""
+    manifest = _make_manifest_with_profiles()
+    with pytest.raises(ValueError, match="Profile 'nonexistent' is not defined"):
+        ProfileResolver.resolve(manifest, "nonexistent")
+
+
+def test_profile_resolver_cyclic_inheritance_raises() -> None:
+    """Cyclic extends chain (A → B → A) raises ValueError with loop path."""
+    raw: dict[str, object] = {
+        "version": 2,
+        "assets": [],
+        "secrets": [],
+        "packages": {"brew": [], "apt": [], "flatpak": [], "snap": [], "docker": {"images": []}, "node": {}},
+        "profiles": {
+            "alpha": {"extends": ["beta"], "assets": [], "secrets": [], "packages": []},
+            "beta": {"extends": ["alpha"], "assets": [], "secrets": [], "packages": []},
+        },
+    }
+    manifest = Manifest.model_validate(raw)
+    with pytest.raises(ValueError, match="Cyclic profile inheritance detected"):
+        ProfileResolver.resolve(manifest, "alpha")
+
+
+def test_profile_resolver_missing_asset_ref_raises() -> None:
+    """Profile referencing an asset ID that doesn't exist in the global pool raises ValueError."""
+    raw: dict[str, object] = {
+        "version": 2,
+        "assets": [],
+        "secrets": [],
+        "packages": {"brew": [], "apt": [], "flatpak": [], "snap": [], "docker": {"images": []}, "node": {}},
+        "profiles": {
+            "base": {"assets": ["ghost_asset"], "secrets": [], "packages": []},
+        },
+    }
+    manifest = Manifest.model_validate(raw)
+    with pytest.raises(ValueError, match="Asset ID 'ghost_asset' referenced in profile"):
+        ProfileResolver.resolve(manifest, "base")
+
+
+def test_profile_resolver_missing_secret_ref_raises() -> None:
+    """Profile referencing a secret ID that doesn't exist in the global pool raises ValueError."""
+    raw: dict[str, object] = {
+        "version": 2,
+        "assets": [],
+        "secrets": [],
+        "packages": {"brew": [], "apt": [], "flatpak": [], "snap": [], "docker": {"images": []}, "node": {}},
+        "profiles": {
+            "base": {"assets": [], "secrets": ["ghost_secret"], "packages": []},
+        },
+    }
+    manifest = Manifest.model_validate(raw)
+    with pytest.raises(ValueError, match="Secret ID 'ghost_secret' referenced in profile"):
+        ProfileResolver.resolve(manifest, "base")
+
+
+# =============================================================================
+# A-004: restore.py gap tests — L337–396 (machine override paths)
+# =============================================================================
+
+
+def _make_temp_repo_with_manifest(manifest_data: dict[str, object]) -> str:
+    """Creates a temp dir with manifest.yaml and required subdirs. Caller must cleanup."""
+    import yaml
+
+    tmpdir = tempfile.mkdtemp()
+    os.makedirs(os.path.join(tmpdir, "assets"), exist_ok=True)
+    os.makedirs(os.path.join(tmpdir, "secrets"), exist_ok=True)
+    os.makedirs(os.path.join(tmpdir, "machine"), exist_ok=True)
+
+    with open(os.path.join(tmpdir, "manifest.yaml"), "w", encoding="utf-8") as f:
+        yaml.safe_dump(manifest_data, f)
+    return tmpdir
+
+
+def test_restore_machine_override_disabled(temp_repo: str) -> None:
+    """When machine_overrides.enabled=False, override file is never read."""
+    import yaml
+
+    manifest_data: dict[str, object] = {
+        "version": 2,
+        "machine_overrides": {"enabled": False, "path": "machine/{hostname}.yaml"},
+        "assets": [{"id": "file_a", "type": "copy", "source": "assets/src", "target": os.path.join(temp_repo, "dst")}],
+        "profiles": {"base": {"assets": ["file_a"], "secrets": [], "packages": []}},
+    }
+    with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
+        yaml.safe_dump(manifest_data, f)
+    with open(os.path.join(temp_repo, "assets", "src"), "w") as f:
+        f.write("content")
+
+    # Even if a hostname override exists, it must not be applied
+    hostname_override = os.path.join(temp_repo, "machine", "testhost.yaml")
+    with open(hostname_override, "w") as f:
+        yaml.safe_dump(
+            {"assets": [{"id": "file_a", "type": "copy", "source": "assets/src", "target": "/FORBIDDEN"}]}, f
+        )
+
+    with patch("socket.gethostname", return_value="testhost"):
+        tx_id = RestoreService.restore(temp_repo, "base", interactive=False)
+    assert tx_id is not None
+    # Target was NOT overridden to /FORBIDDEN
+    assert os.path.exists(os.path.join(temp_repo, "dst"))
+
+
+def test_restore_machine_override_invalid_yaml(temp_repo: str) -> None:
+    """Malformed override YAML raises ValueError and prevents restore."""
+    import yaml
+
+    hostname = "badhost"
+    manifest_data: dict[str, object] = {
+        "version": 2,
+        "machine_overrides": {"enabled": True, "path": "machine/{hostname}.yaml"},
+        "assets": [{"id": "file_a", "type": "copy", "source": "assets/src", "target": os.path.join(temp_repo, "dst")}],
+        "profiles": {"base": {"assets": ["file_a"], "secrets": [], "packages": []}},
+    }
+    with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
+        yaml.safe_dump(manifest_data, f)
+    with open(os.path.join(temp_repo, "assets", "src"), "w") as f:
+        f.write("content")
+
+    override_path = os.path.join(temp_repo, "machine", f"{hostname}.yaml")
+    with open(override_path, "w") as f:
+        f.write("{invalid: yaml: broken")
+
+    with patch("socket.gethostname", return_value=hostname):
+        with pytest.raises(ValueError, match="Failed to parse override YAML"):
+            RestoreService.restore(temp_repo, "base", interactive=False)
+
+
+def test_restore_machine_override_missing_file(temp_repo: str) -> None:
+    """When override file is absent, restore proceeds normally (debug log, no error)."""
+    import yaml
+
+    manifest_data: dict[str, object] = {
+        "version": 2,
+        "machine_overrides": {"enabled": True, "path": "machine/{hostname}.yaml"},
+        "assets": [{"id": "file_a", "type": "copy", "source": "assets/src", "target": os.path.join(temp_repo, "dst")}],
+        "profiles": {"base": {"assets": ["file_a"], "secrets": [], "packages": []}},
+    }
+    with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
+        yaml.safe_dump(manifest_data, f)
+    with open(os.path.join(temp_repo, "assets", "src"), "w") as f:
+        f.write("content")
+
+    with patch("socket.gethostname", return_value="no-override-host"):
+        tx_id = RestoreService.restore(temp_repo, "base", interactive=False)
+    assert tx_id is not None
+
+
+# =============================================================================
+# A-004: restore.py gap tests — L461–487 (per-provider orchestration)
+# =============================================================================
+
+
+def _make_package_manifest(temp_repo: str, providers: dict[str, object]) -> None:
+    """Writes a minimal manifest.yaml with the given packages section to temp_repo."""
+    import yaml
+
+    src = os.path.join(temp_repo, "assets", "src")
+    with open(src, "w") as f:
+        f.write("content")
+
+    packages: dict[str, object] = {
+        "brew": [],
+        "apt": [],
+        "flatpak": [],
+        "snap": [],
+        "pacman": [],
+        "dnf": [],
+        "nix": [],
+        "cargo": [],
+        "pip": [],
+        "docker": {"images": []},
+        "node": {},
+    }
+    packages.update(providers)
+
+    manifest_data: dict[str, object] = {
+        "version": 2,
+        "packages": packages,
+        "assets": [
+            {"id": "src_file", "type": "copy", "source": "assets/src", "target": os.path.join(temp_repo, "dst")}
+        ],
+        "profiles": {"base": {"assets": ["src_file"], "secrets": [], "packages": list(providers.keys())}},
+    }
+    with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
+        yaml.safe_dump(manifest_data, f)
+
+
+def test_restore_pacman_packages_called(temp_repo: str) -> None:
+    """PacmanProvider.install is invoked when manifest has pacman packages."""
+    _make_package_manifest(temp_repo, {"pacman": ["base-devel"]})
+    with patch("rv.providers.pacman.PacmanProvider.install") as mock_install:
+        RestoreService.restore(temp_repo, "base", interactive=False)
+    mock_install.assert_called_once()
+    assert mock_install.call_args[0][0] == ["base-devel"]
+
+
+def test_restore_dnf_packages_called(temp_repo: str) -> None:
+    """DnfProvider.install is invoked when manifest has dnf packages."""
+    _make_package_manifest(temp_repo, {"dnf": ["git"]})
+    with patch("rv.providers.dnf.DnfProvider.install") as mock_install:
+        RestoreService.restore(temp_repo, "base", interactive=False)
+    mock_install.assert_called_once()
+    assert mock_install.call_args[0][0] == ["git"]
+
+
+def test_restore_nix_packages_called(temp_repo: str) -> None:
+    """NixProvider.install is invoked when manifest has nix packages."""
+    _make_package_manifest(temp_repo, {"nix": ["ripgrep"]})
+    with patch("rv.providers.nix.NixProvider.install") as mock_install:
+        RestoreService.restore(temp_repo, "base", interactive=False)
+    mock_install.assert_called_once()
+    assert mock_install.call_args[0][0] == ["ripgrep"]
+
+
+def test_restore_cargo_packages_called(temp_repo: str) -> None:
+    """CargoProvider.install is invoked when manifest has cargo packages."""
+    _make_package_manifest(temp_repo, {"cargo": ["ripgrep"]})
+    with patch("rv.providers.cargo.CargoProvider.install") as mock_install:
+        RestoreService.restore(temp_repo, "base", interactive=False)
+    mock_install.assert_called_once()
+    assert mock_install.call_args[0][0] == ["ripgrep"]
+
+
+def test_restore_pip_packages_called(temp_repo: str) -> None:
+    """PipProvider.install is invoked when manifest has pip packages."""
+    _make_package_manifest(temp_repo, {"pip": ["requests"]})
+    with patch("rv.providers.pip.PipProvider.install") as mock_install:
+        RestoreService.restore(temp_repo, "base", interactive=False)
+    mock_install.assert_called_once()
+    assert mock_install.call_args[0][0] == ["requests"]
+
+
+def test_restore_force_packages_invalidates_cache(temp_repo: str) -> None:
+    """force_packages=True calls PackageCache.invalidate_all before installing."""
+    _make_package_manifest(temp_repo, {"pip": ["requests"]})
+    with (
+        patch("rv.providers.pip.PipProvider.install"),
+        patch("rv.providers.base.PackageCache.invalidate_all") as mock_invalidate,
+    ):
+        RestoreService.restore(temp_repo, "base", interactive=False, force_packages=True)
+    mock_invalidate.assert_called_once()
+
+
+# =============================================================================
+# S-008: Schema version guard tests
+# =============================================================================
+
+
+def test_manifest_loader_unsupported_schema_version(temp_repo: str) -> None:
+    """ManifestLoader.load() raises UnsupportedSchemaVersionError for version=99."""
+    import yaml
+
+    from rv.models.manifest import UnsupportedSchemaVersionError
+
+    bad_manifest = os.path.join(temp_repo, "manifest-v99.yaml")
+    with open(bad_manifest, "w") as f:
+        yaml.safe_dump({"version": 99, "assets": [], "profiles": {}}, f)
+
+    with pytest.raises(UnsupportedSchemaVersionError, match="Unsupported manifest schema version"):
+        ManifestLoader.load(bad_manifest)
+
+
+def test_manifest_loader_version_none_raises(temp_repo: str) -> None:
+    """ManifestLoader.load() raises UnsupportedSchemaVersionError when version key is absent."""
+    import yaml
+
+    from rv.models.manifest import UnsupportedSchemaVersionError
+
+    bad_manifest = os.path.join(temp_repo, "manifest-noversion.yaml")
+    with open(bad_manifest, "w") as f:
+        yaml.safe_dump({"assets": [], "profiles": {}}, f)
+
+    with pytest.raises(UnsupportedSchemaVersionError, match="Unsupported manifest schema version"):
+        ManifestLoader.load(bad_manifest)

@@ -8,6 +8,25 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# Supported manifest schema versions. Raise UnsupportedSchemaVersionError for anything else.
+_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({1, 2})
+
+
+class UnsupportedSchemaVersionError(ValueError):
+    """Raised when a manifest declares a schema version that this rv release does not support.
+
+    Prevents silent data corruption when a future schema adds conflicting or renamed fields
+    that an older Pydantic model would accept as valid garbage.
+    """
+
+    def __init__(self, version: object) -> None:
+        supported = ", ".join(str(v) for v in sorted(_SUPPORTED_SCHEMA_VERSIONS))
+        super().__init__(
+            f"Unsupported manifest schema version: {version!r}. "
+            f"This rv release supports versions: {supported}. "
+            "Upgrade rv or downgrade your manifest to a supported version."
+        )
+
 
 class AssetType(StrEnum):
     """Supported asset orchestration types."""
@@ -223,8 +242,13 @@ class Manifest(BaseModel):
     @field_validator("version")
     @classmethod
     def validate_schema_version(cls, v: int) -> int:
-        """Validate schema version."""
-        if v not in (1, 2):
-            # We warn on schema versions we don't fully support but handle
-            pass
+        """Reject manifests that declare an unsupported schema version.
+
+        This guard runs *inside* Pydantic model_validate(), which is called
+        only after ManifestLoader.load() performs the raw-version pre-check.
+        The double-guard ensures correctness even when Manifest is constructed
+        directly in tests or other code paths.
+        """
+        if v not in _SUPPORTED_SCHEMA_VERSIONS:
+            raise UnsupportedSchemaVersionError(v)
         return v

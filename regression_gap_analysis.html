@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revive (rv) — Regression & Gap Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #09090b;
+            --bg-card: #121214;
+            --bg-card-hover: #18181b;
+            --text-primary: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --accent-primary: #8b5cf6; /* Indigo/Purple */
+            --accent-primary-glow: rgba(139, 92, 246, 0.15);
+            --accent-secondary: #06b6d4; /* Cyan */
+            --accent-emerald: #10b981; /* Success */
+            --accent-amber: #f59e0b; /* Medium */
+            --accent-rose: #f43f5e; /* High */
+            --border-color: #27272a;
+            --font-outfit: 'Outfit', sans-serif;
+            --font-inter: 'Inter', sans-serif;
+            --font-mono: 'Fira Code', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: var(--font-inter);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Ambient background glow */
+        .glow-orb-1 {
+            position: absolute;
+            top: -10%;
+            right: 10%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.08) 0%, rgba(0,0,0,0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .glow-orb-2 {
+            position: absolute;
+            top: 40%;
+            left: -5%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(6, 182, 212, 0.05) 0%, rgba(0,0,0,0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Container Layout */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 2.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            aside {
+                display: none;
+            }
+        }
+
+        /* Sidebar Navigation */
+        aside {
+            position: sticky;
+            top: 2rem;
+            height: fit-content;
+        }
+
+        .nav-card {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+
+        .nav-title {
+            font-family: var(--font-outfit);
+            font-weight: 700;
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #fff 0%, var(--text-muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-links {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+            padding: 0.6rem 0.8rem;
+            border-radius: 8px;
+            display: block;
+            transition: all 0.2s ease;
+            border-left: 2px solid transparent;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+            background-color: var(--bg-card-hover);
+            border-left-color: var(--accent-primary);
+            padding-left: 1rem;
+        }
+
+        .nav-links a.active {
+            color: var(--text-primary);
+            background-color: rgba(139, 92, 246, 0.08);
+            border-left-color: var(--accent-primary);
+        }
+
+        /* Main Content */
+        main {
+            display: flex;
+            flex-direction: column;
+            gap: 3rem;
+        }
+
+        /* Header block */
+        header {
+            position: relative;
+            padding: 3rem;
+            background: linear-gradient(135deg, rgba(18, 18, 20, 0.8) 0%, rgba(24, 24, 27, 0.8) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+        }
+
+        .header-logo {
+            font-family: var(--font-outfit);
+            font-size: 0.875rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            color: var(--accent-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .header-logo::after {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background-color: var(--accent-secondary);
+            border-radius: 50%;
+        }
+
+        h1 {
+            font-family: var(--font-outfit);
+            font-weight: 800;
+            font-size: 2.75rem;
+            line-height: 1.2;
+            background: linear-gradient(135deg, #ffffff 0%, #a1a1aa 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .metadata-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .metadata-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+        }
+
+        .metadata-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Section structure */
+        section {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 2.5rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            transition: border-color 0.3s ease;
+        }
+
+        section:hover {
+            border-color: rgba(139, 92, 246, 0.3);
+        }
+
+        .section-tag {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--accent-primary);
+            margin-bottom: 0.5rem;
+            display: block;
+            font-weight: 600;
+        }
+
+        h2 {
+            font-family: var(--font-outfit);
+            font-weight: 700;
+            font-size: 1.8rem;
+            margin-bottom: 1.5rem;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        p {
+            font-size: 1rem;
+            color: var(--text-muted);
+            margin-bottom: 1.5rem;
+        }
+
+        /* Lists */
+        ul {
+            margin-left: 1.5rem;
+            margin-bottom: 1.5rem;
+            color: var(--text-muted);
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        /* Highlight cards / Callouts */
+        .callout {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(0, 0, 0, 0) 100%);
+            border-left: 3px solid var(--accent-primary);
+            padding: 1.25rem 1.5rem;
+            border-radius: 0 12px 12px 0;
+            margin-bottom: 1.5rem;
+        }
+
+        .callout-title {
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Tables styling */
+        .table-container {
+            width: 100%;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+
+        th {
+            background-color: rgba(24, 24, 27, 0.8);
+            color: #ffffff;
+            font-weight: 600;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            font-family: var(--font-outfit);
+        }
+
+        td {
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+            vertical-align: top;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            color: var(--text-primary);
+            background-color: rgba(255, 255, 255, 0.01);
+        }
+
+        /* Status & Score Badges */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-success {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--accent-emerald);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .badge-warning {
+            background-color: rgba(245, 158, 11, 0.1);
+            color: var(--accent-amber);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .badge-danger {
+            background-color: rgba(244, 63, 94, 0.1);
+            color: var(--accent-rose);
+            border: 1px solid rgba(244, 63, 94, 0.2);
+        }
+
+        .badge-info {
+            background-color: rgba(6, 182, 212, 0.1);
+            color: var(--accent-secondary);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+        }
+
+        .score-box {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            background-color: rgba(255, 255, 255, 0.05);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            color: #ffffff;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Visual Meters & Progress Bars */
+        .metric-card {
+            background: linear-gradient(135deg, rgba(24, 24, 27, 0.6) 0%, rgba(18, 18, 20, 0.6) 100%);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .metric-title {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .metric-value {
+            font-family: var(--font-outfit);
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+            border-radius: 9999px;
+            transition: width 1s ease-in-out;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Appendices Accordion / Details */
+        details {
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background-color: rgba(18, 18, 20, 0.5);
+            margin-bottom: 1rem;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        details[open] {
+            border-color: rgba(139, 92, 246, 0.4);
+            background-color: rgba(18, 18, 20, 0.8);
+        }
+
+        summary {
+            font-family: var(--font-outfit);
+            font-weight: 600;
+            font-size: 1.1rem;
+            padding: 1.25rem;
+            cursor: pointer;
+            outline: none;
+            user-select: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #ffffff;
+        }
+
+        summary::-webkit-details-marker {
+            display: none;
+        }
+
+        summary::after {
+            content: '→';
+            display: inline-block;
+            font-size: 1.2rem;
+            color: var(--accent-primary);
+            transition: transform 0.2s ease;
+        }
+
+        details[open] summary::after {
+            transform: rotate(90deg);
+        }
+
+        .details-content {
+            padding: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            background-color: #0d0d0f;
+        }
+
+        pre {
+            font-family: var(--font-mono);
+            background-color: #050506;
+            padding: 1.25rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            color: #e4e4e7;
+            font-size: 0.9rem;
+            border: 1px solid rgba(255,255,255,0.02);
+            line-height: 1.5;
+        }
+
+        .highlight-text {
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        /* Floating footer styling */
+        footer {
+            margin-top: 5rem;
+            padding: 2.5rem 0;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        @media (max-width: 640px) {
+            footer {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="glow-orb-1"></div>
+    <div class="glow-orb-2"></div>
+
+    <div class="container">
+        <!-- Sidebar Navigation -->
+        <aside>
+            <div class="nav-card">
+                <div class="nav-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    Audit Matrix
+                </div>
+                <ul class="nav-links">
+                    <li><a href="#charter" class="active">§1 Project Charter</a></li>
+                    <li><a href="#scorecard">§2 Regression Scorecard</a></li>
+                    <li><a href="#chore">§3 Chore Philosophy</a></li>
+                    <li><a href="#competitive">§4 Domain Analysis</a></li>
+                    <li><a href="#register">§5 Gap Register</a></li>
+                    <li><a href="#roadmap">§6 Synthesis & Roadmap</a></li>
+                    <li><a href="#appendices">Appendices</a></li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main>
+            <header>
+                <div class="header-logo">Revive Environment lifecycle</div>
+                <h1>System Regression & Gap Analysis</h1>
+                <p>Comprehensive security, architecture, and chore compliance report compiled by Senior Staff Engineer.</p>
+                <div class="metadata-grid">
+                    <div class="metadata-item">
+                        <span class="metadata-label">Auditor</span>
+                        <span class="metadata-value">Senior Staff Engineer Review</span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">Audit Date</span>
+                        <span class="metadata-value">2026-05-26</span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">Assessed Version</span>
+                        <span class="metadata-value">v1.1.0-release (HEAD)</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Metrics Highlight Cards -->
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span>Total Test Coverage</span>
+                        <span class="badge badge-danger">Failing Mandate</span>
+                    </div>
+                    <div class="metric-value">74%</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: 74%"></div>
+                    </div>
+                    <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted)">90% aggregate threshold required</p>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span>Static Security Vulnerabilities</span>
+                        <span class="badge badge-success">Clean</span>
+                    </div>
+                    <div class="metric-value">0</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: 100%; background: var(--accent-emerald)"></div>
+                    </div>
+                    <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted)">Mypy, Ruff & Bandit audit passed</p>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">
+                        <span>Chore Maturity Rating</span>
+                        <span class="badge badge-warning">2 / 5</span>
+                    </div>
+                    <div class="metric-value">40%</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: 40%; background: var(--accent-amber)"></div>
+                    </div>
+                    <p style="margin: 0; font-size: 0.8rem; color: var(--text-muted)">Manual maintenance dependency</p>
+                </div>
+            </div>
+
+            <!-- §1 -->
+            <section id="charter">
+                <span class="section-tag">§ 1</span>
+                <h2>Project Charter & Vision</h2>
+                <div class="callout">
+                    <div class="callout-title">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                        Core Value Proposition
+                    </div>
+                    <p style="margin: 0;">"Transaction-safe developer environment manager. Synchronizes dotfiles, configs, encrypted secrets, system packages, and AI agent skills directly from a Git repository."</p>
+                </div>
+                <p>Revive successfully addresses a unique niche by offering native security and strict 7-step transactional boundaries. Our review audited 5 distinct claims against real implementation:</p>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Claimed Differentiator</th>
+                                <th>Implementation Reality</th>
+                                <th>Verification Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="highlight-text">Strict 7-Step Rollback</td>
+                                <td>Fully enforced inside transaction/context.py via atomic swaps.</td>
+                                <td><span class="badge badge-success">Verified</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Age Cryptographic Engine</td>
+                                <td>Robust direct-to-memory decryptor in security/encryptor.py.</td>
+                                <td><span class="badge badge-success">Verified</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Sandboxed Plugins</td>
+                                <td>Custom isolated subprocess with strict import and builtins interception.</td>
+                                <td><span class="badge badge-success">Verified</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">AI Asset Management</td>
+                                <td>Dedicated skill loaders and first-party templates. Valuable differentiator.</td>
+                                <td><span class="badge badge-success">Verified</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Multi-Profile Inheritance</td>
+                                <td>Resolver handles recursive resolution and overrides cleanly.</td>
+                                <td><span class="badge badge-success">Verified</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- §2 -->
+            <section id="scorecard">
+                <span class="section-tag">§ 2</span>
+                <h2>Regression Scorecard</h2>
+                <p>Strategic review tracking development evolution between <strong>v0.9.0</strong>, <strong>v1.0.0</strong>, and <strong>v1.1.0</strong>.</p>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Dimension</th>
+                                <th>Rating</th>
+                                <th>Findings & Evidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="highlight-text">Scope Creep</td>
+                                <td><span class="score-box">4 / 5</span></td>
+                                <td>Mid-development TUI to Web GUI pivot (commit 426055d) was unplanned but adds substantial value. Minimal drift elsewhere.</td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Churn vs. Value</td>
+                                <td><span class="score-box">3 / 5</span></td>
+                                <td>~60% of commits marked as features with zero 'chore:' discipline. Severe churn in core Main/Server/Restore modules.</td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Breaking Changes</td>
+                                <td><span class="score-box">3 / 5</span></td>
+                                <td>Signature for start_gui_server changed without major SemVer bump. Task IDs in logs reference external trackers.</td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Test Coverage</td>
+                                <td><span class="score-box">2 / 5</span></td>
+                                <td>Core components at only 74% coverage. Mandated core modules are underperforming. Evidence of metric boosting via test_coverage_booster.py.</td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Performance Trend</td>
+                                <td><span class="score-box">4 / 5</span></td>
+                                <td>Parallel planning implementation provides genuine speed gains. Regrettably, no regression benchmark monitoring tool in CI.</td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Debt Accumulation</td>
+                                <td><span class="score-box">4 / 5</span></td>
+                                <td>Excellent code cleanliness in production directories. Abstract logic correctly handles NotImplemented exceptions. Opaque task trackers remain a barrier.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- §3 -->
+            <section id="chore">
+                <span class="section-tag">§ 3</span>
+                <h2>Chore Philosophy Report</h2>
+                <p>The health of a codebase is determined by its hygiene. Revive presents high enforcement of checks, but displays major gaps in structural workflows.</p>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); padding: 1.5rem; border-radius: 12px;">
+                        <h4 style="margin-bottom: 0.75rem; color: #fff;">HYGIENE PROS</h4>
+                        <ul style="margin: 0; padding-left: 1rem;">
+                            <li>Strict linting with Ruff is passing without warnings.</li>
+                            <li>Mypy static typing verified green in type checking.</li>
+                            <li>Nightly CI pipelines ensure scheduled audits.</li>
+                        </ul>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); padding: 1.5rem; border-radius: 12px;">
+                        <h4 style="margin-bottom: 0.75rem; color: #fff;">HYGIENE CONS</h4>
+                        <ul style="margin: 0; padding-left: 1rem;">
+                            <li>Actions use unpinned/mutable tags.</li>
+                            <li>0 commits utilize Conventional Commit prefixes for chores.</li>
+                            <li>No automatic release pipelines or published packages.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- §4 -->
+            <section id="competitive">
+                <span class="section-tag">§ 4</span>
+                <h2>Competitive Domain Analysis</h2>
+                <p>Revive successfully targets modern configuration management requirements. Below is the domain mapping relative to major ecosystem tools.</p>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Capability</th>
+                                <th>Revive</th>
+                                <th>chezmoi</th>
+                                <th>mackup</th>
+                                <th>yadm</th>
+                                <th>Gap Severity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="highlight-text">Transactional Rollback</td>
+                                <td><span class="badge badge-success">Yes (7-step)</span></td>
+                                <td>No</td>
+                                <td>No</td>
+                                <td>No</td>
+                                <td><span class="badge badge-info">Revive Wins</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Direct Secrets Encryption</td>
+                                <td><span class="badge badge-success">Yes (Age)</span></td>
+                                <td>Yes (Age)</td>
+                                <td>No</td>
+                                <td>Yes (GPG)</td>
+                                <td>Low</td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Package Orchestration</td>
+                                <td><span class="badge badge-success">11 Providers</span></td>
+                                <td>Scripts Only</td>
+                                <td>No</td>
+                                <td>No</td>
+                                <td><span class="badge badge-info">Revive Wins</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Plugin Sandbox</td>
+                                <td><span class="badge badge-success">Isolated</span></td>
+                                <td>No</td>
+                                <td>No</td>
+                                <td>No</td>
+                                <td><span class="badge badge-info">Revive Wins</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Binary Distribution</td>
+                                <td><span class="badge badge-danger">Unpublished</span></td>
+                                <td>Yes (Native)</td>
+                                <td>No</td>
+                                <td>No</td>
+                                <td><span class="badge badge-danger">HIGH GAP</span></td>
+                            </tr>
+                            <tr>
+                                <td class="highlight-text">Community Ecosystem</td>
+                                <td><span class="badge badge-danger">None</span></td>
+                                <td>High</td>
+                                <td>High</td>
+                                <td>High</td>
+                                <td><span class="badge badge-danger">HIGH GAP</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- §5 -->
+            <section id="register">
+                <span class="section-tag">§ 5</span>
+                <h2>Architecture & Security Gap Register</h2>
+                
+                <h3 style="margin-top: 1.5rem; margin-bottom: 0.75rem;">Architecture Gaps</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Category</th>
+                                <th>Severity</th>
+                                <th>Evidence & Remediation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>A-003</td>
+                                <td class="highlight-text">Provider Coverage Collapse</td>
+                                <td><span class="badge badge-danger">High</span></td>
+                                <td>Cargo, Nix, Dnf, Pacman and Pip managers average 24% testing coverage.
+                                <br><small><strong>Fix:</strong> Create unified provider mock harnesses.</small></td>
+                            </tr>
+                            <tr>
+                                <td>A-004</td>
+                                <td class="highlight-text">Restore Engine Gaps</td>
+                                <td><span class="badge badge-danger">High</span></td>
+                                <td>Core restore.py runs at only 72% coverage. Core error paths remain completely untested.
+                                <br><small><strong>Fix:</strong> Write explicit error path and rollback tests.</small></td>
+                            </tr>
+                            <tr>
+                                <td>A-007</td>
+                                <td class="highlight-text">Broken Golden Path</td>
+                                <td><span class="badge badge-warning">Medium</span></td>
+                                <td>'rv clone' command listed in architecture plans, but remains completely unimplemented.
+                                <br><small><strong>Fix:</strong> Expose clone utility in CLI controller.</small></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 style="margin-top: 2rem; margin-bottom: 0.75rem;">Security Gaps</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Category</th>
+                                <th>Severity</th>
+                                <th>Evidence & Remediation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>S-001</td>
+                                <td class="highlight-text">Action Supply-Chain Risk</td>
+                                <td><span class="badge badge-warning">Medium</span></td>
+                                <td>CI workflows utilize mutable tag references (@v4, @v5) which can be force-pushed.
+                                <br><small><strong>Fix:</strong> Lock CI references to explicit, validated commit SHAs.</small></td>
+                            </tr>
+                            <tr>
+                                <td>S-003</td>
+                                <td class="highlight-text">Localhost Token Leak</td>
+                                <td><span class="badge badge-warning">Medium</span></td>
+                                <td>Authentication tokens run over raw HTTP. Vulnerable if bound to external network hosts.
+                                <br><small><strong>Fix:</strong> Raise hard-crash error when binding non-loopback IPs without TLS.</small></td>
+                            </tr>
+                            <tr>
+                                <td>S-004</td>
+                                <td class="highlight-text">Native Extensions Escape</td>
+                                <td><span class="badge badge-danger">High</span></td>
+                                <td>Plugins using bundled native compiled binaries (.so files) bypass standard import interceptors.
+                                <br><small><strong>Fix:</strong> Implement formal Linux seccomp profiles for containment.</small></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- §6 -->
+            <section id="roadmap">
+                <span class="section-tag">§ 6</span>
+                <h2>Synthesis & Roadmap</h2>
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                    <div style="border-left: 3px solid var(--accent-rose); padding-left: 1.5rem;">
+                        <h4 style="color: #fff; margin-bottom: 0.5rem;">Immediate Priority Checklist (v1.1.0)</h4>
+                        <ol style="margin-left: 1.25rem; color: var(--text-muted);">
+                            <li><strong>Provider test coverage:</strong> Address 24% cargo/pip/nix/pacman/dnf coverage collapses.</li>
+                            <li><strong>Published Binaries:</strong> Enforce automated pipeline release generation.</li>
+                            <li><strong>SHA action locking:</strong> Remove mutable tag targets in CI config.</li>
+                            <li><strong>Restore logic validations:</strong> Targeted engine state verification tests.</li>
+                        </ol>
+                    </div>
+
+                    <div style="border-left: 3px solid var(--accent-secondary); padding-left: 1.5rem;">
+                        <h4 style="color: #fff; margin-bottom: 0.5rem;">Structural Enhancements</h4>
+                        <p style="margin: 0;">Add schema-version validations prior to loading manifest documents, ensuring that legacy v2 manifests do not trigger unexpected behaviors when parsing next-generation v3 attributes.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Appendices -->
+            <section id="appendices">
+                <span class="section-tag">ADDENDA</span>
+                <h2>Audit Appendices</h2>
+                
+                <details>
+                    <summary>Appendix A — Raw Coverage Numbers</summary>
+                    <div class="details-content">
+                        <pre>src/rv/providers/cargo.py      24%  (32-45, 55-80 uncovered)
+src/rv/providers/dnf.py        26%  (32-42, 52-77 uncovered)
+src/rv/providers/nix.py        24%  (37-47, 57-83 uncovered)
+src/rv/providers/pacman.py     26%  (32-42, 52-77 uncovered)
+src/rv/providers/pip.py        24%  (25-29, 40-50, 60-86 uncovered)
+src/rv/providers/brew.py       68%
+src/rv/providers/base.py       73%
+src/rv/services/restore.py     72%  (202-247, 337-396, 461-487 uncovered)
+src/rv/services/backup.py      75%
+src/rv/services/workspace.py   57%
+src/rv/security/encryptor.py   60%
+src/rv/gui/server.py           49%  ← CHANGELOG T-010 claims "70%+"; actual is 49%
+src/rv/transactions/context.py 93%
+src/rv/transactions/lock.py    94%
+src/rv/services/doctor.py      93%
+src/rv/services/recovery.py    91%
+TOTAL                          74%   (CI threshold: 90% — FAILING if enforced per-module)</pre>
+                        <p style="margin-top: 1rem; margin-bottom: 0;"><strong>Changelog Discrepancy:</strong> Entry T-010 states server.py coverage is 70%+. Real measurements indicate 49% due to untested API routes (lines 400 to 487).</p>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>Appendix B — Commit Type Distribution</summary>
+                    <div class="details-content">
+                        <pre>Free-form sentence (no prefix)     ~27 commits   (54%)
+Feat: / Feature: (capitalised)     ~15 commits   (30%)
+Refactor: / Fix:  (capitalised)    ~5 commits    (10%)
+feat: / fix: / docs: (correct CC)  3 commits    (6%)
+chore:                              0 commits    (0%)</pre>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>Appendix C — supply chain detail</summary>
+                    <div class="details-content">
+                        <p>Actions pinned to mutable references:</p>
+                        <pre>- actions/checkout@v4
+- actions/setup-python@v5
+- codecov/codecov-action@v4
+- docker/setup-buildx-action@v3</pre>
+                    </div>
+                </details>
+            </section>
+
+            <footer>
+                <span>Revive (`rv`) Technical Audit Report</span>
+                <span>Generated 2026-05-26</span>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        // Simple active link tracker on scroll
+        const sections = document.querySelectorAll('section, header');
+        const navLinks = document.querySelectorAll('.nav-links a');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                const sectionHeight = section.clientHeight;
+                if (pageYOffset >= (sectionTop - 200)) {
+                    current = section.getAttribute('id') || '';
+                }
+            });
+
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href').slice(1) === current) {
+                    link.classList.add('active');
+                }
+            });
+        });
+    </script>
+</body>
+</html>

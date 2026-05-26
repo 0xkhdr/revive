@@ -323,9 +323,16 @@ def test_api_recovery_discard_missing_tx_id(gui_server: str) -> None:
     assert exc_info.value.code == 400
 
 
-def test_start_gui_server_non_loopback_warning(capsys: pytest.CaptureFixture[str]) -> None:
-    """start_gui_server prints a security warning when binding to a non-loopback address."""
-    import sys
+def test_start_gui_server_non_loopback_raises_without_flag() -> None:
+    """start_gui_server raises ValueError when binding to non-loopback without --i-understand-no-tls."""
+    from rv.gui.server import start_gui_server as _start
+
+    with pytest.raises(ValueError, match="SECURITY"):
+        _start(host="0.0.0.0", port=19999, open_browser=False, auth_token="")  # noqa: S104
+
+
+def test_start_gui_server_non_loopback_warning_with_opt_in(capsys: pytest.CaptureFixture[str]) -> None:
+    """start_gui_server prints a warning (not raises) when i_understand_no_tls=True."""
     from unittest.mock import MagicMock, patch
 
     mock_server = MagicMock()
@@ -335,10 +342,14 @@ def test_start_gui_server_non_loopback_warning(capsys: pytest.CaptureFixture[str
         from rv.gui.server import start_gui_server as _start
 
         try:
-            _start(host="0.0.0.0", port=19999, open_browser=False, auth_token="")  # noqa: S104
-        except SystemExit:
-            pass
-        except KeyboardInterrupt:
+            _start(
+                host="0.0.0.0",  # noqa: S104
+                port=19997,
+                open_browser=False,
+                auth_token="",
+                i_understand_no_tls=True,
+            )
+        except (SystemExit, KeyboardInterrupt):
             pass
 
     captured = capsys.readouterr()

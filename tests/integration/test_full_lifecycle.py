@@ -133,16 +133,16 @@ class TestManifestLifecycle:
         assert "zshrc" in resolved.assets
 
     def test_manifest_invalid_version_raises(self, repo_dir: str) -> None:
-        """Manifest with unsupported schema version is rejected."""
+        """Manifest with unsupported schema version raises UnsupportedSchemaVersionError."""
         manifest_path = os.path.join(repo_dir, "manifest.yaml")
         with open(manifest_path, "w") as f:
             yaml.dump({"version": 99, "profiles": {}}, f)
 
+        from rv.models.manifest import UnsupportedSchemaVersionError
         from rv.services.restore import ManifestLoader
 
-        # Version 99 should still parse (we allow unknown versions with a warning)
-        manifest = ManifestLoader.load(manifest_path)
-        assert manifest.version == 99
+        with pytest.raises(UnsupportedSchemaVersionError, match="Unsupported manifest schema version"):
+            ManifestLoader.load(manifest_path)
 
     def test_cyclic_profile_inheritance_raises(self, repo_dir: str) -> None:
         """Cyclic profile inheritance is detected and raises ValueError."""

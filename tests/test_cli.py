@@ -595,6 +595,7 @@ def test_cli_gui() -> None:
             auth_token="test-token",  # noqa: S106
             cors_wildcard=True,
             manifest_name=None,
+            i_understand_no_tls=False,
         )
 
 
@@ -725,4 +726,3 @@ def test_cli_manifest_option(temp_repo: str) -> None:
             result = runner.invoke(app, ["status", "-p", "base", "-m", "manifest-build.yaml"])
             assert result.exit_code == 0
             mock_status.assert_called_once_with(temp_repo, "base", None, manifest_path="manifest-build.yaml")
-

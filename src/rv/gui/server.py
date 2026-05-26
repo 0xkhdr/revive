@@ -267,7 +267,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
 
             manifest_path = os.path.join(active_ws.path, _MANIFEST_NAME)
             if not os.path.exists(manifest_path):
-                self._send_response_json({"error": f"{_MANIFEST_NAME} not found in workspace path: {active_ws.path}"}, 404)
+                self._send_response_json(
+                    {"error": f"{_MANIFEST_NAME} not found in workspace path: {active_ws.path}"}, 404
+                )
                 return
 
             try:
@@ -506,7 +508,9 @@ class WebGUIRequestHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             try:
-                diff_text = StatusService.get_diff(active_ws.path, profile, asset_id, identity, manifest_path=manifest_path)
+                diff_text = StatusService.get_diff(
+                    active_ws.path, profile, asset_id, identity, manifest_path=manifest_path
+                )
                 lines = diff_text.splitlines() if diff_text else []
                 self._send_response_json({"diff_lines": lines})
             except Exception as e:
@@ -645,6 +649,7 @@ def start_gui_server(
     auth_token: str | None = None,
     cors_wildcard: bool = False,
     manifest_name: str | None = None,
+    i_understand_no_tls: bool = False,
 ) -> None:
     """Instantiate and start the TCPServer serving the GUI.
 
@@ -658,6 +663,9 @@ def start_gui_server(
         cors_wildcard: If True, allow any origin via CORS (development only).
             When False (default), CORS is restricted to the loopback origin.
         manifest_name: Optional custom manifest file name.
+        i_understand_no_tls: If True, permits binding to non-loopback addresses
+            without TLS. This is explicitly insecure and must be opted into.
+            When False (default), binding to non-loopback raises a hard error.
     """
     global _AUTH_TOKEN, _ALLOWED_ORIGIN, _MANIFEST_NAME
 
@@ -666,10 +674,17 @@ def start_gui_server(
 
     loopback_hosts = {"127.0.0.1", "::1", "localhost"}
     if host not in loopback_hosts:
+        if not i_understand_no_tls:
+            raise ValueError(
+                f"[SECURITY] GUI server cannot bind to '{host}' (non-loopback) without TLS. "
+                "The X-Auth-Token is transmitted as a plain HTTP header and will be exposed "
+                "on the network. Pass --i-understand-no-tls to override this guard "
+                "(explicitly insecure — use only in trusted, firewalled environments)."
+            )
         print(
             f"\n[SECURITY WARNING] GUI server is binding to '{host}' (not loopback). "
-            "The API will be accessible from the local network. "
-            "Ensure your firewall rules are correct before proceeding.",
+            "--i-understand-no-tls was set. The API will be accessible from the local network. "
+            "Ensure your firewall rules are correct.",
             file=sys.stderr,
         )
 

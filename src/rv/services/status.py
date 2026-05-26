@@ -423,7 +423,9 @@ class StatusService:
         Returns:
             A string diff, or None if no drift or binary file.
         """
-        contents = cls.get_contents_for_diff(repo_dir, profile_name, asset_id, identity_path, manifest_path=manifest_path)
+        contents = cls.get_contents_for_diff(
+            repo_dir, profile_name, asset_id, identity_path, manifest_path=manifest_path
+        )
         if not contents:
             return None
 

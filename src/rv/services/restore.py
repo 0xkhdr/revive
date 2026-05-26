@@ -11,7 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from rv.logging.audit import AuditLogger
-from rv.models.manifest import Asset, Manifest, Secret
+from rv.models.manifest import Asset, Manifest, Secret, UnsupportedSchemaVersionError
 from rv.models.transaction import Lockfile, LockfileEntry
 from rv.providers.apt import AptProvider
 from rv.providers.brew import BrewProvider
@@ -60,6 +60,13 @@ class ManifestLoader:
 
         if not isinstance(raw_data, dict):
             raise ValueError("Manifest content must be a dictionary")
+
+        # S-008: Pre-check schema version before Pydantic validation to emit
+        # a clear error instead of a confusing ValidationError when an
+        # unsupported future version is encountered.
+        raw_version = raw_data.get("version")
+        if raw_version not in (1, 2):
+            raise UnsupportedSchemaVersionError(raw_version)
 
         try:
             return Manifest.model_validate(raw_data)

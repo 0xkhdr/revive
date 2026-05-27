@@ -430,3 +430,67 @@ def test_chmod_operation() -> None:
         # Check permissions
         mode = oct(os.stat(target).st_mode & 0o777)
         assert mode == "0o755" or mode == "0755"
+
+
+# ---------------------------------------------------------------------------
+# AtomicWrite — extended coverage (targets atomic.py lines 37-44)
+# ---------------------------------------------------------------------------
+
+
+def test_atomic_write_bytes_content() -> None:
+    """AtomicWrite.write() handles bytes content (binary mode)."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = os.path.join(tmpdir, "binary.dat")
+        data = b"\x00\x01\x02\x03"
+        AtomicWrite.write(target, data)
+        with open(target, "rb") as f:
+            assert f.read() == data
+
+
+def test_atomic_write_creates_parent_dirs() -> None:
+    """AtomicWrite.write() creates missing parent directories."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = os.path.join(tmpdir, "deep", "nested", "dir", "file.txt")
+        AtomicWrite.write(target, "nested content")
+        assert os.path.exists(target)
+        with open(target) as f:
+            assert f.read() == "nested content"
+
+
+def test_atomic_write_overwrites_existing_file() -> None:
+    """AtomicWrite.write() atomically replaces an existing file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = os.path.join(tmpdir, "existing.txt")
+        with open(target, "w") as f:
+            f.write("old content")
+        AtomicWrite.write(target, "new content")
+        with open(target) as f:
+            assert f.read() == "new content"
+
+
+def test_atomic_write_rename_failure_raises_and_cleans_up() -> None:
+    """When os.rename raises, AtomicWrite raises RuntimeError and cleans up temp file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = os.path.join(tmpdir, "target.txt")
+        with patch("os.rename", side_effect=OSError("rename failed")):
+            with pytest.raises(RuntimeError, match="Atomic write to.*failed"):
+                AtomicWrite.write(target, "content")
+        remaining = [f for f in os.listdir(tmpdir) if f.startswith(".rv_atomic_tmp_")]
+        assert remaining == []
+
+
+def test_atomic_write_rename_failure_unlink_oserror_suppressed() -> None:
+    """If os.rename AND os.unlink both fail, RuntimeError is still raised."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target = os.path.join(tmpdir, "target.txt")
+        original_unlink = os.unlink
+
+        def selective_unlink(path: str) -> None:
+            if ".rv_atomic_tmp_" in path:
+                raise OSError("unlink also failed")
+            original_unlink(path)
+
+        with patch("os.rename", side_effect=OSError("rename failed")):
+            with patch("os.unlink", side_effect=selective_unlink):
+                with pytest.raises(RuntimeError, match="Atomic write to.*failed"):
+                    AtomicWrite.write(target, "data")

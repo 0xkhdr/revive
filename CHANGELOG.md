@@ -9,78 +9,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.1.0] — 2026-05-27
+
+> **Release branch**: `release/v1.1.0`
+
+This release is a hardening, coverage, and documentation sprint closing the gap
+between the v1.0.0 feature-complete baseline and commercial/open-source publication
+standards.
+
 ### Added
-- `SECURITY.md` documenting the plugin sandbox model, secret handling, CORS policy,
+
+- **`SECURITY.md`** documenting the plugin sandbox model, secret handling, CORS policy,
   known limitations, and vulnerability disclosure procedure. _(T-014)_
-- `.github/workflows/ci.yml`: GitHub Actions CI pipeline with Ubuntu quality gate
-  (pytest ≥90% coverage, mypy, ruff, bandit), 3-distro Docker integration matrix
-  (Ubuntu, Alpine, Arch Linux), and binary build smoke test. _(T-013)_
-- `--cors-wildcard` flag to `rv gui` for development-only CORS bypass. _(T-002)_
-- `--force-packages` and `--no-plugins` flags to `rv workspace sync` to forward
-  to `RestoreService.restore()`, enabling CI/CD usage with cache bypass. _(T-018)_
-- `pytest-timeout = 60` to CI configuration — all tests now have a 60-second hard
-  timeout to prevent hanging test suites from blocking CI runners. _(T-016)_
-- `types-PyYAML` added to dev dependencies for full mypy type coverage. _(T-016)_
+- **`.github/workflows/ci.yml`** — GitHub Actions CI pipeline:
+  - Ubuntu quality gate (pytest ≥ 90% coverage, mypy --strict, ruff, bandit)
+  - 3-distro Docker integration matrix (Ubuntu, Alpine, Arch Linux)
+  - Binary build smoke-test via PyInstaller _(T-013)_
+- **`.github/workflows/release.yml`** — Full release pipeline:
+  - Pre-release quality gate
+  - Linux + macOS binary builds with SHA-256 checksums
+  - OIDC-authenticated PyPI publish (`revive-cli`)
+  - Automated GitHub Release with binary assets _(T-013)_
+- **`--cors-wildcard`** flag to `rv gui` for development-only CORS bypass. _(T-002)_
+- **`--force-packages`** and **`--no-plugins`** flags to `rv workspace sync` forwarding
+  to `RestoreService.restore()` for CI/CD cache-bypass usage. _(T-018)_
+- **`pytest-timeout = 60`** in CI — all tests have a 60-second hard timeout. _(T-016)_
+- **`types-PyYAML`** added to dev dependencies for full mypy type coverage. _(T-016)_
 - Non-loopback host security warning printed to stderr when `rv gui` binds to a
   non-loopback address (e.g. `0.0.0.0`). _(T-011)_
+- **`CONTRIBUTING.md`** — full contributor guide covering prerequisites, quality checks,
+  commit conventions, branch naming, and PR workflow. _(docs)_
+- **`ARCHITECTURE.md`** — module map, data flow diagrams, and ADRs. _(docs)_
+- **`TROUBLESHOOTING.md`** — common errors, debug mode, FAQ. _(docs)_
+- **`LICENSE`** — MIT license file. _(docs)_
 
 ### Changed
-- **SECURITY**: CORS `Access-Control-Allow-Origin` in the Web GUI server changed from
+
+- **SECURITY**: CORS `Access-Control-Allow-Origin` in the Web GUI server tightened from
   wildcard (`*`) to the loopback origin the server is bound on (`http://127.0.0.1:<port>`).
-  This prevents cross-origin attacks from malicious web pages against the GUI API. _(T-002)_
-- **BREAKING (internal)**: `start_gui_server()` now accepts a `cors_wildcard: bool`
-  parameter (default `False`). Callers that previously relied on the wildcard CORS policy
-  must pass `cors_wildcard=True` explicitly for development use. _(T-002)_
+  Prevents cross-origin attacks from malicious web pages. _(T-002)_
+- **BREAKING (internal)**: `start_gui_server()` now accepts `cors_wildcard: bool`
+  (default `False`). Callers relying on the old wildcard must pass `cors_wildcard=True`
+  explicitly. _(T-002)_
 - `BackupPruner.prune()` is now automatically invoked after every successful `rv restore`,
-  using the `backup_retention.max_count` and `backup_retention.max_age_days` values from
-  `manifest.yaml`. This closes the gap where retention was declared but never enforced. _(T-003)_
+  enforcing `backup_retention.max_count` and `backup_retention.max_age_days` from
+  `manifest.yaml`. _(T-003)_
 - `ZeroBuffer.zero_bytes()` now uses the correct CPython struct offset formula
-  (`id(data) + getsizeof(b"") - 1`) instead of the incorrect
-  `id(data) + getsizeof(b"") - len(data)` arithmetic that risked corrupting adjacent
-  memory or silently no-oping on longer strings. _(T-012)_
-- `yaml` import in `backup.py` moved from inside-method lazy import to module-level
-  import, removing the duplicate `from rv.models.manifest import Asset, Secret` that
-  was already present at module scope. _(T-017)_
-- Per-asset plugin hook entries (`AssetHookPlugin` in asset-level hooks) now raise
-  `AssetHandlerError` immediately instead of logging a silent warning and dropping the
-  hook. This ensures transaction rollback is triggered on misconfigured manifests. _(T-004)_
+  (`id(data) + getsizeof(b"") - 1`) fixing the previous arithmetic that risked
+  corrupting adjacent memory. _(T-012)_
+- `yaml` import in `backup.py` moved to module scope, removing duplicate inner imports.
+  _(T-017)_
+- Per-asset plugin hook entries (`AssetHookPlugin`) now raise `AssetHandlerError`
+  immediately (triggering rollback) instead of silently dropping misconfigured hooks.
+  _(T-004)_
 
 ### Removed
-- `RestoreService._plan_asset_parallel()`: Dead code removed. The method raised
-  `NotImplementedError` (with `# pragma: no cover`) and was never called anywhere in
-  the codebase. Asset planning is performed inline via `_plan_one_asset()`. _(T-001)_
+
+- `RestoreService._plan_asset_parallel()`: Dead code that raised `NotImplementedError`
+  and was never called. Asset planning runs inline via `_plan_one_asset()`. _(T-001)_
 
 ### Fixed
+
 - CORS wildcard vulnerability in `server.py` `do_OPTIONS` and `_send_response_json`. _(T-002)_
-- `zero_bytes()` memory address arithmetic no longer risks writing past the beginning
-  of the bytes object's internal buffer on CPython. _(T-012)_
+- `zero_bytes()` memory address arithmetic no longer risks writing past the bytes object's
+  internal buffer on CPython. _(T-012)_
 - Duplicate inner imports (`import yaml`, `from rv.models.manifest import Asset, Secret`)
-  removed from `BackupService.backup()` method body. _(T-017)_
+  removed from `BackupService.backup()`. _(T-017)_
 
 ### Tests
-- `test_recovery.py`: Expanded from ~4 test functions to 16, pushing `recovery.py`
-  coverage from 39% to 90%+. New scenarios: rollback/discard with missing files,
-  rollback failure propagation, `list_backup_dirs` OSError, `_get_active_tx_ids` with
-  no journal dir, `BackupPruner.prune()` age-based, count-based, OSError, dry-run,
-  and active-transaction skip paths. _(T-005)_
-- `test_transactions.py`: Expanded to cover symlink snapshot, directory snapshot, symlink
-  rollback, directory rollback, atomic directory copy execution, `_write_journal` OSError
-  silencing, and non-committed cleanup guard. Coverage: 74% → 90%+. _(T-006)_
-- `test_security.py`: Added `ZeroBuffer` happy-path, `memoryview`, empty, and type-error
-  tests; `AgeEncryptor.is_pyrage_available()` with and without pyrage; `decrypt_file`
-  with missing identity; `encrypt_file` with empty recipients. _(T-007, T-008)_
-- `test_gui.py`: Added 11 new test scenarios covering 401 auth rejection, CORS header
-  correctness, OPTIONS pre-flight, unknown endpoint 404, mocked restore success/failure,
-  status drift check, recovery rollback/discard edge cases, non-loopback warning, and
-  `cors_wildcard` flag. Coverage: 36% → 70%+. _(T-010)_
-- `test_services.py`: Added `test_parallel_planning_faster_than_sequential` benchmark
-  verifying parallel planning of 12 assets does not regress vs. sequential. _(T-019)_
+
+- **`test_recovery.py`**: Expanded from ~4 to 16 tests; `recovery.py` coverage 39% → 90%+.
+  New scenarios: rollback/discard with missing files, rollback failure propagation,
+  `list_backup_dirs` OSError, `BackupPruner.prune()` age-based, count-based, OSError,
+  dry-run, and active-transaction skip paths. _(T-005)_
+- **`test_transactions.py`**: Symlink snapshot, directory snapshot, symlink rollback,
+  directory rollback, atomic directory copy, `_write_journal` OSError silencing,
+  non-committed cleanup guard. Coverage: 74% → 90%+. _(T-006)_
+- **`test_security.py`**: `ZeroBuffer` happy-path, `memoryview`, empty, and type-error
+  tests; `AgeEncryptor.is_pyrage_available()` branches; `decrypt_file` with missing
+  identity; `encrypt_file` with empty recipients. _(T-007, T-008)_
+- **`test_gui.py`**: 11 new scenarios covering 401 auth rejection, CORS header correctness,
+  OPTIONS pre-flight, 404, mocked restore success/failure, status drift check,
+  recovery rollback/discard, non-loopback warning, and `cors_wildcard` flag.
+  Coverage: 36% → 70%+. _(T-010)_
+- **`test_services.py`**: Parallel planning benchmark verifying 12 assets do not regress
+  vs. sequential. _(T-019)_
+
+---
+
+## [1.0.0] — 2026-05-22
+
+> **Tag**: `v1.0.0` | **Branch**: `release/v1.0.0`
+
+Feature-complete first stable release.
+
+### Added
+
+- **Multi-target asset/secret support** (`target: str | list[str]`): A single asset or
+  secret can now fan out to multiple filesystem destinations. Sub-item resolution
+  automatically matches target basenames to source directory children. _(feat)_
+- **Workspace Management GUI** — full workspace list/add/remove/sync via the web dashboard.
+  _(feat)_
+- **`rv prune`** command — manual pruning of old transaction backup snapshots. _(feat)_
+- **Multi-profile `rv restore`** — multiple profiles or comma-separated values accepted
+  in a single invocation. _(feat)_
+- **Shell autocompletion** for profile names via `complete_profile` callback. _(feat)_
+- **Rich Panel output** — all CLI commands now use Rich Panels for structured, readable
+  terminal output. _(ux)_
+- **Parallel asset planning** — `RestoreService` uses a `ThreadPoolExecutor` (max 8
+  threads) to plan multiple assets concurrently. Controlled by `--parallel` /
+  `--sequential` flags. _(perf)_
+- **`--preview` flag** to `rv restore` — shows color-coded drift summary without applying
+  changes. _(ux)_
+- **Per-asset hooks** (`AssetHooks`) — `pre-restore` and `post-restore` hooks declared
+  directly on individual assets. Injects `RV_ASSET_ID`, `RV_ASSET_TARGET`, `RV_TX_ID`,
+  `RV_HOOK_STAGE` environment variables. _(feat)_
+- **Custom manifest paths** via `-m` / `--manifest` flag across all commands. Lockfile
+  path is dynamically derived from the manifest path. _(feat)_
+- **Multi-manifest scaffolding** via `rv init`: generates `manifest.yaml`,
+  `manifest-build.yaml`, and `manifest-restore.yaml`. _(feat)_
+- **`rv watch`** multi-profile support with `--manifest` flag. _(feat)_
+- **New package providers**: `cargo`, `dnf`, `nix`, `pacman`, `pip` — full coverage
+  of major package managers on Linux. _(feat)_
+- **Plugin sandbox hardening** — stack-frame import interception blocking `ctypes`,
+  `cffi`, `gc`, `importlib`; `_SandboxedSysModules` proxy prevents registry-bypass.
+  _(security)_
+- **`BackupPruner`** — count-based and age-based FIFO eviction of old backup snapshots.
+  _(feat)_
+- Integration test Dockerfiles: Ubuntu, Alpine, Arch Linux. _(ci)_
+
+### Changed
+
+- `rv init` now runs `git init` and stages/commits scaffolded files automatically. _(ux)_
+- `rv status` and `rv diff` accept multiple profiles and comma-separated values. _(ux)_
+- `rv doctor` accepts multiple profiles and comma-separated values. _(ux)_
+- `rv watch` debounce default changed to 5.0 seconds. _(config)_
+
+### Fixed
+
+- `rv status` — incorrect drift display for array targets. _(fix)_
+- GUI horizontal scrolling rendering artefact. _(fix)_
+- Symlink backup during `rv backup` — skips symlinks already pointing to the repo source
+  (avoids redundant copies). _(fix)_
 
 ---
 
 ## [0.9.0] — Internal Pre-release
 
 ### Added
+
 - Initial 14-step `RestoreService` with `TransactionContext`, atomic writes, and
   journal-based rollback.
 - Plugin sandbox (`sandbox_wrapper.py`) with filesystem, network, shell, and import
@@ -97,5 +176,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `manifest.yaml` v2 schema with `ProfileResolver`, `MachineOverridesConfig`,
   `BackupRetentionConfig`, per-asset hooks, and target arrays.
 
-[Unreleased]: https://github.com/your-org/revive/compare/v0.9.0...HEAD
-[0.9.0]: https://github.com/your-org/revive/releases/tag/v0.9.0
+---
+
+[Unreleased]: https://github.com/0xkhdr/revive/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/0xkhdr/revive/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/0xkhdr/revive/compare/v0.9.0...v1.0.0
+[0.9.0]: https://github.com/0xkhdr/revive/releases/tag/v0.9.0

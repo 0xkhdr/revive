@@ -1,5 +1,11 @@
 # Revive (`rv`) — Developer Environment Lifecycle Manager
 
+[![CI](https://github.com/0xkhdr/revive/actions/workflows/ci.yml/badge.svg)](https://github.com/0xkhdr/revive/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/revive-cli)](https://pypi.org/project/revive-cli/)
+[![Coverage](https://codecov.io/gh/0xkhdr/revive/branch/main/graph/badge.svg)](https://codecov.io/gh/0xkhdr/revive)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/pypi/pyversions/revive-cli)](https://pypi.org/project/revive-cli/)
+
 Revive (`rv`) is a transaction-safe developer environment manager. It synchronizes your dotfiles, application configs, encrypted secrets, system packages, and AI agent skills directly from your Git repository. To guarantee system stability, Revive operates on a strict transactional model: if any symlink, copy, package installation, or plugin hook fails, the entire run is rolled back, ensuring your machine is never left in a broken, half-configured state.
 
 ---
@@ -1165,6 +1171,16 @@ src/rv/
     ├── path.py          # Path canonicalization & traversal checks
     └── platform.py      # OS/distro detection
 ```
+
+### Documentation
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Module map, data flows, ADRs, tech stack |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Prerequisites, quality checks, PR workflow |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common errors, debug mode, FAQ |
+| [SECURITY.md](SECURITY.md) | Security model, sandbox, disclosure policy |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 
 ---
 

@@ -68,8 +68,10 @@ All filesystem mutations occur inside a 7-step `TransactionContext`:
 
 To report a vulnerability:
 
-1. Email the maintainers at the address listed in `pyproject.toml` under `[project.authors]`.
-2. Use the subject line: `[SECURITY] Revive — <brief description>`.
+1. **Preferred**: Use [GitHub Private Vulnerability Reporting](https://github.com/0xkhdr/revive/security/advisories/new)
+   for confidential, coordinated disclosure.
+2. **Alternatively**: Open a GitHub Security Advisory draft — this keeps the report private
+   until a fix is released.
 3. Include:
    - A description of the vulnerability and its impact.
    - Steps to reproduce.
@@ -84,7 +86,7 @@ We aim to acknowledge reports within **48 hours** and provide a fix or workaroun
 
 | Package | Role | Version Constraint |
 |---|---|---|
-| `pyrage` | Age encryption | `>=0.3.0` |
+| `pyrage` | Age encryption | `>=1.0.0` |
 | `pydantic` | Strict schema validation | `>=2.0.0,<3` |
 | `cryptography` | Underlying crypto for pyrage | Managed by pyrage |
 | `PyYAML` | YAML parsing | `>=6.0` |

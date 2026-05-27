@@ -12,6 +12,7 @@ Revive (`rv`) is a transaction-safe developer environment manager. It synchroniz
 
 ## Table of Contents
 
+- [Documentation](#-documentation)
 - [Installation](#-installation)
   - [1-Second Install (Linux/macOS)](#1-second-install-linuxmacos)
   - [Manual Install from Source](#manual-install-from-source)
@@ -51,6 +52,24 @@ Revive (`rv`) is a transaction-safe developer environment manager. It synchroniz
   - [Running Tests](#running-tests)
   - [Code Quality](#code-quality)
   - [Extending Revive](#extending-revive)
+
+---
+
+## 📚 Documentation
+
+| Guide | For | Time |
+|-------|-----|------|
+| **[Getting Started](docs/README.md)** | Navigation hub — find what you need | 2 min |
+| **[New Machine Setup](docs/new-machine.md)** | Setting up a fresh machine with `rv clone` | 5 min |
+| **[Manifest Reference](docs/manifest-reference.md)** | Complete `manifest.yaml` schema reference | Reference |
+| **[Plugin Authoring](docs/plugins.md)** | Writing custom pre/post-restore plugins | 15 min |
+| **[Security Guide](docs/security.md)** | Age encryption, secrets, identity management, CORS | 10 min |
+| **[Extending Revive](docs/extending.md)** | Adding package providers and asset handlers | 20 min |
+| **[Architecture](ARCHITECTURE.md)** | Module map, data flows, design decisions | 20 min |
+| **[Troubleshooting](TROUBLESHOOTING.md)** | Common errors and solutions | As-needed |
+| **[Contributing](CONTRIBUTING.md)** | Development setup, tests, PR workflow | 10 min |
+
+**Start here**: [docs/README.md](docs/README.md) — navigation hub with links to all guides organized by user type (end users, contributors, advanced).
 
 ---
 
@@ -171,6 +190,9 @@ assets: []      # Global pool of file assets
 secrets: []     # Global pool of encrypted secrets
 packages: {}    # Package manager declarations
 profiles: {}    # Named restore profiles
+backup_retention:
+  max_count: 10
+  max_age_days: 30
 machine_overrides:
   enabled: true
   path: "machine/{hostname}.yaml"
@@ -338,6 +360,23 @@ packages:
     - libssl-dev
     - docker.io
 ```
+
+### Backup Retention
+
+Control how long transaction backups are retained:
+
+```yaml
+backup_retention:
+  max_count: 10         # Maximum number of backup snapshots to keep
+  max_age_days: 30      # Maximum age of backups in days
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_count` | `int` | `10` | Maximum number of backup snapshots to retain. Older snapshots are pruned first by age. |
+| `max_age_days` | `int` | `30` | Maximum age of backups in days. Backups older than this are removed on `rv restore --prune`. |
+
+Each `rv restore` operation creates a snapshot of pre-existing state in `~/.config/rv/backups/<tx_id>/`. Use `rv prune` to manually clean up old backups or set retention limits in the manifest to auto-prune during restore.
 
 ---
 
@@ -636,6 +675,45 @@ rv recover --auto
 
 ---
 
+### `rv clone`
+
+Clone a remote dotfiles repository, register it as a workspace, and optionally restore a profile.
+
+```bash
+rv clone <git-url> [<dir>] [options]
+```
+
+| Argument/Flag | Description |
+|---------------|-------------|
+| `<git-url>` | **Required.** Git repository URL (e.g. `https://github.com/user/dotfiles.git` or `git@github.com:user/dotfiles.git`) |
+| `<dir>` | **Optional.** Directory to clone into (defaults to the repository name) |
+| `--restore`, `-r <profile>` | Profile to automatically restore after cloning. If omitted, only clones the repo without restoring. |
+| `--identity`, `-i <path>` | Age identity file to use during auto-restore (required if `--restore` is used and secrets are present) |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
+
+**Examples:**
+
+```bash
+# Clone only
+rv clone https://github.com/user/dotfiles ~/my-dotfiles
+
+# Clone and auto-restore base profile with secrets
+rv clone https://github.com/user/dotfiles ~/my-dotfiles \
+  --restore base \
+  --identity ~/.config/rv/identity.txt
+
+# Clone with custom manifest
+rv clone https://github.com/user/dotfiles \
+  --restore base \
+  --manifest manifest-build.yaml \
+  --identity ~/.config/rv/identity.txt
+```
+
+> [!TIP]
+> `rv clone` is the golden-path command for bootstrapping a new machine from a dotfiles repository. It combines `git clone` + workspace registration + automatic profile restore in a single step.
+
+---
+
 ### `rv prune`
 
 Prune old transaction backups under `~/.config/rv/backups/` manually or based on manifest retention settings.
@@ -647,7 +725,7 @@ rv prune [options]
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Preview deleted backup folders without removing them |
-| `--confirm` | Skip interactive confirmation prompts |
+| `--yes`, `-y` | Skip interactive confirmation prompts |
 
 **Examples:**
 
@@ -675,6 +753,7 @@ rv gui [options]
 | `--host`, `-h <addr>` | Host address to bind to (default: `127.0.0.1`) |
 | `--no-browser` | Do not auto-open the browser |
 | `--auth-token <string>` | Set or override the API access authentication token (defaults to an auto-generated secure 32-character random hex token) |
+| `--cors-wildcard` | Enable CORS for any origin (for development or LAN deployment) |
 | `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Example:**

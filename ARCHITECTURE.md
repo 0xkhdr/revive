@@ -380,6 +380,7 @@ sandbox_wrapper.py (child process):
 | `~/.config/rv/rv.lock` | Process lock (flock) |
 | `~/.config/rv/workspaces.yaml` | Global workspace registry |
 | `~/.config/rv/package-cache.json` | Package status cache (24h TTL) |
+| `~/.config/rv/audit.log` | Structured JSON audit log (all operations) |
 | `~/.config/rv/backups/<tx_id>/` | Per-transaction pre-mutation backup snapshot |
 | `<repo>/<manifest>.lock` | Last committed state + rendered_checksums |
 

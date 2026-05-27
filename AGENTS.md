@@ -8,7 +8,7 @@ Welcome! This document serves as a comprehensive technical guide for any AI Agen
 
 Revive is a developer environment lifecycle manager designed for fast, secure, and transactional restores. Its operations are governed by several key principles:
 
-1. **Unidirectional Sync (Primary Flow)**: State normally flows **from repository to system** (`repo → system`). Git commits are the source of truth; `rv restore` applies them locally.
+1. **Unidirectional Sync (Primary Flow)**: State normally flows **from repository to system** (`repo → system`). Git commits are the source of truth; `rv restore` applies them locally. Golden-path for new machines: `rv clone <repo>` combines git clone + workspace registration + optional auto-restore.
 2. **Bidirectional Capability**: `rv backup` provides an optional reverse operation (`system → repo`), capturing live system files and re-encrypting secrets back into the repository. This is the mechanism for capturing dotfile changes made directly on the system before committing.
 3. **Strict Transaction Boundaries**: All filesystem changes run inside a 7-step transaction context with complete journal-based rollback support. If *any* step fails (including post-apply package installs or plugin hooks), the system is reverted to its pre-existing state.
 4. **Defense-in-Depth Security**: Custom plugins run inside an isolated Python subprocess with stack-frame imports inspection, blocked modules proxying, resource limits, and network/shell interception. Secrets are decrypted directly to memory and zeroed out immediately after use.
@@ -100,8 +100,8 @@ To ensure system integrity, Revive enforces strict state models for execution an
 ### 3.1 Unidirectional Synchronization Invariant
 $$\text{Desired State} \equiv \text{Repository State} \equiv \text{Local System State}$$
 
-### 3.2 The 14-Step Restore Process
-All restore operations (`rv restore <profile>`) execute in this precise order:
+### 3.2 The 15-Step Restore Process
+All restore operations (`rv restore <profile>`) execute in this precise 15-step (Steps 0–14) order:
 
 ```mermaid
 graph TD
@@ -308,3 +308,23 @@ Any agent working on the Revive codebase must adhere to the following **non-nego
 *   **Static Type Checking**: `.venv/bin/mypy src/rv`
 *   **Code Quality Audit**: `.venv/bin/ruff check src/rv tests`
 *   **Security Vulnerability Scan**: `.venv/bin/bandit -r src/rv`
+
+---
+
+## See Also
+
+For complementary documentation:
+
+**For Developers & Agents:**
+- [CLAUDE.md](CLAUDE.md) — AI agent quick-start, code standards, debugging, known gotchas
+- [docs/extending.md](docs/extending.md) — Detailed guide for adding providers, handlers, plugins
+- [docs/plugins.md](docs/plugins.md) — Plugin authoring with examples and sandbox details
+- [CONTRIBUTING.md](CONTRIBUTING.md) — PR workflow, quality checks, setup
+
+**For End Users:**
+- [docs/README.md](docs/README.md) — Documentation hub organized by user type
+- [docs/new-machine.md](docs/new-machine.md) — Bootstrap guide for `rv clone` + restore
+- [docs/manifest-reference.md](docs/manifest-reference.md) — Complete manifest.yaml schema
+- [docs/security.md](docs/security.md) — Age encryption, identity management, CORS
+- [README.md](README.md) — Full CLI command reference
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common errors and solutions

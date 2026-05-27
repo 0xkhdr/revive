@@ -21,6 +21,8 @@ standards.
 
 ### Added
 
+- **`rv clone`** command — clone a remote dotfiles repository, register as a workspace,
+  and optionally auto-restore a profile in a single step. _(feat)_
 - **`SECURITY.md`** documenting the plugin sandbox model, secret handling, CORS policy,
   known limitations, and vulnerability disclosure procedure. _(T-014)_
 - **`.github/workflows/ci.yml`** — GitHub Actions CI pipeline:

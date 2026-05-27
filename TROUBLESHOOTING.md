@@ -314,7 +314,7 @@ rv prune --dry-run
 rv prune
 
 # Skip confirmation
-rv prune --confirm
+rv prune --yes
 ```
 
 ### Where are backup snapshots stored?
@@ -324,6 +324,58 @@ ls ~/.config/rv/backups/
 ```
 
 Each subdirectory is a transaction snapshot named by transaction ID (UUID).
+
+---
+
+## Clone Errors
+
+### `rv clone` fails with `git not found`
+
+Git is not installed or not in `$PATH`. Install it:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install git
+
+# macOS (Homebrew)
+brew install git
+
+# Arch Linux
+sudo pacman -S git
+```
+
+### `rv clone https://... --restore base` fails during auto-restore
+
+If the clone succeeds but the auto-restore fails:
+
+1. **Check the repo has a valid manifest:**
+   ```bash
+   rv doctor --manifest path/to/cloned/repo/manifest.yaml
+   ```
+
+2. **If secrets are present, verify the identity file:**
+   ```bash
+   ls -la ~/.config/rv/identity.txt
+   # If missing, generate one:
+   rv secret keygen --output ~/.config/rv/identity.txt
+   ```
+
+3. **Run the restore manually after cloning:**
+   ```bash
+   cd path/to/cloned/repo
+   rv restore base --identity ~/.config/rv/identity.txt
+   ```
+
+4. **Check for file conflicts** — if a dotfile already exists on the system, the restore may have been aborted. Review the pre-restore output for conflict prompts.
+
+### `workspace already registered` after cloning
+
+The clone succeeded and registered the workspace, but you're running `rv clone` again on the same path. This is expected behavior — the workspace is now registered and you can use `rv restore` directly:
+
+```bash
+cd my-dotfiles
+rv restore base --identity ~/.config/rv/identity.txt
+```
 
 ---
 
@@ -393,6 +445,31 @@ rv watch -p base --debounce 10.0   # 10 seconds
 
 Rendered template outputs cannot be trivially reversed to the original Jinja2 source.
 `rv backup` skips them by design. Edit the source template directly in the repository.
+
+---
+
+**Q: How do I bootstrap a new machine from my dotfiles repo?**
+
+Use `rv clone` — it combines git clone, workspace registration, and auto-restore in one step:
+
+```bash
+# With secrets
+rv clone https://github.com/user/dotfiles ~/dotfiles \
+  --restore base \
+  --identity ~/.config/rv/identity.txt
+
+# Without secrets (secrets are optional)
+rv clone https://github.com/user/dotfiles ~/dotfiles \
+  --restore base
+```
+
+If you prefer to clone manually first, you can restore separately:
+
+```bash
+git clone https://github.com/user/dotfiles ~/dotfiles
+cd ~/dotfiles
+rv restore base --identity ~/.config/rv/identity.txt
+```
 
 ---
 

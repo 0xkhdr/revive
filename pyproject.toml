@@ -11,12 +11,6 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "0xkhdr", email = "0xkhdr@gmail.com" }]
 
-[project.urls]
-Homepage = "https://github.com/0xkhdr/revive"
-Documentation = "https://github.com/0xkhdr/revive#readme"
-Changelog = "https://github.com/0xkhdr/revive/blob/main/CHANGELOG.md"
-Issues = "https://github.com/0xkhdr/revive/issues"
-
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -32,6 +26,12 @@ dependencies = [
     "jinja2>=3.0.0",
     "PyYAML>=6.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/0xkhdr/revive"
+Documentation = "https://github.com/0xkhdr/revive#readme"
+Changelog = "https://github.com/0xkhdr/revive/blob/main/CHANGELOG.md"
+Issues = "https://github.com/0xkhdr/revive/issues"
 
 [project.optional-dependencies]
 dev = [

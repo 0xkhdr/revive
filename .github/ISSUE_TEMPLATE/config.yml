@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/0xkhdr/revive
+    about: Read the full documentation, guides, and troubleshooting
+  - name: Discussions
+    url: https://github.com/0xkhdr/revive/discussions
+    about: Ask questions or share ideas
+  - name: Security Issue
+    url: https://github.com/0xkhdr/revive/security/advisories
+    about: Report a security vulnerability responsibly

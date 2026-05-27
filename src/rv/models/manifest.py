@@ -8,6 +8,25 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# Supported manifest schema versions. Raise UnsupportedSchemaVersionError for anything else.
+_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({1, 2})
+
+
+class UnsupportedSchemaVersionError(ValueError):
+    """Raised when a manifest declares a schema version that this rv release does not support.
+
+    Prevents silent data corruption when a future schema adds conflicting or renamed fields
+    that an older Pydantic model would accept as valid garbage.
+    """
+
+    def __init__(self, version: object) -> None:
+        supported = ", ".join(str(v) for v in sorted(_SUPPORTED_SCHEMA_VERSIONS))
+        super().__init__(
+            f"Unsupported manifest schema version: {version!r}. "
+            f"This rv release supports versions: {supported}. "
+            "Upgrade rv or downgrade your manifest to a supported version."
+        )
+
 
 class AssetType(StrEnum):
     """Supported asset orchestration types."""
@@ -16,6 +35,31 @@ class AssetType(StrEnum):
     COPY = "copy"
     TEMPLATE = "template"
     SECRET = "secret"
+
+
+class AssetHookCommand(BaseModel):
+    """Inline shell-command hook definition for a per-asset hook step."""
+
+    command: str = Field(..., description="Shell command to execute (passed as list via shlex.split)")
+
+
+class AssetHookPlugin(BaseModel):
+    """Plugin-reference hook definition for a per-asset hook step."""
+
+    plugin: str = Field(..., description="Plugin name to invoke from the repository plugins/ directory")
+
+
+class AssetHooks(BaseModel):
+    """Pre- and post-mutation hook definitions for a single asset."""
+
+    pre: list[AssetHookCommand | AssetHookPlugin] = Field(
+        default_factory=list,
+        description="Hooks to execute before the asset mutation is applied.",
+    )
+    post: list[AssetHookCommand | AssetHookPlugin] = Field(
+        default_factory=list,
+        description="Hooks to execute after the asset mutation is applied successfully.",
+    )
 
 
 class ConflictStrategy(StrEnum):
@@ -39,6 +83,7 @@ class Asset(BaseModel):
     conflict_strategy: ConflictStrategy = Field(ConflictStrategy.PROMPT, description="Conflict resolution strategy")
     encrypted: bool = Field(False, description="Whether the asset source is encrypted (always true for secret type)")
     template_vars: dict[str, Any] | None = Field(None, description="Key-value mapping for template interpolation")
+    hooks: AssetHooks = Field(default_factory=AssetHooks, description="Per-asset pre/post mutation hooks")
 
     @model_validator(mode="after")
     def validate_encrypted_secret(self) -> "Asset":
@@ -146,6 +191,11 @@ class Packages(BaseModel):
     apt: list[str] = Field(default_factory=list)
     flatpak: list[str] = Field(default_factory=list)
     snap: list[str] = Field(default_factory=list)
+    pacman: list[str] = Field(default_factory=list, description="Arch Linux packages via pacman")
+    dnf: list[str] = Field(default_factory=list, description="Fedora/RHEL packages via dnf")
+    nix: list[str] = Field(default_factory=list, description="Nix packages via nix-env (nixpkgs.<pkg>)")
+    cargo: list[str] = Field(default_factory=list, description="Rust tools via cargo install")
+    pip: list[str] = Field(default_factory=list, description="Python tools via pip install --user")
     docker: DockerConfig = Field(default_factory=lambda: DockerConfig())
     node: NodeConfig = Field(default_factory=lambda: NodeConfig())
 
@@ -157,6 +207,13 @@ class Profile(BaseModel):
     assets: list[str | Asset] = Field(default_factory=list, description="Assets to restore (by ID or inline)")
     secrets: list[str | Secret] = Field(default_factory=list, description="Secrets to restore (by ID or inline)")
     packages: list[str] = Field(default_factory=list, description="Top-level package groups referenced by this profile")
+
+
+class BackupRetentionConfig(BaseModel):
+    """Controls automatic cleanup of old transaction backup snapshots."""
+
+    max_count: int = Field(default=10, ge=1, description="Keep at most N backup snapshots (FIFO eviction)")
+    max_age_days: int = Field(default=30, ge=1, description="Delete backup snapshots older than N days")
 
 
 class MachineOverridesConfig(BaseModel):
@@ -177,12 +234,21 @@ class Manifest(BaseModel):
     packages: Packages = Field(default_factory=lambda: Packages(), description="Global package definitions")
     profiles: dict[str, Profile] = Field(default_factory=dict, description="Named deployment profiles")
     machine_overrides: MachineOverridesConfig = Field(default_factory=lambda: MachineOverridesConfig())
+    backup_retention: BackupRetentionConfig = Field(
+        default_factory=lambda: BackupRetentionConfig(),
+        description="Automatic backup snapshot pruning configuration.",
+    )
 
     @field_validator("version")
     @classmethod
     def validate_schema_version(cls, v: int) -> int:
-        """Validate schema version."""
-        if v not in (1, 2):
-            # We warn on schema versions we don't fully support but handle
-            pass
+        """Reject manifests that declare an unsupported schema version.
+
+        This guard runs *inside* Pydantic model_validate(), which is called
+        only after ManifestLoader.load() performs the raw-version pre-check.
+        The double-guard ensures correctness even when Manifest is constructed
+        directly in tests or other code paths.
+        """
+        if v not in _SUPPORTED_SCHEMA_VERSIONS:
+            raise UnsupportedSchemaVersionError(v)
         return v

@@ -1,11 +1,18 @@
 # Revive (`rv`) — Developer Environment Lifecycle Manager
 
+[![CI](https://github.com/0xkhdr/revive/actions/workflows/ci.yml/badge.svg)](https://github.com/0xkhdr/revive/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/revive-cli)](https://pypi.org/project/revive-cli/)
+[![Coverage](https://codecov.io/gh/0xkhdr/revive/branch/main/graph/badge.svg)](https://codecov.io/gh/0xkhdr/revive)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/pypi/pyversions/revive-cli)](https://pypi.org/project/revive-cli/)
+
 Revive (`rv`) is a transaction-safe developer environment manager. It synchronizes your dotfiles, application configs, encrypted secrets, system packages, and AI agent skills directly from your Git repository. To guarantee system stability, Revive operates on a strict transactional model: if any symlink, copy, package installation, or plugin hook fails, the entire run is rolled back, ensuring your machine is never left in a broken, half-configured state.
 
 ---
 
 ## Table of Contents
 
+- [Documentation](#-documentation)
 - [Installation](#-installation)
   - [1-Second Install (Linux/macOS)](#1-second-install-linuxmacos)
   - [Manual Install from Source](#manual-install-from-source)
@@ -45,6 +52,24 @@ Revive (`rv`) is a transaction-safe developer environment manager. It synchroniz
   - [Running Tests](#running-tests)
   - [Code Quality](#code-quality)
   - [Extending Revive](#extending-revive)
+
+---
+
+## 📚 Documentation
+
+| Guide | For | Time |
+|-------|-----|------|
+| **[Getting Started](docs/README.md)** | Navigation hub — find what you need | 2 min |
+| **[New Machine Setup](docs/new-machine.md)** | Setting up a fresh machine with `rv clone` | 5 min |
+| **[Manifest Reference](docs/manifest-reference.md)** | Complete `manifest.yaml` schema reference | Reference |
+| **[Plugin Authoring](docs/plugins.md)** | Writing custom pre/post-restore plugins | 15 min |
+| **[Security Guide](docs/security.md)** | Age encryption, secrets, identity management, CORS | 10 min |
+| **[Extending Revive](docs/extending.md)** | Adding package providers and asset handlers | 20 min |
+| **[Architecture](ARCHITECTURE.md)** | Module map, data flows, design decisions | 20 min |
+| **[Troubleshooting](TROUBLESHOOTING.md)** | Common errors and solutions | As-needed |
+| **[Contributing](CONTRIBUTING.md)** | Development setup, tests, PR workflow | 10 min |
+
+**Start here**: [docs/README.md](docs/README.md) — navigation hub with links to all guides organized by user type (end users, contributors, advanced).
 
 ---
 
@@ -165,6 +190,9 @@ assets: []      # Global pool of file assets
 secrets: []     # Global pool of encrypted secrets
 packages: {}    # Package manager declarations
 profiles: {}    # Named restore profiles
+backup_retention:
+  max_count: 10
+  max_age_days: 30
 machine_overrides:
   enabled: true
   path: "machine/{hostname}.yaml"
@@ -258,6 +286,17 @@ packages:
     - curl
     - git
     - build-essential
+  pacman:
+    - ripgrep
+    - starship
+  dnf:
+    - curl
+  nix:
+    - ripgrep
+  cargo:
+    - ripgrep
+  pip:
+    - black
   flatpak:
     - com.spotify.Client
   snap:
@@ -322,6 +361,23 @@ packages:
     - docker.io
 ```
 
+### Backup Retention
+
+Control how long transaction backups are retained:
+
+```yaml
+backup_retention:
+  max_count: 10         # Maximum number of backup snapshots to keep
+  max_age_days: 30      # Maximum age of backups in days
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_count` | `int` | `10` | Maximum number of backup snapshots to retain. Older snapshots are pruned first by age. |
+| `max_age_days` | `int` | `30` | Maximum age of backups in days. Backups older than this are removed on `rv restore --prune`. |
+
+Each `rv restore` operation creates a snapshot of pre-existing state in `~/.config/rv/backups/<tx_id>/`. Use `rv prune` to manually clean up old backups or set retention limits in the manifest to auto-prune during restore.
+
 ---
 
 ## 💻 CLI Command Reference
@@ -350,7 +406,9 @@ rv init
 ```
 
 Creates:
-- `manifest.yaml` — pre-populated template manifest
+- `manifest.yaml` — your default configuration manifest
+- `manifest-build.yaml` — your build/development configuration manifest
+- `manifest-restore.yaml` — your restore/system configuration manifest
 - `assets/` — folder for managed files and templates
 - `secrets/` — folder for encrypted `.age` files
 - `machine/` — folder for host-specific override YAMLs
@@ -363,7 +421,7 @@ Creates:
 Also registers the current directory as a workspace in `~/.config/rv/workspaces.yaml`.
 
 > [!NOTE]
-> Running `rv init` in a directory that already contains a `manifest.yaml` will exit with an error.
+> Running `rv init` in a directory that already contains manifest.yaml, manifest-build.yaml, or manifest-restore.yaml will exit with an error.
 
 ---
 
@@ -382,6 +440,11 @@ rv restore <profile> [<profile2> ...] [options]
 | `--dry-run` | Plan and validate without mutating the filesystem |
 | `--interactive` / `--non-interactive` | Toggle interactive prompting for file conflicts (default: interactive) |
 | `--no-plugins` | Skip all plugin hook execution |
+| `--force-packages` | Bypass and invalidate the package status cache to force package reinstalls |
+| `--preview` | Show a beautiful color-coded summary of system/repo differences without applying changes |
+| `--parallel` / `--sequential` | Controls parallel planning of assets (ThreadPoolExecutor max 8 threads, default: parallel) |
+| `--prune` | Perform automatic retention-based pruning of old backup snapshots |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Examples:**
 
@@ -430,6 +493,7 @@ rv status --profile <profile> [options]
 |------|-------------|
 | `--profile`, `-p <profile>` | **Required.** Profile(s) to evaluate. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file to also check secret drift |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Drift status values:**
 
@@ -465,6 +529,7 @@ rv diff --profile <profile> [options]
 | `--profile`, `-p <profile>` | **Required.** Profile name(s) to diff. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file to diff encrypted secrets |
 | `--unified`, `-u` | Display standard unified diff format instead of side-by-side |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Examples:**
 
@@ -493,6 +558,7 @@ rv doctor [options]
 |------|-------------|
 | `--profile`, `-p <profile>` | Optionally scope checks to specific profile(s). Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--json` | Output the diagnostic report in structured JSON |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 Checks include: manifest validity, tool availability (brew, apt, flatpak, snap, docker, age, nvm/fnm), permission safety, and asset source file existence.
 
@@ -521,6 +587,7 @@ rv watch --profile <profile> [options]
 | `--profile`, `-p <profile>` | **Required.** Profile(s) to monitor and auto-apply. Accepts multiple profile names or comma-separated values (can be provided multiple times, e.g. `-p base -p work` or `-p base,work`) |
 | `--identity`, `-i <path>` | Age identity file for decrypting secrets |
 | `--debounce`, `-d <seconds>` | Debounce delay before triggering restore (default: `5.0`) |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 Changes to `.git/` are automatically ignored. Restores are debounced to avoid rapid re-triggering during batch saves.
 
@@ -547,6 +614,7 @@ rv backup <profile> [<profile2> ...] [options]
 | `<profile>` | **Required.** Name(s) of the profile(s) to back up. Multiple profiles and comma-separated values accepted. |
 | `--identity`, `-i <path>` | Path to age identity file for re-encrypting secrets back into the repo. Defaults to `~/.config/rv/identity.txt`. |
 | `--dry-run` | Preview what would be copied/encrypted without writing to the repository. |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Behavior by asset type:**
 
@@ -607,6 +675,70 @@ rv recover --auto
 
 ---
 
+### `rv clone`
+
+Clone a remote dotfiles repository, register it as a workspace, and optionally restore a profile.
+
+```bash
+rv clone <git-url> [<dir>] [options]
+```
+
+| Argument/Flag | Description |
+|---------------|-------------|
+| `<git-url>` | **Required.** Git repository URL (e.g. `https://github.com/user/dotfiles.git` or `git@github.com:user/dotfiles.git`) |
+| `<dir>` | **Optional.** Directory to clone into (defaults to the repository name) |
+| `--restore`, `-r <profile>` | Profile to automatically restore after cloning. If omitted, only clones the repo without restoring. |
+| `--identity`, `-i <path>` | Age identity file to use during auto-restore (required if `--restore` is used and secrets are present) |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
+
+**Examples:**
+
+```bash
+# Clone only
+rv clone https://github.com/user/dotfiles ~/my-dotfiles
+
+# Clone and auto-restore base profile with secrets
+rv clone https://github.com/user/dotfiles ~/my-dotfiles \
+  --restore base \
+  --identity ~/.config/rv/identity.txt
+
+# Clone with custom manifest
+rv clone https://github.com/user/dotfiles \
+  --restore base \
+  --manifest manifest-build.yaml \
+  --identity ~/.config/rv/identity.txt
+```
+
+> [!TIP]
+> `rv clone` is the golden-path command for bootstrapping a new machine from a dotfiles repository. It combines `git clone` + workspace registration + automatic profile restore in a single step.
+
+---
+
+### `rv prune`
+
+Prune old transaction backups under `~/.config/rv/backups/` manually or based on manifest retention settings.
+
+```bash
+rv prune [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Preview deleted backup folders without removing them |
+| `--yes`, `-y` | Skip interactive confirmation prompts |
+
+**Examples:**
+
+```bash
+# Interactively prune old backups
+rv prune
+
+# Dry-run preview of what would be pruned
+rv prune --dry-run
+```
+
+---
+
 ### `rv gui`
 
 Launch the interactive Revive Web GUI dashboard locally.
@@ -620,6 +752,9 @@ rv gui [options]
 | `--port`, `-p <int>` | Port to run the server on (default: `8080`) |
 | `--host`, `-h <addr>` | Host address to bind to (default: `127.0.0.1`) |
 | `--no-browser` | Do not auto-open the browser |
+| `--auth-token <string>` | Set or override the API access authentication token (defaults to an auto-generated secure 32-character random hex token) |
+| `--cors-wildcard` | Enable CORS for any origin (for development or LAN deployment) |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
 
 **Example:**
 
@@ -724,8 +859,10 @@ rv secret rotate <file> --identity <path> --new-recipient <key> [--new-recipient
 | Argument/Flag | Description |
 |---------------|-------------|
 | `<file>` | **Required.** Path to the encrypted `.age` file to rotate |
-| `--identity`, `-i <path>` | **Required.** Current age identity to decrypt with |
+| `--identity`, `-i <path>` | Current age identity to decrypt with (optional if using `--from-plaintext`) |
 | `--new-recipient`, `-nr <key>` | **Required.** New public key recipient (repeat for multiple) |
+| `--from-plaintext <file>` | Rotate a secret starting directly from a plaintext source file (useful if the old private key is lost). Securely shreds/wipes the plaintext source file after successful encryption. |
+| `--confirm` | Required when rotating from a plaintext file to confirm secure shredding |
 
 ```bash
 rv secret rotate secrets/aws_creds.age \
@@ -777,6 +914,28 @@ rv workspace remove <name>
 
 ```bash
 rv workspace remove personal-dotfiles
+```
+
+#### `rv workspace sync`
+
+Pull and synchronize all registered workspaces sequentially. Exits with code 1 if any workspace fails.
+
+```bash
+rv workspace sync [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Preview pull and restore changes without making modifications |
+| `--profile <profile>` | Override the default profile to restore for all workspaces |
+| `--manifest`, `-m <path>` | Path to a custom manifest file (e.g. `manifest-build.yaml`) |
+
+```bash
+# Sync all registered workspaces
+rv workspace sync
+
+# Dry-run sync across all workspaces
+rv workspace sync --dry-run
 ```
 
 ---
@@ -1091,6 +1250,16 @@ src/rv/
     ├── path.py          # Path canonicalization & traversal checks
     └── platform.py      # OS/distro detection
 ```
+
+### Documentation
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Module map, data flows, ADRs, tech stack |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Prerequisites, quality checks, PR workflow |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common errors, debug mode, FAQ |
+| [SECURITY.md](SECURITY.md) | Security model, sandbox, disclosure policy |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
 
 ---
 

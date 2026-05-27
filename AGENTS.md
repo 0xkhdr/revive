@@ -8,10 +8,10 @@ Welcome! This document serves as a comprehensive technical guide for any AI Agen
 
 Revive is a developer environment lifecycle manager designed for fast, secure, and transactional restores. Its operations are governed by several key principles:
 
-1. **Unidirectional Sync (Primary Flow)**: State normally flows **from repository to system** (`repo → system`). Git commits are the source of truth; `rv restore` applies them locally.
+1. **Unidirectional Sync (Primary Flow)**: State normally flows **from repository to system** (`repo → system`). Git commits are the source of truth; `rv restore` applies them locally. Golden-path for new machines: `rv clone <repo>` combines git clone + workspace registration + optional auto-restore.
 2. **Bidirectional Capability**: `rv backup` provides an optional reverse operation (`system → repo`), capturing live system files and re-encrypting secrets back into the repository. This is the mechanism for capturing dotfile changes made directly on the system before committing.
 3. **Strict Transaction Boundaries**: All filesystem changes run inside a 7-step transaction context with complete journal-based rollback support. If *any* step fails (including post-apply package installs or plugin hooks), the system is reverted to its pre-existing state.
-4. **Defense-in-Depth Security**: Custom plugins run inside an isolated Python subprocess that restricts imports, blocks unauthorized filesystem paths, intercepts network/sockets, and prevents shell spawns. Secrets are decrypted directly to memory and zeroed out immediately after use.
+4. **Defense-in-Depth Security**: Custom plugins run inside an isolated Python subprocess with stack-frame imports inspection, blocked modules proxying, resource limits, and network/shell interception. Secrets are decrypted directly to memory and zeroed out immediately after use.
 5. **Platform Neutrality (Unix-First)**: Target platforms are macOS and Linux. Windows support is deferred post-1.0.
 
 ---
@@ -48,12 +48,17 @@ src/rv/
 │   └── builtin/       # First-party AI asset plugins (mcp-config, claude-prompts, python-skills)
 ├── providers/
 │   ├── __init__.py    # Provider registry
-│   ├── base.py        # BaseProvider with exponential backoff retry executor
+│   ├── base.py        # BaseProvider with exponential backoff retry executor and caching
 │   ├── apt.py         # APT (Debian/Ubuntu) package manager orchestration
 │   ├── brew.py        # Homebrew (macOS/Linux) orchestrations via Brewfiles
+│   ├── cargo.py       # Rust Cargo package manager installations
+│   ├── dnf.py         # DNF (Fedora/RHEL) package manager orchestration
 │   ├── docker.py      # Docker image pull and compose orchestration
 │   ├── flatpak.py     # Flatpak package orchestration
+│   ├── nix.py         # Nix package manager (nix-env / nix profiles)
 │   ├── node.py        # Node.js environments (nvm/fnm detection and .nvmrc matching)
+│   ├── pacman.py      # Pacman (Arch Linux) package manager orchestration
+│   ├── pip.py         # Python Pip package manager installations
 │   └── snap.py        # Snap package manager orchestration
 ├── security/
 │   ├── __init__.py
@@ -67,7 +72,7 @@ src/rv/
 │   ├── backup.py      # BackupService: system → repo sync (rv backup)
 │   ├── doctor.py      # System diagnostic engine (rv doctor)
 │   ├── handlers.py    # Asset type executors (Copy, Symlink, Template, Secret)
-│   ├── recovery.py    # Transaction recovery and journal replay engine
+│   ├── recovery.py    # Transaction recovery, journal replay engine, and backup snapshot pruner
 │   ├── restore.py     # 14-step unidirectional apply coordinator + ManifestLoader + ProfileResolver
 │   ├── status.py      # Drift analysis & colored diff generation
 │   └── workspace.py   # Workspace discovery and registration service
@@ -95,8 +100,8 @@ To ensure system integrity, Revive enforces strict state models for execution an
 ### 3.1 Unidirectional Synchronization Invariant
 $$\text{Desired State} \equiv \text{Repository State} \equiv \text{Local System State}$$
 
-### 3.2 The 14-Step Restore Process
-All restore operations (`rv restore <profile>`) execute in this precise order:
+### 3.2 The 15-Step Restore Process
+All restore operations (`rv restore <profile>`) execute in this precise 15-step (Steps 0–14) order:
 
 ```mermaid
 graph TD
@@ -106,7 +111,7 @@ graph TD
     S3 --> S4[Step 4 & 5: Dependency Verification & Secret Decryption]
     S4 --> SH1[Pre-Restore Hook Execution]
     SH1 --> S6[Step 6: Backup Snapshot]
-    S6 --> S7[Steps 7, 8, 9: Atomic Symlinks, Copies & Permissions]
+    S6 --> S7[Steps 7, 8, 9: Atomic Symlinks, Copies, Permissions & Per-Asset Hooks]
     S7 --> S10[Step 10: Native Package Orchestration]
     S10 --> SH2[Post-Restore Hook Execution]
     SH2 --> S12[Step 12: Post-Apply Verification]
@@ -122,13 +127,26 @@ Inside `TransactionContext`, file updates are mapped onto this cycle:
 4. **Execute**: Mutate the system atomically (write to temp file, chmod, and atomic rename; for directories, executes recursive copytree atomically using temporary sibling folders).
 5. **Verify**: Run checksum and POSIX permission comparisons to guarantee success.
 6. **Commit**: Mark journal as `committed` and update `manifest.lock`.
-7. **Cleanup**: Wipe backup snapshots and active journals.
+7. **Cleanup**: Wipe backup snapshots and active journals. (Also triggers automatic backup snapshot pruning based on `backup_retention` manifest configurations like `max_count` and `max_age_days` to prevent disk bloat, ensuring active/incomplete transaction journals are never pruned).
 
 ### 3.4 Target Arrays & Recursive Directories
 Revive natively supports managing complex folder hierarchies and multi-destination workflows under a single asset ID:
 *   **Target Arrays (`target: str | list[str]`)**: Both `Asset` and `Secret` models accept single-string target paths or lists of target paths. The orchestration system automatically interpolates environment variables and processes all targets in the list safely.
 *   **Recursive Directory Synchronization**: When a source is a directory, the `copy` handler performs atomic directory copying and transactional tracking (including full recursive snapshot backup and directory rollback).
 *   **Automated Sub-Item Resolution**: If the source path is a directory and the target is a list, Revive automatically matches each target path's basename with the corresponding file/folder in the source directory, copying only that specific sub-item to its target destination.
+
+### 3.5 Per-Asset Hooks & Template Hashing
+Revive supports fine-grained automation via asset-level pre-restore and post-restore hooks:
+*   **Per-Asset Hooks (`AssetHooks`)**: Declared directly on individual assets, supporting either raw shell command lists or custom plugins. These hooks run during step 9. They inject environmental variables like `RV_ASSET_ID`, `RV_ASSET_TARGET`, `RV_TX_ID`, and `RV_HOOK_STAGE`. A failed hook command (non-zero exit) raises `AssetHandlerError` and triggers transaction rollback.
+*   **Lockfile Hashing for Templates**: Successful Jinja template renders have their output SHA-256 hashes recorded inside `manifest.lock` in the `rendered_checksums` field, allowing downstream drift checks to detect rendering differences.
+
+### 3.6 Custom Manifests & Dynamic Lockfile Resolution
+Revive allows users to separate configurations (e.g., `manifest-build.yaml` for development, `manifest-restore.yaml` for production) by passing a custom manifest path via the `-m` or `--manifest` option.
+*   **Dynamic Lockfiles**: Lockfile paths are dynamically derived from the active manifest path. If the manifest path is `/path/to/manifest-custom.yaml`, the corresponding lockfile will be resolved to `/path/to/manifest-custom.lock`. This prevents different manifests from overwriting each other's lock/sync states.
+*   **Init Scaffolding**: The `rv init` command automatically scaffolds three distinct manifests to support standard workflows:
+    1.  `manifest.yaml`: The default manifest.
+    2.  `manifest-build.yaml`: Intended for build-time/development environments.
+    3.  `manifest-restore.yaml`: Intended for runtime/production restore environments.
 
 ---
 
@@ -139,8 +157,10 @@ Revive plugins are highly sandboxed. They are executed via a custom wrapper:
 
 The `sandbox_wrapper` patches critical builtins and libraries in-memory:
 *   **Filesystem Restrictions**: Overrides `builtins.open` and critical `os` operations (`os.remove`, `os.unlink`, `os.mkdir`, etc.). Filesystem access is strictly gated to the plugin source folder, the repository root, the system temp directory, and transaction targets.
+*   **Advanced Import Interception**: Uses stack-frame inspection (`_get_importing_frame()`) to block escape attempts via `ctypes`, `cffi`, `gc`, and `importlib` during import time. It traces import chains to identify origin scripts and proxies `sys.modules` via `_SandboxedSysModules` dictionary subclass to prevent registry-bypassing lookups.
 *   **Network Restriction**: If `permissions.network` is `false`, `socket.socket` is patched to raise `PermissionError`.
 *   **Shell Restriction**: If `permissions.shell` is `false`, `subprocess.Popen`, `subprocess.run`, `os.system`, `os.popen`, and `os.spawn*` are patched to raise `PermissionError`.
+*   **Volatile Resource & Process Limits**: Implements POSIX `resource.setrlimit` limits (2 GiB memory, 310s CPU limit) and intercepts standard exit vectors (`os._exit`) to force clean failure signals instead of parent-crashing exits.
 *   **Execution Timeouts**: Subprocesses are governed by a mandatory timeout (default `30` seconds, configurable up to `300` seconds).
 
 ---
@@ -185,6 +205,11 @@ class MyManagerProvider(BaseProvider):
 ```
 
 Then, register the new provider in the `RestoreService.restore` flow inside `src/rv/services/restore.py` and the `DoctorService` inside `src/rv/services/doctor.py`.
+
+### 5.2 Package Status Cache
+To ensure high-performance, idempotent package synchronization, package status caching is utilized:
+*   **Status Caching**: All providers must utilize `self.filter_missing(packages)` or query/populate `PackageCache` (located at `~/.config/rv/package-cache.json` with a default 24h TTL).
+*   **Bypassing Cache**: When `--force-packages` is passed, `use_cache=False` is sent to all providers to bypass and invalidate cached package states.
 
 ### 5.3 Extending BackupService
 
@@ -283,3 +308,23 @@ Any agent working on the Revive codebase must adhere to the following **non-nego
 *   **Static Type Checking**: `.venv/bin/mypy src/rv`
 *   **Code Quality Audit**: `.venv/bin/ruff check src/rv tests`
 *   **Security Vulnerability Scan**: `.venv/bin/bandit -r src/rv`
+
+---
+
+## See Also
+
+For complementary documentation:
+
+**For Developers & Agents:**
+- [CLAUDE.md](CLAUDE.md) — AI agent quick-start, code standards, debugging, known gotchas
+- [docs/extending.md](docs/extending.md) — Detailed guide for adding providers, handlers, plugins
+- [docs/plugins.md](docs/plugins.md) — Plugin authoring with examples and sandbox details
+- [CONTRIBUTING.md](CONTRIBUTING.md) — PR workflow, quality checks, setup
+
+**For End Users:**
+- [docs/README.md](docs/README.md) — Documentation hub organized by user type
+- [docs/new-machine.md](docs/new-machine.md) — Bootstrap guide for `rv clone` + restore
+- [docs/manifest-reference.md](docs/manifest-reference.md) — Complete manifest.yaml schema
+- [docs/security.md](docs/security.md) — Age encryption, identity management, CORS
+- [README.md](README.md) — Full CLI command reference
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common errors and solutions

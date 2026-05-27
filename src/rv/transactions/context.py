@@ -42,6 +42,10 @@ class TransactionContext:
         # Track registered operations before execution
         self.planned_operations: list[dict[str, Any]] = []
 
+        # SHA256 checksums of rendered template outputs keyed by asset ID
+        # Populated by AssetHandler._handle_template(); written to lockfile at step 13
+        self.rendered_checksums: dict[str, str] = {}
+
     def plan_operation(self, op_type: str, target: str, source_data: Any | None = None, **kwargs: Any) -> None:
         """Registers a filesystem operation to be executed in this transaction.
 
@@ -237,7 +241,7 @@ class TransactionContext:
                 if op_type == "delete":
                     has_subsequent_creation = any(
                         other_op["target"] == target and other_op["op_type"] in ("copy", "symlink")
-                        for other_op in self.planned_operations[idx + 1:]
+                        for other_op in self.planned_operations[idx + 1 :]
                     )
                     if not has_subsequent_creation and os.path.exists(target):
                         raise RuntimeError(f"Verification failed: Deleted target still exists at {target}")

@@ -4,21 +4,29 @@ import hashlib
 import logging
 import os
 import socket
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
 from rv.logging.audit import AuditLogger
-from rv.models.manifest import Asset, Manifest, Secret
+from rv.models.manifest import Asset, Manifest, Secret, UnsupportedSchemaVersionError
 from rv.models.transaction import Lockfile, LockfileEntry
 from rv.providers.apt import AptProvider
 from rv.providers.brew import BrewProvider
+from rv.providers.cargo import CargoProvider
+from rv.providers.dnf import DnfProvider
 from rv.providers.docker import DockerProvider
 from rv.providers.flatpak import FlatpakProvider
+from rv.providers.nix import NixProvider
 from rv.providers.node import NodeProvider
+from rv.providers.pacman import PacmanProvider
+from rv.providers.pip import PipProvider
 from rv.providers.snap import SnapProvider
 from rv.security.scrubber import SecretScrubber
 from rv.services.handlers import AssetHandler
+from rv.services.recovery import BackupPruner
 from rv.transactions.atomic import AtomicWrite
 from rv.transactions.context import TransactionContext
 from rv.transactions.lock import ProcessLock
@@ -53,6 +61,13 @@ class ManifestLoader:
         if not isinstance(raw_data, dict):
             raise ValueError("Manifest content must be a dictionary")
 
+        # S-008: Pre-check schema version before Pydantic validation to emit
+        # a clear error instead of a confusing ValidationError when an
+        # unsupported future version is encountered.
+        raw_version = raw_data.get("version")
+        if raw_version not in (1, 2):
+            raise UnsupportedSchemaVersionError(raw_version)
+
         try:
             return Manifest.model_validate(raw_data)
         except ValidationError as e:
@@ -70,6 +85,11 @@ class ResolvedProfile:
             "apt": [],
             "flatpak": [],
             "snap": [],
+            "pacman": [],
+            "dnf": [],
+            "nix": [],
+            "cargo": [],
+            "pip": [],
         }
         self.docker_images: list[str] = []
         self.node_config: dict[str, str | None] = {"version_file": None, "version": None}
@@ -190,6 +210,16 @@ class ProfileResolver:
                 resolved.packages["flatpak"].extend(manifest.packages.flatpak)
             elif pkg_provider == "snap":
                 resolved.packages["snap"].extend(manifest.packages.snap)
+            elif pkg_provider == "pacman":
+                resolved.packages["pacman"].extend(manifest.packages.pacman)
+            elif pkg_provider == "dnf":
+                resolved.packages["dnf"].extend(manifest.packages.dnf)
+            elif pkg_provider == "nix":
+                resolved.packages["nix"].extend(manifest.packages.nix)
+            elif pkg_provider == "cargo":
+                resolved.packages["cargo"].extend(manifest.packages.cargo)
+            elif pkg_provider == "pip":
+                resolved.packages["pip"].extend(manifest.packages.pip)
             elif pkg_provider == "docker":
                 resolved.docker_images.extend(manifest.packages.docker.images)
             elif pkg_provider == "node":
@@ -230,6 +260,36 @@ class RestoreService:
         return hasher.hexdigest()
 
     @classmethod
+    def _plan_one_asset(
+        cls,
+        asset: Asset | Secret,
+        repo_dir: str,
+        identity_path: str | None,
+        interactive: bool,
+    ) -> tuple[str, bool, dict[str, str], list[dict[str, Any]]]:
+        """Plans a single asset using a scratch TransactionContext.
+
+        Thread-safe: creates its own TransactionContext so no shared state is mutated.
+        Results (planned_operations, rendered_checksums) are returned as plain data
+        and merged into the main TransactionContext on the calling thread.
+
+        Args:
+            asset: Asset or Secret to plan.
+            repo_dir: Canonical repository path.
+            identity_path: Optional age identity file path.
+            interactive: Whether to prompt on conflicts.
+
+        Returns:
+            Tuple of (asset_id, was_planned, rendered_checksums_dict, planned_operations_list).
+        """
+        scratch = TransactionContext()
+        try:
+            planned = AssetHandler.handle(asset, repo_dir, scratch, identity_path, interactive)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to plan asset '{asset.id}': {exc}") from exc
+        return asset.id, planned, dict(scratch.rendered_checksums), list(scratch.planned_operations)
+
+    @classmethod
     def restore(
         cls,
         repo_dir: str,
@@ -238,6 +298,9 @@ class RestoreService:
         interactive: bool = False,
         dry_run: bool = False,
         no_plugins: bool = False,
+        parallel: bool = True,
+        force_packages: bool = False,
+        manifest_path: str | None = None,
     ) -> str:
         """Runs the entire restore lifecycle under flock process protection.
 
@@ -247,13 +310,21 @@ class RestoreService:
             identity_path: Optional path to age identity file.
             interactive: Whether to prompt on conflicts.
             dry_run: If True, plans and validates without modifying filesystem.
+            no_plugins: If True, skips plugin execution.
+            parallel: Whether to plan assets in parallel.
+            force_packages: Whether to ignore package caching.
+            manifest_path: Optional path to a custom manifest file.
 
         Returns:
             The transaction ID of the executed context.
         """
         # Ensure we canonicalize the repository path
         repo_dir = os.path.abspath(repo_dir)
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        if manifest_path is None:
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        else:
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
 
         # Step 0: Acquire process lock (flock-based serialization)
         lock_path = os.path.expanduser("~/.config/rv/rv.lock")
@@ -261,7 +332,7 @@ class RestoreService:
         logger.info(f"Acquiring revive process lock at {lock_path}...")
         with ProcessLock(lock_path, blocking=False):
             # Step 1: Manifest Validation
-            logger.info("Step 1/14: Loading and validating manifest.yaml...")
+            logger.info(f"Step 1/14: Loading and validating {os.path.basename(manifest_path)}...")
             manifest = ManifestLoader.load(manifest_path)
 
             # Step 2: Profile Resolution
@@ -299,7 +370,7 @@ class RestoreService:
                         # Merge packages
                         if "packages" in override_data:
                             pkg_overrides = override_data["packages"]
-                            for k in ["brew", "apt", "flatpak", "snap"]:
+                            for k in ["brew", "apt", "flatpak", "snap", "pacman", "dnf", "nix", "cargo", "pip"]:
                                 if k in pkg_overrides and isinstance(pkg_overrides[k], list):
                                     resolved.packages[k].extend(pkg_overrides[k])
                             if "docker" in pkg_overrides and "images" in pkg_overrides["docker"]:
@@ -332,23 +403,36 @@ class RestoreService:
             logger.info("Step 4/14 & 5/14: Validating dependencies and handling decryption...")
             tx_context = TransactionContext()
 
-            # Process assets and secrets into the transaction plan
-            skipped_assets = []
-            for asset in resolved.assets.values():
-                try:
-                    success = AssetHandler.handle(asset, repo_dir, tx_context, identity_path, interactive)
-                    if not success:
-                        skipped_assets.append(asset.id)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to plan asset '{asset.id}': {e}") from e
+            all_items: list[Asset | Secret] = list(resolved.assets.values()) + list(resolved.secrets.values())
+            skipped_assets: list[str] = []
 
-            for secret in resolved.secrets.values():
-                try:
-                    success = AssetHandler.handle(secret, repo_dir, tx_context, identity_path, interactive)
-                    if not success:
-                        skipped_assets.append(secret.id)
-                except Exception as e:
-                    raise RuntimeError(f"Failed to plan secret '{secret.id}': {e}") from e
+            if parallel and len(all_items) > 1:
+                logger.info(f"Planning {len(all_items)} assets in parallel (ThreadPoolExecutor)...")
+                # Collect futures preserving insertion order for determinism
+                futures: list[tuple[Future[tuple[str, bool, dict[str, str], list[dict[str, Any]]]], str]] = []
+                with ThreadPoolExecutor(max_workers=min(8, len(all_items))) as executor:
+                    for item in all_items:
+                        fut: Future[tuple[str, bool, dict[str, str], list[dict[str, Any]]]] = executor.submit(
+                            cls._plan_one_asset, item, repo_dir, identity_path, interactive
+                        )
+                        futures.append((fut, item.id))
+
+                # Merge results in original order (deterministic)
+                for fut, _item_id in futures:
+                    asset_id, planned, checksums, ops = fut.result()  # re-raises any exception
+                    if not planned:
+                        skipped_assets.append(asset_id)
+                    tx_context.rendered_checksums.update(checksums)
+                    tx_context.planned_operations.extend(ops)
+            else:
+                # Sequential fallback
+                for item in all_items:
+                    try:
+                        success = AssetHandler.handle(item, repo_dir, tx_context, identity_path, interactive)
+                        if not success:
+                            skipped_assets.append(item.id)
+                    except Exception as e:
+                        raise RuntimeError(f"Failed to plan asset '{item.id}': {e}") from e
 
             if skipped_assets:
                 logger.info(f"Skipped assets due to conflict strategy: {', '.join(skipped_assets)}")
@@ -379,15 +463,31 @@ class RestoreService:
 
             # Step 10: Package Orchestration
             logger.info("Step 10/14: Orchestrating package installations...")
+            use_cache = not force_packages
+            if force_packages:
+                logger.info("--force-packages active: bypassing idempotency cache for all providers.")
+                from rv.providers.base import PackageCache
+
+                PackageCache.invalidate_all()
             try:
                 if resolved.packages["brew"]:
-                    BrewProvider().install(resolved.packages["brew"], dry_run=dry_run)
+                    BrewProvider().install(resolved.packages["brew"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["apt"]:
-                    AptProvider().install(resolved.packages["apt"], dry_run=dry_run)
+                    AptProvider().install(resolved.packages["apt"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["flatpak"]:
-                    FlatpakProvider().install(resolved.packages["flatpak"], dry_run=dry_run)
+                    FlatpakProvider().install(resolved.packages["flatpak"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.packages["snap"]:
-                    SnapProvider().install(resolved.packages["snap"], dry_run=dry_run)
+                    SnapProvider().install(resolved.packages["snap"], dry_run=dry_run, use_cache=use_cache)
+                if resolved.packages["pacman"]:
+                    PacmanProvider().install(resolved.packages["pacman"], dry_run=dry_run, use_cache=use_cache)
+                if resolved.packages["dnf"]:
+                    DnfProvider().install(resolved.packages["dnf"], dry_run=dry_run, use_cache=use_cache)
+                if resolved.packages["nix"]:
+                    NixProvider().install(resolved.packages["nix"], dry_run=dry_run, use_cache=use_cache)
+                if resolved.packages["cargo"]:
+                    CargoProvider().install(resolved.packages["cargo"], dry_run=dry_run, use_cache=use_cache)
+                if resolved.packages["pip"]:
+                    PipProvider().install(resolved.packages["pip"], dry_run=dry_run, use_cache=use_cache)
                 if resolved.docker_images:
                     DockerProvider().install(resolved.docker_images, dry_run=dry_run)
                 if resolved.node_config["version"] or resolved.node_config["version_file"]:
@@ -418,8 +518,8 @@ class RestoreService:
                 raise RuntimeError(f"Restore failed during post-execution/package steps: {e}") from e
 
             # Step 13: Update manifest.lock SHA-256 map
-            logger.info("Step 13/14: Updating manifest.lock sync states...")
-            lockfile_path = os.path.join(repo_dir, "manifest.lock")
+            lockfile_path = os.path.splitext(manifest_path)[0] + ".lock"
+            logger.info(f"Step 13/14: Updating {os.path.basename(lockfile_path)} sync states...")
 
             # Load existing lockfile if it exists
             lockfile = Lockfile()
@@ -493,6 +593,8 @@ class RestoreService:
                     )
 
             # Write lockfile atomically
+            # Carry over any rendered template checksums collected by handlers
+            lockfile.rendered_checksums.update(tx_context.rendered_checksums)
             AtomicWrite.write(lockfile_path, lockfile.model_dump_json(indent=2).encode("utf-8"))
 
             # Step 14: Structured Audit Log Commit
@@ -509,6 +611,15 @@ class RestoreService:
 
             # Finalize cleanup
             tx_context.cleanup()
+
+            # Auto-prune backup snapshots per manifest retention policy
+            try:
+                BackupPruner.prune(
+                    max_count=manifest.backup_retention.max_count,
+                    max_age_days=manifest.backup_retention.max_age_days,
+                )
+            except Exception as prune_err:
+                logger.warning(f"Backup pruning post-restore raised an error (non-fatal): {prune_err}")
 
             logger.info(f"Restore transaction {tx_context.tx_id} committed successfully!")
             return tx_context.tx_id

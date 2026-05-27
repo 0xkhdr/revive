@@ -149,3 +149,7 @@ Thumbs.db
 
 # Agent Data Directory
 .antigravitycli/
+
+# Revive Lockfiles
+manifest.lock
+manifest-*.lock

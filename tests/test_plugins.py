@@ -143,7 +143,7 @@ import os
 import json
 
 try:
-    subprocess.run("echo hello", shell=True)
+    subprocess.run(["echo", "hello"])
     print(json.dumps({"status": "error", "message": "Subprocess run succeeded unexpectedly"}))
 except PermissionError as e:
     # Also verify os.system

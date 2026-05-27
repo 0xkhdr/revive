@@ -9,6 +9,14 @@ description = "Production-grade CLI tool for developer environment lifecycle man
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+authors = [{ name = "0xkhdr", email = "0xkhdr@gmail.com" }]
+
+[project.urls]
+Homepage = "https://github.com/0xkhdr/revive"
+Documentation = "https://github.com/0xkhdr/revive#readme"
+Changelog = "https://github.com/0xkhdr/revive/blob/main/CHANGELOG.md"
+Issues = "https://github.com/0xkhdr/revive/issues"
+
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -29,11 +37,13 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "pytest-timeout>=2.0.0",
     "mypy>=1.0.0",
     "ruff>=0.1.0",
     "bandit>=1.7.0",
     "pyinstaller>=6.0.0",
     "types-jinja2",
+    "types-PyYAML",
 ]
 
 [project.scripts]
@@ -71,3 +81,4 @@ exclude = ["tests/"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "--strict-markers"
+timeout = 60

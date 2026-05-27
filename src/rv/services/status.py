@@ -21,20 +21,31 @@ class StatusService:
     """Computes drift between expected repo state and actual system state."""
 
     @classmethod
-    def get_status(cls, repo_dir: str, profile_name: str, identity_path: str | None = None) -> dict[str, Any]:
+    def get_status(
+        cls,
+        repo_dir: str,
+        profile_name: str,
+        identity_path: str | None = None,
+        manifest_path: str | None = None,
+    ) -> dict[str, Any]:
         """Compares resolved profile assets with the current filesystem.
 
         Args:
             repo_dir: Absolute path to the source repository.
             profile_name: Deployment profile name.
             identity_path: Optional path to the age identity file.
+            manifest_path: Optional path to a custom manifest file.
 
         Returns:
             A dictionary describing the drift status of all assets.
         """
         repo_dir = os.path.abspath(repo_dir)
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
-        lockfile_path = os.path.join(repo_dir, "manifest.lock")
+        if manifest_path is None:
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        else:
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
+        lockfile_path = os.path.splitext(manifest_path)[0] + ".lock"
 
         # 1. Load manifest and resolve profile
         manifest = ManifestLoader.load(manifest_path)
@@ -289,7 +300,12 @@ class StatusService:
 
     @classmethod
     def get_contents_for_diff(
-        cls, repo_dir: str, profile_name: str, asset_id: str, identity_path: str | None = None
+        cls,
+        repo_dir: str,
+        profile_name: str,
+        asset_id: str,
+        identity_path: str | None = None,
+        manifest_path: str | None = None,
     ) -> tuple[str, str] | None:
         """Retrieves the expected and actual contents for calculating a diff.
 
@@ -298,12 +314,17 @@ class StatusService:
             profile_name: Deployment profile name.
             asset_id: The ID of the asset.
             identity_path: Optional path to the age identity file.
+            manifest_path: Optional path to a custom manifest file.
 
         Returns:
             A tuple of (expected_text, actual_text), or None if no drift or binary file.
         """
         repo_dir = os.path.abspath(repo_dir)
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        if manifest_path is None:
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        else:
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
 
         manifest = ManifestLoader.load(manifest_path)
         resolved = ProfileResolver.resolve(manifest, profile_name)
@@ -382,7 +403,14 @@ class StatusService:
         return expected_text, actual_text
 
     @classmethod
-    def get_diff(cls, repo_dir: str, profile_name: str, asset_id: str, identity_path: str | None = None) -> str | None:
+    def get_diff(
+        cls,
+        repo_dir: str,
+        profile_name: str,
+        asset_id: str,
+        identity_path: str | None = None,
+        manifest_path: str | None = None,
+    ) -> str | None:
         """Calculates a diff representation between expected source and system file.
 
         Args:
@@ -390,11 +418,14 @@ class StatusService:
             profile_name: Deployment profile name.
             asset_id: The ID of the asset to diff.
             identity_path: Optional path to the age identity file.
+            manifest_path: Optional path to a custom manifest file.
 
         Returns:
             A string diff, or None if no drift or binary file.
         """
-        contents = cls.get_contents_for_diff(repo_dir, profile_name, asset_id, identity_path)
+        contents = cls.get_contents_for_diff(
+            repo_dir, profile_name, asset_id, identity_path, manifest_path=manifest_path
+        )
         if not contents:
             return None
 
@@ -409,7 +440,11 @@ class StatusService:
             return expected_text
 
         repo_dir = os.path.abspath(repo_dir)
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        if manifest_path is None:
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        else:
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
         manifest = ManifestLoader.load(manifest_path)
         resolved = ProfileResolver.resolve(manifest, profile_name)
         asset = resolved.assets.get(asset_id) or resolved.secrets.get(asset_id)

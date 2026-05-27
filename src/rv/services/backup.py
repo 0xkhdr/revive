@@ -5,6 +5,8 @@ import os
 import shutil
 import socket
 
+import yaml
+
 from rv.logging.audit import AuditLogger
 from rv.models.manifest import Asset, AssetType, Secret
 from rv.security.encryptor import AgeEncryptor
@@ -59,6 +61,7 @@ class BackupService:
         profile_name: str,
         identity_path: str | None = None,
         dry_run: bool = False,
+        manifest_path: str | None = None,
     ) -> list[str]:
         """Synchronizes system files back into the repository based on the profile definition.
 
@@ -67,12 +70,17 @@ class BackupService:
             profile_name: Deployment profile name.
             identity_path: Optional path to the age identity file.
             dry_run: If True, previews operations without modifying the repository.
+            manifest_path: Optional path to a custom manifest file.
 
         Returns:
             A list of successfully backed up asset IDs.
         """
         repo_dir = os.path.abspath(repo_dir)
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        if manifest_path is None:
+            manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        else:
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
 
         logger.info(f"Loading manifest from {manifest_path}...")
         manifest = ManifestLoader.load(manifest_path)
@@ -87,10 +95,6 @@ class BackupService:
             override_path = os.path.join(repo_dir, override_rel_path)
 
             if os.path.exists(override_path):
-                import yaml
-
-                from rv.models.manifest import Asset, Secret
-
                 logger.info(f"Merging machine overrides from {override_path}...")
                 try:
                     with open(override_path, encoding="utf-8") as f:

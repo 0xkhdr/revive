@@ -14,21 +14,32 @@ class DockerProvider(BaseProvider):
     def __init__(self) -> None:
         super().__init__("docker")
 
-    def _is_image_local(self, image: str) -> bool:
-        """Checks if a docker image is available locally via docker image inspect."""
+    def is_installed(self, pkg: str) -> bool:
+        """Checks if a Docker image is available locally.
+
+        Args:
+            pkg: Docker image name (e.g. 'postgres:latest').
+
+        Returns:
+            True if image is present locally, False otherwise.
+        """
         try:
-            # docker image inspect <image> returns 0 if present, 1 if not.
-            res = subprocess.run(["docker", "image", "inspect", image], capture_output=True, check=False)
+            res = subprocess.run(["docker", "image", "inspect", pkg], capture_output=True, check=False)
             return res.returncode == 0
         except Exception:
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def _is_image_local(self, image: str) -> bool:
+        """Checks if a docker image is available locally via docker image inspect."""
+        return self.is_installed(image)
+
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Pulls missing Docker images.
 
         Args:
             packages: List of docker images to pull (e.g. 'postgres:latest').
             dry_run: Whether to simulate orchestration.
+            use_cache: Unused for Docker (image presence checked via local daemon). Kept for interface parity.
         """
         if not packages:
             return

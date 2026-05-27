@@ -38,3 +38,7 @@ class Lockfile(BaseModel):
     """Manifest lockfile structure maintaining deterministic state synchronization records."""
 
     entries: dict[str, LockfileEntry] = Field(default_factory=dict, description="Sync state keyed by asset/secret ID")
+    rendered_checksums: dict[str, str] = Field(
+        default_factory=dict,
+        description="SHA-256 checksums of rendered template outputs keyed by asset ID. Used for template drift detection.",
+    )

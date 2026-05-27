@@ -1,6 +1,7 @@
 """Main Typer CLI application for Revive (rv)."""
 
 import os
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -41,10 +42,24 @@ def _get_repo_dir() -> str:
 def complete_profile(ctx: typer.Context, incomplete: str) -> list[str]:
     """Provide shell autocompletion for profile names."""
     try:
+        import sys
+
         from rv.services.restore import ManifestLoader
 
         repo_dir = _get_repo_dir()
         manifest_path = os.path.join(repo_dir, "manifest.yaml")
+
+        # Parse command line args to see if a custom manifest path was passed
+        args = sys.argv
+        for i, arg in enumerate(args):
+            if arg in ("-m", "--manifest") and i + 1 < len(args):
+                custom_path = args[i + 1]
+                if not os.path.isabs(custom_path):
+                    manifest_path = os.path.join(repo_dir, custom_path)
+                else:
+                    manifest_path = custom_path
+                break
+
         if os.path.exists(manifest_path):
             manifest = ManifestLoader.load(manifest_path)
             return [name for name in manifest.profiles.keys() if name.startswith(incomplete)]
@@ -67,9 +82,14 @@ def init() -> None:
     """Scaffold a new revive repository in the current directory."""
     repo_dir = _get_repo_dir()
     manifest_path = os.path.join(repo_dir, "manifest.yaml")
+    manifest_build_path = os.path.join(repo_dir, "manifest-build.yaml")
+    manifest_restore_path = os.path.join(repo_dir, "manifest-restore.yaml")
 
-    if os.path.exists(manifest_path):
-        console.print(f"[bold red]Error:[/] A revive repository already exists at '{repo_dir}' (manifest.yaml exists).")
+    if os.path.exists(manifest_path) or os.path.exists(manifest_build_path) or os.path.exists(manifest_restore_path):
+        console.print(
+            f"[bold red]Error:[/] A revive repository already exists at '{repo_dir}' "
+            "(one of manifest.yaml, manifest-build.yaml, or manifest-restore.yaml exists)."
+        )
         raise typer.Exit(code=1)
 
     # Scaffold directories
@@ -111,6 +131,74 @@ profiles:
       - brew
 """
 
+    manifest_build_template = """# Revive Configuration Manifest (Build/Development Profile)
+version: 2
+
+assets:
+  - id: example_zshrc
+    type: symlink
+    source: assets/example_zshrc
+    target: ${USER_HOME}/.zshrc
+    permissions: "0644"
+    conflict_strategy: prompt
+
+secrets: []
+
+packages:
+  brew:
+    - git
+    - curl
+  apt:
+    - git
+    - curl
+  flatpak: []
+  snap: []
+  docker:
+    images: []
+  node:
+    version_file: .nvmrc
+
+profiles:
+  base:
+    assets:
+      - example_zshrc
+    secrets: []
+    packages:
+      - brew
+      - apt
+"""
+
+    manifest_restore_template = """# Revive Configuration Manifest (Restore/System Profile)
+version: 2
+
+assets:
+  - id: example_zshrc
+    type: symlink
+    source: assets/example_zshrc
+    target: ${USER_HOME}/.zshrc
+    permissions: "0644"
+    conflict_strategy: prompt
+
+secrets: []
+
+packages:
+  brew: []
+  apt: []
+  flatpak: []
+  snap: []
+  docker:
+    images: []
+  node:
+    version_file: .nvmrc
+
+profiles:
+  base:
+    assets:
+      - example_zshrc
+    secrets: []
+    packages: []
+"""
+
     gitignore_template = """# ==========================================
 # Revive Workspace Version Control Ignores
 # ==========================================
@@ -119,7 +207,7 @@ profiles:
 # ------------------------------------------
 # NEVER commit raw Age identity keys, local lockfiles, or transactional states.
 .rv.lock
-manifest.lock
+manifest*.lock
 identity.txt
 *.key
 keys/
@@ -190,6 +278,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv status --profile <profile_name>` or `rv status -p <profile_name>`
     *   **Options**:
         *   `-i`, `--identity <file>`: Age private identity key file to verify and check secret drift.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
     *   **Example**: `rv status -p base`
 
 *   **`rv restore`**
@@ -197,9 +286,14 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv restore <profile_name> [<profile_name2> ...]`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age private identity key file for decrypting secrets.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `--dry-run`: Plan and validate all transactions without mutating the system filesystem.
         *   `--non-interactive`: Disable interactive prompts for file conflicts (useful in automation/CI).
         *   `--no-plugins`: Skip executing any custom plugin hooks.
+        *   `--force-packages`: Bypass and invalidate the package status cache to force package reinstalls.
+        *   `--preview`: Render a beautiful color-coded summary comparing the repository against the live system without mutating any files.
+        *   `--parallel` / `--sequential`: Controls parallel planning of assets (ThreadPoolExecutor max 8 threads, default: parallel enabled).
+        *   `--prune`: Performs automatic retention-based pruning of old backup snapshots.
     *   **Example**: `rv restore base --dry-run`
 
 *   **`rv backup`**
@@ -207,6 +301,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv backup <profile_name> [<profile_name2> ...]`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age identity key to re-encrypt and store secrets.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `--dry-run`: Plan and validate backup operations without writing files to the repository.
     *   **Example**: `rv backup base`
 
@@ -215,6 +310,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv diff --profile <profile_name>` or `rv diff -p <profile_name>`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age identity key to decrypt and diff encrypted secrets.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `-u`, `--unified`: Display diff in standard unified diff format instead of side-by-side.
     *   **Example**: `rv diff -p base --unified`
 
@@ -227,6 +323,7 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv doctor`
     *   **Options**:
         *   `-p`, `--profile <profile>`: Optionally target checks for a specific profile's packages/dependencies.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `--json`: Output diagnostic reports in a structured JSON format.
     *   **Example**: `rv doctor -p base`
 
@@ -242,8 +339,17 @@ Use this dictionary to formulate precise CLI operations when asked to perform en
     *   **Syntax**: `rv watch --profile <profile_name>` or `rv watch -p <profile_name>`
     *   **Options**:
         *   `-i`, `--identity <file>`: Path to Age identity key for automatic secret decryption.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
         *   `-d`, `--debounce <seconds>`: Delay (default: 5.0s) before triggering the auto-restore transaction.
     *   **Example**: `rv watch -p base -d 2`
+
+*   **`rv prune`**
+    *   **Description**: Prune old transaction backups from `~/.config/rv/backups/` manually or based on manifest retention settings.
+    *   **Syntax**: `rv prune`
+    *   **Options**:
+        *   `--dry-run`: Preview deleted backup folders.
+        *   `--confirm`: Skip interactive confirmation prompt.
+    *   **Example**: `rv prune --dry-run`
 
 ---
 
@@ -278,9 +384,11 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
     *   **Description**: Re-encrypt a secret file with new recipient public keys.
     *   **Syntax**: `rv secret rotate <encrypted_file>`
     *   **Options**:
-        *   `-i`, `--identity <file>`: Current private identity key file to decrypt the existing secret.
+        *   `-i`, `--identity <file>`: Current private identity key file to decrypt the existing secret (optional if using `--from-plaintext`).
         *   `-nr`, `--new-recipient <pub_key>`: New recipient public key string (multiple allowed).
-    *   **Example**: `rv secret rotate secrets/secure.age -i ~/.config/rv/identity.txt -nr age1new...`
+        *   `--from-plaintext <file>`: Re-encrypt and rotate a secret starting directly from a plaintext source file (useful if the old private key is lost). Securely shreds/wipes the plaintext source file after successful encryption.
+        *   `--confirm`: Required when rotating directly from a plaintext file to confirm secure shredding.
+    *   **Example**: `rv secret rotate secrets/secure.age -nr age1new... --from-plaintext ~/.aws/credentials --confirm`
 
 ---
 
@@ -302,6 +410,15 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
     *   **Syntax**: `rv workspace remove <workspace_name>`
     *   **Example**: `rv workspace remove my-revive`
 
+*   **`rv workspace sync`**
+    *   **Description**: Pull and synchronize all registered Revive workspaces sequentially. Exits with a non-zero code if any workspace fails.
+    *   **Syntax**: `rv workspace sync`
+    *   **Options**:
+        *   `--dry-run`: Preview pull/restore across all workspaces without applying mutations.
+        *   `--profile <profile>`: Override profile name to restore.
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
+    *   **Example**: `rv workspace sync`
+
 *   **`rv self-install`**
     *   **Description**: Install the `rv` global launcher wrapper to `~/.local/bin/rv` pointing to the current virtual environment/interpreter.
     *   **Syntax**: `rv self-install`
@@ -322,6 +439,8 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
         *   `-p`, `--port <port>`: Change the web server port (default: 8080).
         *   `-h`, `--host <host>`: Bind to custom host address (default: 127.0.0.1).
         *   `--no-browser`: Start the server without opening the web browser automatically.
+        *   `--auth-token <token>`: Set or override the API access authentication token (defaults to an auto-generated secure 32-character random hex token if not supplied).
+        *   `-m`, `--manifest <file>`: Path to a custom manifest file (e.g. `manifest-build.yaml`), dynamically deriving its lockfile (e.g. `manifest-build.lock`).
 
 ---
 
@@ -331,6 +450,9 @@ Revive utilizes Age cryptography for managing credentials without leaking them i
 2. **Conflict Resolution**: If files on the local system have drifted and conflict with repository assets, `rv restore` will prompt you by default. Set conflict strategies inside `manifest.yaml` (options: `prompt`, `overwrite`, or `keep`).
 3. **Custom Hooks & Plugins**: Use post-apply hooks or plugins to trigger environment-specific scripts. If `python-skills` is active, custom AI agent skills under the `.agents/skills/` directory of this repository will be synchronized automatically to `~/.config/rv/skills` upon restore.
 4. **Environment Variables**: Revive supports variable interpolation (e.g., `${USER_HOME}`) defined in local `.env` files. Do not commit sensitive values to `.env`; rely on `rv secret` instead.
+5. **Package Cache**: Package manager installations are cached locally at `~/.config/rv/package-cache.json` with a 24-hour TTL to avoid repetitive system queries. Invalidate via `rv restore --force-packages`.
+6. **Per-Asset Hooks**: Individual assets can define pre-restore/post-restore commands or plugin hooks in `manifest.yaml` for granular, in-transaction automation. A non-zero hook exit code triggers transaction rollback.
+
 """
 
     skills_md_template = """---
@@ -436,6 +558,12 @@ USER_HOME="~"
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(manifest_template)
 
+    with open(manifest_build_path, "w", encoding="utf-8") as f:
+        f.write(manifest_build_template)
+
+    with open(manifest_restore_path, "w", encoding="utf-8") as f:
+        f.write(manifest_restore_template)
+
     with open(os.path.join(repo_dir, ".gitignore"), "w", encoding="utf-8") as f:
         f.write(gitignore_template)
 
@@ -488,7 +616,10 @@ USER_HOME="~"
             "  - [cyan]machine/[/] (host-specific overrides)\n"
             "  - [cyan].agents/skills/[/] (integrated agent skills)\n\n"
             "[bold white]Files created:[/]\n"
-            "  - [cyan]manifest.yaml[/] (your global config manifest)\n"
+            "[bold white]Files created:[/]\n"
+            "  - [cyan]manifest.yaml[/] (your default configuration manifest)\n"
+            "  - [cyan]manifest-build.yaml[/] (your build/development configuration manifest)\n"
+            "  - [cyan]manifest-restore.yaml[/] (your restore/system configuration manifest)\n"
             "  - [cyan]assets/example_zshrc[/] (example zshrc asset)\n"
             "  - [cyan].gitignore[/] (repository ignores)\n"
             "  - [cyan]AGENTS.md[/] (instructions for AI agents)\n"
@@ -496,7 +627,8 @@ USER_HOME="~"
             "  - [cyan]README.md[/] (project documentation)\n"
             "  - [cyan].env[/] and [cyan].env.example[/] (environment variables)\n"
             f"{git_msg}\n\n"
-            "Ready to manage! Try running [bold yellow]rv status --profile base[/]",
+            "Ready to manage! Try running [bold yellow]rv status --profile base[/]\n"
+            "To target a specific manifest, run: [bold yellow]rv status -p base -m manifest-build.yaml[/]",
             title="Revive Initialized",
             border_style="green",
         )
@@ -514,12 +646,27 @@ def restore(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan and validate operations without mutating the filesystem."
     ),
+    preview: bool = typer.Option(
+        False, "--preview", help="Show drift analysis between repository and system state without making any changes."
+    ),
     interactive: bool = typer.Option(
         True, "--interactive/--non-interactive", help="Toggle interactive prompting for file conflicts."
     ),
     no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip executing any plugin hooks during restore."),
+    prune_backups: bool = typer.Option(False, "--prune", help="Prune old backup snapshots after a successful restore."),
+    parallel: bool = typer.Option(
+        True,
+        "--parallel/--sequential",
+        help="Plan assets in parallel (default) or sequentially (use --sequential to debug race conditions).",
+    ),
+    force_packages: bool = typer.Option(
+        False,
+        "--force-packages",
+        help="Bypass the package idempotency cache and re-query all providers. Invalidates cache before installing.",
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
-    """Synchronize the local environment state to match the repository profile (repo -> system)."""
+    """Synchronize the local environment state to match the repository profile (repo → system)."""
     repo_dir = _get_repo_dir()
 
     profile_list = []
@@ -534,6 +681,41 @@ def restore(
 
     profile_str = ",".join(profile_list)
 
+    # --preview: Show drift analysis without restoring
+    if preview:
+        try:
+            from rv.services.status import StatusService
+
+            status_result = StatusService.get_status(
+                repo_dir=repo_dir, profile_name=profile_str, identity_path=identity, manifest_path=manifest
+            )
+            assets_status: dict[str, dict[str, Any]] = status_result.get("assets", {})
+            if not status_result.get("drifted"):
+                console.print(
+                    Panel(
+                        "[green]✓ System is in sync with repository.[/]",
+                        title=f"Preview: {profile_str}",
+                        border_style="green",
+                    )
+                )
+                return
+            table = Table(title=f"Preview: Changes for profile '{profile_str}'", expand=True)
+            table.add_column("Asset", style="cyan", width=25)
+            table.add_column("Target", style="white")
+            table.add_column("Status", style="yellow")
+            for asset_id, asset_info in assets_status.items():
+                target = (
+                    ", ".join(asset_info.get("targets", []))
+                    if isinstance(asset_info.get("targets"), list)
+                    else str(asset_info.get("target", "-"))
+                )
+                table.add_row(asset_id, target, str(asset_info.get("status", "-")))
+            console.print(table)
+        except Exception as e:
+            console.print(f"[bold red]Preview failed:[/] {e}")
+            raise typer.Exit(code=1)
+        return
+
     try:
         tx_id = RestoreService.restore(
             repo_dir=repo_dir,
@@ -542,15 +724,20 @@ def restore(
             interactive=interactive,
             dry_run=dry_run,
             no_plugins=no_plugins,
+            parallel=parallel,
+            force_packages=force_packages,
+            manifest_path=manifest,
         )
 
         # Resolve the profile to summarize what was restored if manifest exists
-        manifest_path = os.path.join(repo_dir, "manifest.yaml")
+        manifest_path = manifest or os.path.join(repo_dir, "manifest.yaml")
+        if not os.path.isabs(manifest_path):
+            manifest_path = os.path.join(repo_dir, manifest_path)
         if os.path.exists(manifest_path):
             from rv.services.restore import ManifestLoader, ProfileResolver
 
-            manifest = ManifestLoader.load(manifest_path)
-            resolved = ProfileResolver.resolve(manifest, profile_str)
+            manifest_obj = ManifestLoader.load(manifest_path)
+            resolved = ProfileResolver.resolve(manifest_obj, profile_str)
 
             # Build list of assets restored
             assets_summary = []
@@ -627,6 +814,26 @@ def restore(
         )
         raise typer.Exit(code=2)
 
+    # Post-restore prune if requested
+    if prune_backups and not dry_run:
+        try:
+            from rv.services.recovery import BackupPruner
+            from rv.services.restore import ManifestLoader
+
+            manifest_path = manifest or os.path.join(repo_dir, "manifest.yaml")
+            if not os.path.isabs(manifest_path):
+                manifest_path = os.path.join(repo_dir, manifest_path)
+            if os.path.exists(manifest_path):
+                manifest_obj = ManifestLoader.load(manifest_path)
+                deleted = BackupPruner.prune(
+                    max_count=manifest_obj.backup_retention.max_count,
+                    max_age_days=manifest_obj.backup_retention.max_age_days,
+                )
+                if deleted:
+                    console.print(f"[dim]Pruned {len(deleted)} old backup snapshot(s).[/]")
+        except Exception as prune_err:
+            console.print(f"[yellow]Warning: Post-restore prune failed: {prune_err}[/]")
+
 
 @app.command("backup")
 def backup(
@@ -639,6 +846,7 @@ def backup(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan and validate backup operations without mutating the repository."
     ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Synchronize the local environment state back into the repository profile (system -> repo)."""
     repo_dir = _get_repo_dir()
@@ -663,6 +871,7 @@ def backup(
             profile_name=profile_str,
             identity_path=identity,
             dry_run=dry_run,
+            manifest_path=manifest,
         )
 
         if dry_run:
@@ -718,6 +927,7 @@ def status(
         ..., "--profile", "-p", help="Profile(s) to evaluate sync status for.", autocompletion=complete_profile
     ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to check secret drift."),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Compare system state against repository profile and calculate drift."""
     repo_dir = _get_repo_dir()
@@ -735,7 +945,7 @@ def status(
     profile_str = ",".join(profile_list)
 
     try:
-        report = StatusService.get_status(repo_dir, profile_str, identity)
+        report = StatusService.get_status(repo_dir, profile_str, identity, manifest_path=manifest)
     except Exception as e:
         console.print(f"[bold red]Status check failed:[/] {e}")
         raise typer.Exit(code=1)
@@ -871,6 +1081,7 @@ def diff(
     ),
     identity: str | None = typer.Option(None, "--identity", "-i", help="Age identity file to diff encrypted secrets."),
     unified: bool = typer.Option(False, "--unified", "-u", help="Display standard unified diff format."),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Print colored diffs of all modified file assets on the filesystem."""
     repo_dir = _get_repo_dir()
@@ -888,7 +1099,7 @@ def diff(
     profile_str = ",".join(profile_list)
 
     try:
-        report = StatusService.get_status(repo_dir, profile_str, identity)
+        report = StatusService.get_status(repo_dir, profile_str, identity, manifest_path=manifest)
     except Exception as e:
         console.print(f"[bold red]Failed to get drift status:[/] {e}")
         raise typer.Exit(code=1)
@@ -898,7 +1109,7 @@ def diff(
     for asset_id, info in report["assets"].items():
         if info["status"] == "modified":
             if unified:
-                diff_text = StatusService.get_diff(repo_dir, profile_str, asset_id, identity)
+                diff_text = StatusService.get_diff(repo_dir, profile_str, asset_id, identity, manifest_path=manifest)
                 if diff_text:
                     has_diffs = True
                     console.print(
@@ -909,7 +1120,9 @@ def diff(
                         )
                     )
             else:
-                contents = StatusService.get_contents_for_diff(repo_dir, profile_str, asset_id, identity)
+                contents = StatusService.get_contents_for_diff(
+                    repo_dir, profile_str, asset_id, identity, manifest_path=manifest
+                )
                 if contents:
                     expected_text, actual_text = contents
                     if not actual_text and expected_text.startswith("["):
@@ -927,9 +1140,11 @@ def diff(
 
                         source_name = f"repo://{asset_id}"
                         try:
-                            manifest_path = os.path.join(repo_dir, "manifest.yaml")
-                            manifest = ManifestLoader.load(manifest_path)
-                            resolved = ProfileResolver.resolve(manifest, profile_str)
+                            manifest_path = manifest or os.path.join(repo_dir, "manifest.yaml")
+                            if not os.path.isabs(manifest_path):
+                                manifest_path = os.path.join(repo_dir, manifest_path)
+                            manifest_obj = ManifestLoader.load(manifest_path)
+                            resolved = ProfileResolver.resolve(manifest_obj, profile_str)
                             asset = resolved.assets.get(asset_id) or resolved.secrets.get(asset_id)
                             if asset:
                                 source_name = f"repo://{asset.source}"
@@ -966,6 +1181,7 @@ def doctor(
         autocompletion=complete_profile,
     ),
     json_format: bool = typer.Option(False, "--json", help="Output diagnostic report in structured JSON format."),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Evaluate repository sanity, permission safety, and system capabilities."""
     repo_dir = _get_repo_dir()
@@ -980,7 +1196,7 @@ def doctor(
         if profile_list:
             profile_str = ",".join(profile_list)
 
-    report = DoctorService.check_health(repo_dir, profile_str)
+    report = DoctorService.check_health(repo_dir, profile_str, manifest_path=manifest)
 
     if json_format:
         import json
@@ -993,6 +1209,18 @@ def doctor(
     for tool, available in report["tools"].items():
         status_styled = "[bold green]✓ Available[/]" if available else "[bold yellow]✗ Missing[/]"
         tools_str += f"  - {tool:<25}: {status_styled}\n"
+
+    # Build package cache summary
+    cache_info: dict[str, Any] = report.get("package_cache", {})
+    if cache_info:
+        cache_str = "\n[bold white]Package Idempotency Cache:[/]\n"
+        for provider_name, info in cache_info.items():
+            count = info["installed_count"]
+            age_h = round(info["age_seconds"] / 3600, 1)
+            expired_flag = " [bold yellow](expired)[/]" if info["expired"] else ""
+            cache_str += f"  - {provider_name:<20}: {count} cached  ({age_h}h old){expired_flag}\n"
+    else:
+        cache_str = "\n[bold white]Package Idempotency Cache:[/] [dim]empty — will query providers on next restore[/]\n"
 
     # Build issues list
     issues_str = ""
@@ -1010,6 +1238,7 @@ def doctor(
             f"{'[bold green]HEALTHY[/]' if report['healthy'] else '[bold red]ISSUES FOUND[/]'}\n"
             f"Checks run: {report['checks_run']}\n\n"
             f"[bold white]System Tool Integration:[/]\n{tools_str}"
+            f"{cache_str}"
             f"{issues_str}",
             title="Revive System Doctor",
             border_style="green" if report["healthy"] else "red",
@@ -1085,13 +1314,129 @@ def secret_decrypt(
 @secret_app.command("rotate")
 def secret_rotate(
     file_path: str = typer.Argument(..., help="Path to the encrypted secret file to rotate."),
-    identity: str = typer.Option(..., "--identity", "-i", help="Path to the current age identity file."),
+    identity: str | None = typer.Option(None, "--identity", "-i", help="Path to the current age identity file."),
     new_recipient: list[str] = typer.Option(
         ..., "--new-recipient", "-nr", help="New age public key recipient (multiple allowed)."
     ),
+    from_plaintext: str | None = typer.Option(
+        None,
+        "--from-plaintext",
+        help=(
+            "Path to a plaintext source file to encrypt directly (skips decryption step). "
+            "The plaintext file will be securely wiped and deleted after encryption. "
+            "Requires --confirm."
+        ),
+    ),
+    confirm: bool = typer.Option(
+        False,
+        "--confirm",
+        help="Required when using --from-plaintext. Confirms the plaintext file will be securely wiped.",
+    ),
 ) -> None:
-    """Decrypt a secret using existing key, and re-encrypt with a new list of recipients."""
+    """Decrypt a secret using existing key and re-encrypt with new recipients.
+
+    Use --from-plaintext to encrypt a new plaintext file directly when the
+    original identity is unavailable (e.g. after a key loss). The plaintext
+    source file is securely overwritten with zeros and deleted after encryption.
+    """
+    import shutil
+    import tempfile
+
     from rv.security.tempfile import SecureTempFile
+    from rv.security.zerobuffer import ZeroBuffer
+
+    # ── Mode: --from-plaintext ──────────────────────────────────────────────
+    if from_plaintext is not None:
+        if not confirm:
+            console.print(
+                Panel(
+                    "[bold red]⚠ WARNING:[/] Using [bold yellow]--from-plaintext[/] will:\n"
+                    "  1. Encrypt the plaintext file with the new recipients.\n"
+                    "  2. [bold red]Permanently and irrecoverably wipe[/] the plaintext source file.\n\n"
+                    "This action cannot be undone. Re-run with [bold yellow]--confirm[/] to proceed.",
+                    title="Confirmation Required",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(code=1)
+
+        if not os.path.isfile(from_plaintext):
+            console.print(
+                Panel(
+                    f"[bold red]Error:[/] Plaintext source file not found: '{from_plaintext}'",
+                    title="File Not Found",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(code=1)
+
+        # Back up the target .age file before overwriting (if it exists)
+        backup_path: str | None = None
+        if os.path.exists(file_path):
+            backup_dir = tempfile.mkdtemp(prefix="rv_secret_backup_")
+            backup_path = os.path.join(backup_dir, os.path.basename(file_path) + ".bak")
+            shutil.copy2(file_path, backup_path)
+            os.chmod(backup_path, 0o600)
+
+        try:
+            # Encrypt the plaintext directly to the target .age file
+            AgeEncryptor.encrypt_file(from_plaintext, file_path, new_recipient)
+        except Exception as e:
+            # Restore backup on failure
+            if backup_path and os.path.exists(backup_path):
+                shutil.copy2(backup_path, file_path)
+            console.print(
+                Panel(
+                    f"[bold red]Encryption failed:[/] {e}\n"
+                    + (f"Original file restored from backup: {backup_path}" if backup_path else ""),
+                    title="Rotation Failed",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(code=1)
+
+        # Securely wipe the plaintext source file
+        try:
+            plaintext_size = os.path.getsize(from_plaintext)
+            # Overwrite with zeros, then with ones, then remove
+            with open(from_plaintext, "r+b") as pf:
+                pf.write(b"\x00" * plaintext_size)
+                pf.flush()
+                os.fsync(pf.fileno())
+                pf.seek(0)
+                pf.write(b"\xff" * plaintext_size)
+                pf.flush()
+                os.fsync(pf.fileno())
+            os.unlink(from_plaintext)
+        except Exception as wipe_err:
+            console.print(
+                f"[bold yellow]Warning:[/] Secure wipe of '{from_plaintext}' may be incomplete: {wipe_err}\n"
+                "[bold red]Manually delete the plaintext file immediately.[/]"
+            )
+
+        console.print(
+            Panel(
+                f"[bold green]Success:[/] Plaintext file encrypted to '{file_path}'.\n\n"
+                f"[bold white]New recipients:[/] [yellow]{', '.join(new_recipient)}[/]\n"
+                f"[bold red]Plaintext source wiped:[/] [cyan]{from_plaintext}[/]"
+                + (f"\n[bold white]Pre-rotation backup:[/] [dim]{backup_path}[/]" if backup_path else ""),
+                title="Secret Rotated from Plaintext",
+                border_style="green",
+            )
+        )
+        return
+
+    # ── Mode: standard rotate (decrypt old → re-encrypt with new recipients) ──
+    if identity is None:
+        console.print(
+            Panel(
+                "[bold red]Error:[/] --identity is required for standard rotation.\n"
+                "Use --from-plaintext to rotate without the old identity.",
+                title="Missing Identity",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
 
     with SecureTempFile.file() as tmp_plain:
         try:
@@ -1099,6 +1444,11 @@ def secret_rotate(
             AgeEncryptor.decrypt_file(file_path, tmp_plain, identity)
             # Re-encrypt with new keys
             AgeEncryptor.encrypt_file(tmp_plain, file_path, new_recipient)
+            # Zero the temporary plaintext
+            with open(tmp_plain, "r+b") as tf:
+                tmp_size = os.path.getsize(tmp_plain)
+                tf.write(b"\x00" * tmp_size)
+                tf.flush()
             console.print(
                 Panel(
                     f"[bold green]Success:[/] Secret at '{file_path}' successfully rotated to new recipients.\n\n"
@@ -1187,6 +1537,7 @@ def watch(
     debounce: float = typer.Option(
         5.0, "--debounce", "-d", help="Debounce delay in seconds before triggering auto-apply."
     ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
 ) -> None:
     """Watch directory for changes and automatically run restore on update."""
     import time
@@ -1220,7 +1571,11 @@ def watch(
     )
 
     daemon = WatchdogDaemon(
-        repo_dir=repo_dir, profile_name=profile_str, identity_path=identity, debounce_seconds=debounce
+        repo_dir=repo_dir,
+        profile_name=profile_str,
+        identity_path=identity,
+        debounce_seconds=debounce,
+        manifest_path=manifest,
     )
     try:
         daemon.start()
@@ -1389,7 +1744,7 @@ exec "{python_bin}" -m rv "$@"
             f.write(wrapper_content)
 
         # Make the target file executable (0755)
-        os.chmod(target_path, 0o755)  # noqa: S103
+        os.chmod(target_path, 0o755)  # noqa: S103 # nosec
 
         console.print(
             Panel(
@@ -1508,11 +1863,176 @@ def gui(
     port: int = typer.Option(8080, "--port", "-p", help="Port to run the GUI server on."),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host address to bind to."),
     no_browser: bool = typer.Option(False, "--no-browser", help="Do not open the browser automatically."),
+    auth_token: str | None = typer.Option(
+        None,
+        "--auth-token",
+        help="Authentication token for API access. Auto-generated if not provided. Pass '' to disable auth.",
+    ),
+    cors_wildcard: bool = typer.Option(
+        False,
+        "--cors-wildcard",
+        help="Allow any CORS origin (development only). By default CORS is restricted to loopback.",
+        hidden=True,
+    ),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
+    i_understand_no_tls: bool = typer.Option(
+        False,
+        "--i-understand-no-tls",
+        help=(
+            "[INSECURE] Allow GUI to bind to non-loopback addresses without TLS. "
+            "Only use this in trusted, firewalled environments where you explicitly "
+            "accept the risk of token exposure over plain HTTP."
+        ),
+        hidden=True,
+    ),
 ) -> None:
     """Launch the interactive Revive Web GUI."""
     from rv.gui.server import start_gui_server
 
-    start_gui_server(host=host, port=port, open_browser=not no_browser)
+    try:
+        start_gui_server(
+            host=host,
+            port=port,
+            open_browser=not no_browser,
+            auth_token=auth_token,
+            cors_wildcard=cors_wildcard,
+            manifest_name=os.path.basename(manifest) if manifest else None,
+            i_understand_no_tls=i_understand_no_tls,
+        )
+    except ValueError as e:
+        console.print(f"[bold red]Error:[/] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command("clone")
+def clone(
+    repo_url: str = typer.Argument(..., help="Git repository URL to clone (e.g. git@github.com:user/dotfiles.git)."),
+    dest: str | None = typer.Argument(
+        None,
+        help="Destination directory. Defaults to the repository name in the current directory.",
+    ),
+    restore_profile: str | None = typer.Option(
+        None,
+        "--restore",
+        "-r",
+        help="Automatically run 'rv restore <profile>' after cloning.",
+    ),
+    identity: str | None = typer.Option(
+        None, "--identity", "-i", help="Path to age identity file for decrypting secrets during auto-restore."
+    ),
+    manifest: str | None = typer.Option(
+        None, "--manifest", "-m", help="Path to custom manifest file for auto-restore."
+    ),
+) -> None:
+    """Clone a revive repository and register it as a workspace.
+
+    This is the golden-path command for bootstrapping a new machine:
+
+        rv clone git@github.com:user/dotfiles.git
+        rv clone git@github.com:user/dotfiles.git --restore base
+    """
+    import subprocess as _subprocess
+
+    # Determine destination path
+    if dest is None:
+        # Derive from repo URL basename, strip .git suffix
+        repo_name = os.path.basename(repo_url)
+        if repo_name.endswith(".git"):
+            repo_name = repo_name[:-4]
+        dest = os.path.join(os.getcwd(), repo_name)
+
+    abs_dest = os.path.abspath(dest)
+
+    console.print(f"[bold cyan]Cloning[/] {repo_url} → {abs_dest}")
+
+    try:
+        _subprocess.run(
+            ["git", "clone", repo_url, abs_dest],
+            check=True,
+            capture_output=False,
+        )
+    except _subprocess.CalledProcessError as e:
+        console.print(f"[bold red]Error:[/] git clone failed with exit code {e.returncode}.")
+        raise typer.Exit(code=1)
+    except FileNotFoundError:
+        console.print("[bold red]Error:[/] 'git' is not installed or not in PATH.")
+        raise typer.Exit(code=1)
+
+    # Register as a workspace
+    WorkspaceService.register_workspace(abs_dest)
+    console.print(f"[green]✓[/] Workspace registered: {abs_dest}")
+
+    # Optional: auto-restore
+    if restore_profile:
+        console.print(f"[bold cyan]Restoring[/] profile '{restore_profile}'...")
+        try:
+            tx_id = RestoreService.restore(
+                repo_dir=abs_dest,
+                profile_name=restore_profile,
+                identity_path=identity,
+                interactive=False,
+                manifest_path=manifest,
+            )
+            console.print(
+                Panel(
+                    f"[green]✓ Restore complete. Transaction: {tx_id}[/]",
+                    title=f"rv clone → restore {restore_profile}",
+                    border_style="green",
+                )
+            )
+        except Exception as e:
+            console.print(f"[bold red]Restore failed:[/] {e}")
+            raise typer.Exit(code=1)
+    else:
+        console.print(
+            Panel(
+                f"[green]✓ Repository cloned to {abs_dest}[/]\n"
+                f"Run [bold]rv restore <profile>[/] to apply your environment.",
+                title="rv clone complete",
+                border_style="green",
+            )
+        )
+
+
+@app.command("prune")
+def prune(
+    max_count: int = typer.Option(10, "--max-count", help="Keep at most N backup snapshots."),
+    max_age_days: int = typer.Option(30, "--max-age-days", help="Delete backup snapshots older than N days."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview what would be pruned without deleting."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+) -> None:
+    """Remove old transaction backup snapshots to reclaim disk space."""
+    from rv.services.recovery import BackupPruner
+
+    # List what would be deleted
+    candidates = BackupPruner.prune(max_count=max_count, max_age_days=max_age_days, dry_run=True)
+
+    if not candidates:
+        console.print(
+            Panel("[green]✓ No backup snapshots qualify for pruning.[/]", title="Prune", border_style="green")
+        )
+        return
+
+    table = Table(title="Backup Snapshots to Prune", expand=True)
+    table.add_column("Path", style="cyan")
+    for path in candidates:
+        table.add_row(path)
+    console.print(table)
+
+    if dry_run:
+        console.print(f"[yellow][Dry Run] {len(candidates)} snapshot(s) would be pruned.[/]")
+        return
+
+    if not yes:
+        confirmed = typer.confirm(f"Permanently delete {len(candidates)} backup snapshot(s)?")
+        if not confirmed:
+            console.print("[yellow]Prune cancelled.[/]")
+            return
+
+    deleted = BackupPruner.prune(max_count=max_count, max_age_days=max_age_days, dry_run=False)
+    console.print(
+        Panel(f"[green]✓ Pruned {len(deleted)} backup snapshot(s).[/]", title="Prune Complete", border_style="green")
+    )
 
 
 @workspace_app.command("list")
@@ -1596,4 +2116,144 @@ def workspace_remove(name: str = typer.Argument(..., help="Name of the workspace
                 border_style="red",
             )
         )
+        raise typer.Exit(code=1)
+
+
+@workspace_app.command("sync")
+def workspace_sync(
+    profile: str | None = typer.Option(None, "--profile", "-p", help="Profile name to restore after git pull."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview sync operations without executing."),
+    identity: str | None = typer.Option(None, "--identity", "-i", help="Path to age identity file for secrets."),
+    force_packages: bool = typer.Option(
+        False, "--force-packages", help="Bypass package cache and reinstall all packages."
+    ),
+    no_plugins: bool = typer.Option(False, "--no-plugins", help="Skip all plugin hook execution during restore."),
+    manifest: str | None = typer.Option(None, "--manifest", "-m", help="Path to custom manifest file."),
+) -> None:
+    """Pull latest changes and restore all registered workspaces (git pull → rv restore).
+
+    Each workspace is processed independently; a failure in one workspace does not
+    block others. A summary report is printed at the end showing how many succeeded
+    and failed. Exits with code 1 if any workspace encountered an error.
+    """
+    import subprocess
+
+    workspaces = WorkspaceService.list_workspaces()
+    if not workspaces:
+        console.print(
+            Panel(
+                "No workspaces registered. Use [bold green]rv workspace add <path>[/] first.",
+                title="Workspace Sync",
+                border_style="yellow",
+            )
+        )
+        return
+
+    results_table = Table(title="Workspace Sync Results", expand=True)
+    results_table.add_column("Workspace", style="cyan", width=20)
+    results_table.add_column("Path", style="white")
+    results_table.add_column("Git Pull", style="yellow", width=12)
+    results_table.add_column("Restore", style="green", width=12)
+    results_table.add_column("Details", style="dim")
+
+    succeeded = 0
+    failed = 0
+
+    for ws in workspaces:
+        git_status = "✓"
+        restore_status = "✓"
+        details = ""
+        ws_failed = False
+
+        # Step 1: git pull
+        if not dry_run:
+            try:
+                git_result = subprocess.run(
+                    ["git", "-C", ws.path, "pull", "--ff-only"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if git_result.returncode != 0:
+                    git_status = "[red]✗[/]"
+                    details = f"git pull failed: {git_result.stderr.strip()[:80]}"
+                    results_table.add_row(ws.name, ws.path, git_status, "—", details)
+                    failed += 1
+                    continue
+                else:
+                    git_status = "[green]✓[/]"
+            except Exception as e:
+                git_status = "[red]✗[/]"
+                details = f"git error: {e}"
+                results_table.add_row(ws.name, ws.path, git_status, "—", details)
+                failed += 1
+                continue
+        else:
+            git_status = "[yellow]skip[/]"
+
+        # Step 2: rv restore
+        restore_profile = profile
+        if not restore_profile:
+            # Try to detect the default profile from workspace manifest
+            try:
+                from rv.services.restore import ManifestLoader
+
+                manifest_path = manifest or os.path.join(ws.path, "manifest.yaml")
+                if os.path.exists(manifest_path):
+                    if not os.path.isabs(manifest_path):
+                        manifest_path = os.path.join(ws.path, manifest_path)
+                    manifest_obj = ManifestLoader.load(manifest_path)
+                    if manifest_obj.profiles:
+                        restore_profile = next(iter(manifest_obj.profiles))
+            except Exception:
+                pass
+
+        if restore_profile:
+            if not dry_run:
+                try:
+                    RestoreService.restore(
+                        repo_dir=ws.path,
+                        profile_name=restore_profile,
+                        identity_path=identity,
+                        interactive=False,
+                        dry_run=False,
+                        no_plugins=no_plugins,
+                        force_packages=force_packages,
+                        manifest_path=manifest,
+                    )
+                    restore_status = "[green]✓[/]"
+                except Exception as e:
+                    restore_status = "[red]✗[/]"
+                    details = f"restore failed: {str(e)[:80]}"
+                    ws_failed = True
+            else:
+                restore_status = "[yellow]skip[/]"
+        else:
+            restore_status = "[yellow]no profile[/]"
+            details = "No profile specified or detected"
+            ws_failed = True
+
+        if ws_failed:
+            failed += 1
+        else:
+            succeeded += 1
+
+        results_table.add_row(ws.name, ws.path, git_status, restore_status, details)
+
+    console.print(results_table)
+
+    total = len(workspaces)
+    summary_color = "green" if failed == 0 else "red"
+    console.print(
+        Panel(
+            f"[bold white]Total:[/] {total}  "
+            f"[bold green]Succeeded:[/] {succeeded}  "
+            f"[bold red]Failed:[/] {failed}"
+            + ("\n\n[dim]Use --dry-run to preview operations.[/]" if not dry_run else ""),
+            title="Sync Summary",
+            border_style=summary_color,
+        )
+    )
+
+    if failed > 0:
         raise typer.Exit(code=1)

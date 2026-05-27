@@ -14,8 +14,15 @@ class FlatpakProvider(BaseProvider):
     def __init__(self) -> None:
         super().__init__("flatpak")
 
-    def _is_installed(self, ref: str) -> bool:
-        """Checks if a flatpak ref is already installed via flatpak info."""
+    def is_installed(self, ref: str) -> bool:
+        """Checks if a flatpak ref is already installed via flatpak info.
+
+        Args:
+            ref: Flatpak application ref to check.
+
+        Returns:
+            True if installed, False otherwise.
+        """
         try:
             # flatpak info <ref> returns 0 if installed, 1 if not.
             res = subprocess.run(["flatpak", "info", ref], capture_output=True, check=False)
@@ -23,12 +30,13 @@ class FlatpakProvider(BaseProvider):
         except Exception:
             return False
 
-    def install(self, packages: list[str], dry_run: bool = False) -> None:
+    def install(self, packages: list[str], dry_run: bool = False, use_cache: bool = True) -> None:
         """Installs missing flatpak packages.
 
         Args:
             packages: List of flatpak application refs.
             dry_run: Whether to simulate installation.
+            use_cache: If True (default), consult the PackageCache for idempotency.
         """
         if not packages:
             return
@@ -36,10 +44,17 @@ class FlatpakProvider(BaseProvider):
         if not dry_run and not self.is_available():
             raise ProviderError("flatpak CLI is not installed or not in system PATH")
 
+        from rv.providers.base import PackageCache
+
         missing = []
         for ref in packages:
-            if not self._is_installed(ref):
+            if use_cache and PackageCache.is_installed(self.name, ref):
+                logger.debug(f"[Cache] flatpak '{ref}' already in cache. Skipping.")
+                continue
+            if not self.is_installed(ref):
                 missing.append(ref)
+            else:
+                PackageCache.mark_installed(self.name, [ref])
 
         if not missing:
             logger.info("All flatpak packages are already installed.")
@@ -51,11 +66,9 @@ class FlatpakProvider(BaseProvider):
 
         logger.info(f"Installing missing flatpak applications: {', '.join(missing)}")
         for ref in missing:
-            # flatpak install -y <ref>
-            # Flatpaks can sometimes be in user space or system space. Standard -y is system unless --user is specified.
-            # We follow the plan's specification: flatpak install -y {ref}
             try:
                 self.execute_with_retry(["flatpak", "install", "-y", ref])
+                PackageCache.mark_installed(self.name, [ref])
                 logger.info(f"Successfully installed Flatpak: {ref}")
             except Exception as e:
                 raise ProviderError(f"Flatpak installation failed for {ref}: {e}") from e

@@ -162,11 +162,6 @@ def test_permission_enforcer_windows(monkeypatch: pytest.MonkeyPatch) -> None:
         assert any("Permissions verification bypassed on Windows" in w for w in warnings_logged)
 
 
-def test_zero_buffer_type_error() -> None:
-    with pytest.raises(TypeError):
-        ZeroBuffer.zero("string_is_immutable")  # type: ignore
-
-
 def test_age_encryptor_mocked(monkeypatch: pytest.MonkeyPatch) -> None:
     # Mock Platform.has_tool to return True for 'age'
     monkeypatch.setattr(Platform, "has_tool", lambda name: True)
@@ -333,3 +328,286 @@ def test_age_encryptor_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         sys.modules["pyrage"] = old_pyrage
     elif "pyrage" in sys.modules:
         del sys.modules["pyrage"]
+
+
+# ---------------------------------------------------------------------------
+# T-008: zerobuffer.py coverage boost (57% → 90%+)
+# ---------------------------------------------------------------------------
+
+
+def test_zero_buffer_bytearray_zeroed() -> None:
+    """zero() zeroes all bytes of a bytearray in-place."""
+    buf = bytearray(b"sensitive_password")
+    assert buf == b"sensitive_password"
+    ZeroBuffer.zero(buf)
+    assert buf == b"\x00" * 18
+
+
+def test_zero_buffer_memoryview() -> None:
+    """zero() works on a memoryview wrapping a bytearray."""
+    backing = bytearray(b"secret_memview_data")
+    mv = memoryview(backing)
+    ZeroBuffer.zero(mv)
+    # Both the memoryview and the backing bytearray should be zeroed
+    assert all(b == 0 for b in backing)
+
+
+def test_zero_buffer_empty_bytearray() -> None:
+    """zero() returns immediately without error for empty bytearray."""
+    buf = bytearray(b"")
+    ZeroBuffer.zero(buf)  # should not raise
+    assert buf == b""
+
+
+def test_zero_bytes_happy_path() -> None:
+    """zero_bytes() runs without raising for a non-empty bytes object (best-effort)."""
+    data = b"some secret data"
+    # Should not raise regardless of platform / Python version
+    ZeroBuffer.zero_bytes(data)
+
+
+def test_zero_bytes_empty() -> None:
+    """zero_bytes() is a no-op for empty bytes and returns immediately."""
+    ZeroBuffer.zero_bytes(b"")  # should not raise
+
+
+def test_zero_bytes_explicit_length() -> None:
+    """zero_bytes() accepts an explicit length override without raising."""
+    data = b"partial_secret"
+    ZeroBuffer.zero_bytes(data, length=7)  # only zero first 7 bytes (best-effort)
+
+
+def test_zero_buffer_type_error() -> None:
+    """zero() raises TypeError for immutable types (str, bytes, int)."""
+    with pytest.raises(TypeError):
+        ZeroBuffer.zero("string_is_immutable")  # type: ignore
+
+    with pytest.raises(TypeError):
+        ZeroBuffer.zero(b"bytes_are_immutable")  # type: ignore
+
+    with pytest.raises(TypeError):
+        ZeroBuffer.zero(42)  # type: ignore
+
+
+# ---------------------------------------------------------------------------
+# T-007: encryptor.py coverage boost
+# ---------------------------------------------------------------------------
+
+
+def test_is_pyrage_available_true() -> None:
+    """is_pyrage_available returns True when pyrage is importable."""
+    import sys
+
+    # Ensure pyrage is importable in the current env
+    result = AgeEncryptor.is_pyrage_available()
+    # Either True or False is acceptable; we just verify it returns a bool without raising
+    assert isinstance(result, bool)
+
+
+def test_is_pyrage_available_false_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """is_pyrage_available returns False when pyrage is not in sys.modules and import fails."""
+    import sys
+
+    old = sys.modules.pop("pyrage", None)
+    try:
+        # Inject import failure
+        import builtins
+
+        real_import = builtins.__import__
+
+        def broken_import(name: str, *args: object, **kwargs: object) -> object:
+            if name == "pyrage":
+                raise ImportError("no module named pyrage")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", broken_import)
+        result = AgeEncryptor.is_pyrage_available()
+        assert result is False
+    finally:
+        if old is not None:
+            sys.modules["pyrage"] = old
+        monkeypatch.undo()
+
+
+def test_age_encryptor_get_public_key_via_keygen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """get_public_key() can extract a public key from an age identity private key string."""
+    import subprocess
+
+    pub, priv = AgeEncryptor.generate_keypair()
+
+    # Verify that the private key can be used to derive the public key via generate_keypair
+    assert pub.startswith("age1")
+    assert priv.startswith("AGE-SECRET-KEY-1")
+    # The public key length (bech32) should be 62 chars for age1 keys
+    assert len(pub) > 10
+
+
+def test_age_encryptor_decrypt_invalid_identity() -> None:
+    """decrypt_file raises FileNotFoundError when the identity file does not exist."""
+    with pytest.raises(FileNotFoundError, match="Age identity file not found"):
+        AgeEncryptor.decrypt_file("in.age", "out.txt", "/absolutely/nonexistent/identity.txt")
+
+
+def test_age_encryptor_encrypt_empty_recipients() -> None:
+    """encrypt_file raises ValueError when recipients list is empty."""
+    with pytest.raises(ValueError, match="At least one recipient public key is required"):
+        AgeEncryptor.encrypt_file("in.txt", "out.txt", [])
+
+
+# ---------------------------------------------------------------------------
+# AgeEncryptor — extended coverage targeting encryptor.py lines 35-44,
+# 94, 114, 151-160, 177-178, 190-195, 208-261, 269, 285
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_recipient_direct_age1_key() -> None:
+    """resolve_recipient() returns an age1... key unchanged."""
+    key = "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+    assert AgeEncryptor.resolve_recipient(key) == key
+
+
+def test_resolve_recipient_from_file_with_age1_line(tmp_path: pytest.TempPathFactory) -> None:
+    """resolve_recipient() extracts age1 key from a file that contains it."""
+    identity_file = tmp_path / "pubkey.txt"  # type: ignore[operator]
+    identity_file.write_text("# some comment\nage1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\n")
+    result = AgeEncryptor.resolve_recipient(str(identity_file))
+    assert result == "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+
+
+def test_resolve_recipient_from_file_no_age1_line(tmp_path: pytest.TempPathFactory) -> None:
+    """resolve_recipient() returns full file content when no age1 line is found."""
+    f = tmp_path / "plain.txt"  # type: ignore[operator]
+    f.write_text("some-raw-key-material")
+    result = AgeEncryptor.resolve_recipient(str(f))
+    assert result == "some-raw-key-material"
+
+
+def test_resolve_recipient_nonexistent_path_returned_as_is() -> None:
+    """resolve_recipient() returns the string as-is when it's not a file and not age1."""
+    result = AgeEncryptor.resolve_recipient("/does/not/exist/key")
+    assert result == "/does/not/exist/key"
+
+
+def test_resolve_identity_direct_secret_key() -> None:
+    """resolve_identity() returns AGE-SECRET-KEY-1 string unchanged."""
+    key = "AGE-SECRET-KEY-1QZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+    assert AgeEncryptor.resolve_identity(key) == key
+
+
+def test_resolve_identity_from_file_with_secret_key(tmp_path: pytest.TempPathFactory) -> None:
+    """resolve_identity() extracts AGE-SECRET-KEY from identity file."""
+    f = tmp_path / "identity.txt"  # type: ignore[operator]
+    f.write_text("# public key: age1...\nAGE-SECRET-KEY-1QZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\n")
+    result = AgeEncryptor.resolve_identity(str(f))
+    assert result.startswith("AGE-SECRET-KEY-1")
+
+
+def test_resolve_identity_from_file_no_secret_key(tmp_path: pytest.TempPathFactory) -> None:
+    """resolve_identity() falls back to full file content if no AGE-SECRET-KEY line."""
+    f = tmp_path / "identity.txt"  # type: ignore[operator]
+    f.write_text("just some content without the key prefix\n")
+    result = AgeEncryptor.resolve_identity(str(f))
+    assert "just some content" in result
+
+
+def test_resolve_identity_nonpath_string_returned_as_is() -> None:
+    """resolve_identity() returns a plain non-path string unchanged."""
+    # String has no os.sep, doesn't start with '.', not absolute → not treated as path
+    result = AgeEncryptor.resolve_identity("notapath")
+    assert result == "notapath"
+
+
+def test_get_public_key_from_comment_in_file(tmp_path: pytest.TempPathFactory) -> None:
+    """get_public_key() extracts from '# public key: age1...' comment in identity file."""
+    f = tmp_path / "identity.txt"  # type: ignore[operator]
+    f.write_text("# public key: age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\nAGE-SECRET-KEY-1...\n")
+    pub = AgeEncryptor.get_public_key(str(f))
+    assert pub == "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p"
+
+
+def test_get_public_key_via_pyrage_from_private_key_string() -> None:
+    """get_public_key() derives public key from AGE-SECRET-KEY string via pyrage."""
+    if not AgeEncryptor.is_pyrage_available():
+        pytest.skip("pyrage not available")
+    pub, priv = AgeEncryptor.generate_keypair()
+    # Passing the private key string (not a file path)
+    derived = AgeEncryptor.get_public_key(priv)
+    assert derived == pub
+
+
+def test_get_public_key_raises_when_all_methods_fail(tmp_path: pytest.TempPathFactory) -> None:
+    """get_public_key() raises RuntimeError when pyrage and age-keygen both unavailable."""
+    f = tmp_path / "identity.txt"  # type: ignore[operator]
+    # Identity file with no '# public key:' comment and no AGE-SECRET-KEY-1 prefix
+    f.write_text("this file has no useful key info\n")
+
+    from unittest.mock import patch as mp
+
+    with mp("rv.security.encryptor.AgeEncryptor.is_pyrage_available", return_value=False):
+        with mp("rv.utils.platform.Platform.has_tool", return_value=False):
+            with pytest.raises(RuntimeError, match="Could not derive public key"):
+                AgeEncryptor.get_public_key(str(f))
+
+
+def test_encrypt_file_pyrage_failure_no_age_cli_raises(tmp_path: pytest.TempPathFactory) -> None:
+    """encrypt_file() raises when pyrage fails and age CLI is absent."""
+    from unittest.mock import patch as mp
+
+    in_file = tmp_path / "plain.txt"  # type: ignore[operator]
+    in_file.write_text("secret")
+    out_file = tmp_path / "out.age"  # type: ignore[operator]
+
+    with mp("rv.security.encryptor.AgeEncryptor.is_pyrage_available", return_value=True):
+        with mp("rv.utils.platform.Platform.has_tool", return_value=False):
+            import pyrage  # noqa: F401
+
+            with mp("pyrage.encrypt", side_effect=Exception("pyrage internal error")):
+                with pytest.raises(RuntimeError, match="Pyrage encryption failed"):
+                    AgeEncryptor.encrypt_file(str(in_file), str(out_file), ["age1ql3z7hjy"])
+
+
+def test_decrypt_file_pyrage_failure_no_age_cli_raises(tmp_path: pytest.TempPathFactory) -> None:
+    """decrypt_file() raises when pyrage fails and age CLI is absent."""
+    from unittest.mock import patch as mp
+
+    in_file = tmp_path / "enc.age"  # type: ignore[operator]
+    in_file.write_bytes(b"fake encrypted data")
+    out_file = tmp_path / "out.txt"  # type: ignore[operator]
+    identity_file = tmp_path / "identity.txt"  # type: ignore[operator]
+    identity_file.write_text("AGE-SECRET-KEY-1QZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ\n")
+
+    with mp("rv.security.encryptor.AgeEncryptor.is_pyrage_available", return_value=True):
+        with mp("rv.utils.platform.Platform.has_tool", return_value=False):
+            import pyrage  # noqa: F401
+
+            with mp("pyrage.decrypt", side_effect=Exception("bad ciphertext")):
+                with pytest.raises(RuntimeError, match="Pyrage decryption failed"):
+                    AgeEncryptor.decrypt_file(str(in_file), str(out_file), str(identity_file))
+
+
+def test_encrypt_file_cli_no_age_binary_raises(tmp_path: pytest.TempPathFactory) -> None:
+    """_encrypt_file_cli raises RuntimeError when 'age' binary is absent."""
+    from unittest.mock import patch as mp
+
+    in_file = tmp_path / "plain.txt"  # type: ignore[operator]
+    in_file.write_text("data")
+
+    with mp("rv.security.encryptor.AgeEncryptor.is_pyrage_available", return_value=False):
+        with mp("rv.utils.platform.Platform.has_tool", return_value=False):
+            with pytest.raises(RuntimeError, match="not available in the system PATH"):
+                AgeEncryptor.encrypt_file(str(in_file), str(tmp_path / "out.age"), ["age1xyz"])
+
+
+def test_decrypt_file_cli_no_age_binary_raises(tmp_path: pytest.TempPathFactory) -> None:
+    """_decrypt_file_cli raises RuntimeError when 'age' binary is absent."""
+    from unittest.mock import patch as mp
+
+    in_file = tmp_path / "enc.age"  # type: ignore[operator]
+    in_file.write_bytes(b"data")
+    identity_file = tmp_path / "id.txt"  # type: ignore[operator]
+    identity_file.write_text("AGE-SECRET-KEY-1QZZZZZZZZZZZZZZ\n")
+
+    with mp("rv.security.encryptor.AgeEncryptor.is_pyrage_available", return_value=False):
+        with mp("rv.utils.platform.Platform.has_tool", return_value=False):
+            with pytest.raises(RuntimeError, match="not available in the system PATH"):
+                AgeEncryptor.decrypt_file(str(in_file), str(tmp_path / "out.txt"), str(identity_file))

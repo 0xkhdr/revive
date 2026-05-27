@@ -27,6 +27,8 @@ def test_cli_init(temp_repo: str) -> None:
         assert result.exit_code == 0
         assert "Success!" in result.stdout
         assert os.path.exists(os.path.join(temp_repo, "manifest.yaml"))
+        assert os.path.exists(os.path.join(temp_repo, "manifest-build.yaml"))
+        assert os.path.exists(os.path.join(temp_repo, "manifest-restore.yaml"))
         assert os.path.exists(os.path.join(temp_repo, "assets", "example_zshrc"))
         assert os.path.exists(os.path.join(temp_repo, "AGENTS.md"))
         assert os.path.exists(os.path.join(temp_repo, ".agents", "skills", "rv", "SKILL.md"))
@@ -63,6 +65,9 @@ def test_cli_restore(temp_repo: str) -> None:
                 interactive=True,
                 dry_run=False,
                 no_plugins=False,
+                parallel=True,
+                force_packages=False,
+                manifest_path=None,
             )
 
         # 2. Success case with options
@@ -76,6 +81,9 @@ def test_cli_restore(temp_repo: str) -> None:
                 interactive=False,
                 dry_run=True,
                 no_plugins=False,
+                parallel=True,
+                force_packages=False,
+                manifest_path=None,
             )
 
         # 3. Success case with no-plugins option
@@ -89,6 +97,9 @@ def test_cli_restore(temp_repo: str) -> None:
                 interactive=True,
                 dry_run=False,
                 no_plugins=True,
+                parallel=True,
+                force_packages=False,
+                manifest_path=None,
             )
 
         # 4. Failure case
@@ -118,7 +129,7 @@ def test_cli_status(temp_repo: str) -> None:
             assert result.exit_code == 0
             assert "In Sync" in result.stdout
             assert "test_zshrc" in result.stdout
-            mock_status.assert_called_once_with(temp_repo, "base", None)
+            mock_status.assert_called_once_with(temp_repo, "base", None, manifest_path=None)
 
         # 2. Drifted case
         report_drifted = {
@@ -184,7 +195,7 @@ def test_cli_diff(temp_repo: str) -> None:
                 assert result.exit_code == 0
                 assert "Drift Diff: test_zshrc" in result.stdout
                 assert "- old" in result.stdout
-                mock_diff.assert_called_once_with(temp_repo, "base", "test_zshrc", None)
+                mock_diff.assert_called_once_with(temp_repo, "base", "test_zshrc", None, manifest_path=None)
 
             # 2b. Diffs present (Side-by-side default)
             with patch(
@@ -388,6 +399,9 @@ def test_cli_restore_multiple_profiles(temp_repo: str) -> None:
                 interactive=True,
                 dry_run=False,
                 no_plugins=False,
+                parallel=True,
+                force_packages=False,
+                manifest_path=None,
             )
 
 
@@ -398,7 +412,7 @@ def test_cli_status_multiple_profiles(temp_repo: str) -> None:
             mock_status.return_value = {"drifted": False, "assets": {}}
             result = runner.invoke(app, ["status", "-p", "base", "-p", "work"])
             assert result.exit_code == 0
-            mock_status.assert_called_once_with(temp_repo, "base,work", None)
+            mock_status.assert_called_once_with(temp_repo, "base,work", None, manifest_path=None)
 
 
 def test_complete_profile_callback(temp_repo: str) -> None:
@@ -426,3 +440,289 @@ def test_complete_profile_callback(temp_repo: str) -> None:
 
         res_all = complete_profile(None, "")
         assert sorted(res_all) == sorted(["base", "work", "home"])
+
+
+def test_cli_backup(temp_repo: str) -> None:
+    """Tests 'rv backup' command invokes BackupService.backup."""
+    with patch("os.getcwd", return_value=temp_repo):
+        # 1. Success case
+        with patch("rv.services.backup.BackupService.backup", return_value=["asset_1"]) as mock_backup:
+            result = runner.invoke(app, ["backup", "base"])
+            assert result.exit_code == 0
+            mock_backup.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base",
+                identity_path=None,
+                dry_run=False,
+                manifest_path=None,
+            )
+            assert "Successfully backed up 1 item(s)" in result.stdout
+
+        # 1b. Dry run case
+        with patch("rv.services.backup.BackupService.backup", return_value=["asset_1"]) as mock_backup:
+            result = runner.invoke(app, ["backup", "base", "--dry-run"])
+            assert result.exit_code == 0
+            mock_backup.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base",
+                identity_path=None,
+                dry_run=True,
+                manifest_path=None,
+            )
+            assert "Revive Backup Plan (Dry Run)" in result.stdout
+
+        # 2. Failure case
+        with patch("rv.services.backup.BackupService.backup", side_effect=Exception("Backup failed")):
+            result = runner.invoke(app, ["backup", "base"])
+            assert result.exit_code == 2
+            assert "Backup Failed!" in result.stdout
+
+        # 2b. Empty profiles case
+        result = runner.invoke(app, ["backup", ""])
+        assert result.exit_code == 1
+        assert "No profiles specified" in result.stdout
+
+
+def test_cli_prune() -> None:
+    """Tests 'rv prune' command."""
+    # 1. Dry run / prompt no
+    with patch(
+        "rv.services.recovery.BackupPruner.prune", return_value=["/path/to/backup_1", "/path/to/backup_2"]
+    ) as mock_prune:
+        result = runner.invoke(app, ["prune"], input="n\n")
+        assert result.exit_code == 0
+        assert "Backup Snapshots to Prune" in result.stdout
+        mock_prune.assert_called_once_with(max_count=10, max_age_days=30, dry_run=True)
+
+    # 1b. Dry run flag
+    with patch("rv.services.recovery.BackupPruner.prune", return_value=["/path/to/backup_1"]) as mock_prune:
+        result = runner.invoke(app, ["prune", "--dry-run"])
+        assert result.exit_code == 0
+        assert "would be pruned" in result.stdout
+
+    # 1c. No snapshots qualify
+    with patch("rv.services.recovery.BackupPruner.prune", return_value=[]) as mock_prune:
+        result = runner.invoke(app, ["prune"])
+        assert result.exit_code == 0
+        assert "No backup snapshots qualify for pruning" in result.stdout
+
+    # 2. Force prune with --yes
+    with patch(
+        "rv.services.recovery.BackupPruner.prune", return_value=["/path/to/backup_1", "/path/to/backup_2"]
+    ) as mock_prune:
+        result = runner.invoke(app, ["prune", "--yes"])
+        assert result.exit_code == 0
+        assert "Pruned 2 backup snapshot(s)" in result.stdout
+        assert mock_prune.call_count == 2
+
+
+def test_cli_watch(temp_repo: str) -> None:
+    """Tests 'rv watch' command."""
+    with patch("os.getcwd", return_value=temp_repo):
+        # Mock WatchdogDaemon to raise KeyboardInterrupt on start
+        mock_daemon = MagicMock()
+        mock_daemon.start.side_effect = KeyboardInterrupt
+        with patch("rv.watchers.daemon.WatchdogDaemon", return_value=mock_daemon) as mock_class:
+            result = runner.invoke(app, ["watch", "--profile", "base"])
+            assert result.exit_code == 0
+            assert "Watchdog daemon stopped successfully" in result.stdout
+            mock_class.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base",
+                identity_path=None,
+                debounce_seconds=5.0,
+                manifest_path=None,
+            )
+
+        # 2. Empty profile case
+        result = runner.invoke(app, ["watch", "--profile", ""])
+        assert result.exit_code == 1
+        assert "No profiles specified" in result.stdout
+
+
+def test_cli_self_uninstall(temp_repo: str) -> None:
+    """Tests 'rv self-uninstall' command."""
+    custom_home = os.path.join(temp_repo, "user_home")
+    target_file = os.path.join(custom_home, ".local", "bin", "rv")
+    os.makedirs(os.path.dirname(target_file), exist_ok=True)
+    with open(target_file, "w") as f:
+        f.write("Revive CLI Autogenerated Wrapper")
+
+    # 1. Success case
+    with patch("os.path.expanduser", return_value=custom_home):
+        result = runner.invoke(app, ["self-uninstall"])
+        assert result.exit_code == 0
+        assert "uninstalled successfully" in result.stdout
+        assert not os.path.exists(target_file)
+
+    # 2. Success case with force
+    with open(target_file, "w") as f:
+        f.write("Revive CLI Autogenerated Wrapper")
+    with patch("os.path.expanduser", return_value=custom_home):
+        result = runner.invoke(app, ["self-uninstall", "--force"])
+        assert result.exit_code == 0
+        assert not os.path.exists(target_file)
+
+    # 3. Not installed case
+    with patch("os.path.expanduser", return_value=custom_home):
+        result = runner.invoke(app, ["self-uninstall"])
+        assert result.exit_code == 0
+        assert "No Revive components or configuration directories" in result.stdout
+
+
+def test_cli_gui() -> None:
+    """Tests 'rv gui' command."""
+    with patch("rv.gui.server.start_gui_server") as mock_gui:
+        result = runner.invoke(
+            app,
+            [
+                "gui",
+                "--port",
+                "9999",
+                "--host",
+                "127.0.0.1",
+                "--no-browser",
+                "--auth-token",
+                "test-token",  # noqa: S106
+                "--cors-wildcard",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_gui.assert_called_once_with(
+            host="127.0.0.1",
+            port=9999,
+            open_browser=False,  # open_browser=not no_browser (not True is False)
+            auth_token="test-token",  # noqa: S106
+            cors_wildcard=True,
+            manifest_name=None,
+            i_understand_no_tls=False,
+        )
+
+
+def test_cli_workspace_commands(temp_repo: str) -> None:
+    """Tests 'rv workspace' subcommand suite (list, add, remove, sync)."""
+    from datetime import datetime
+
+    from rv.models.workspace import Workspace
+
+    # 1. list
+    workspaces = [
+        Workspace(name="ws1", path="/path/to/ws1", last_accessed=datetime.now()),
+        Workspace(name="ws2", path="/path/to/ws2", last_accessed=datetime.now()),
+    ]
+    with patch("rv.services.workspace.WorkspaceService.list_workspaces", return_value=workspaces):
+        result = runner.invoke(app, ["workspace", "list"])
+        assert result.exit_code == 0
+        assert "ws1" in result.stdout
+        assert "ws2" in result.stdout
+
+    # 2. add
+    ws_added = Workspace(name="my_ws", path=temp_repo, last_accessed=datetime.now())
+    with patch("rv.services.workspace.WorkspaceService.register_workspace", return_value=ws_added) as mock_add:
+        # Create a fake manifest so there's no warning
+        with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
+            f.write("version: 2\n")
+        result = runner.invoke(app, ["workspace", "add", temp_repo, "--name", "my_ws"])
+        assert result.exit_code == 0
+        assert "Workspace registered successfully" in result.stdout
+        mock_add.assert_called_once_with(temp_repo, "my_ws")
+
+    # 2b. add non-directory
+    result = runner.invoke(app, ["workspace", "add", "/nonexistent/path"])
+    assert result.exit_code == 1
+    assert "is not a directory" in result.stdout
+
+    # 2c. add directory without manifest warning
+    empty_dir = os.path.join(temp_repo, "empty_dir")
+    os.makedirs(empty_dir)
+    with patch("rv.services.workspace.WorkspaceService.register_workspace", return_value=ws_added):
+        result = runner.invoke(app, ["workspace", "add", empty_dir])
+        assert result.exit_code == 0
+        assert "Warning:" in result.stdout
+
+    # 3. remove success
+    with patch("rv.services.workspace.WorkspaceService.remove_workspace", return_value=True) as mock_remove:
+        result = runner.invoke(app, ["workspace", "remove", "my_ws"])
+        assert result.exit_code == 0
+        assert "Workspace de-registered" in result.stdout
+        mock_remove.assert_called_once_with("my_ws")
+
+    # 3b. remove not found
+    with patch("rv.services.workspace.WorkspaceService.remove_workspace", return_value=False):
+        result = runner.invoke(app, ["workspace", "remove", "nonexistent_ws"])
+        assert result.exit_code == 1
+        assert "not found" in result.stdout
+
+    # 4. sync
+    workspaces_sync = [Workspace(name="my_ws", path=temp_repo, last_accessed=datetime.now())]
+    # Create fake manifest.yaml in temp_repo
+    with open(os.path.join(temp_repo, "manifest.yaml"), "w") as f:
+        f.write("version: 2\n")
+
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+
+    with (
+        patch("rv.services.workspace.WorkspaceService.list_workspaces", return_value=workspaces_sync),
+        patch("subprocess.run", return_value=mock_proc) as mock_run,
+        patch("rv.services.restore.RestoreService.restore") as mock_restore,
+    ):
+        result = runner.invoke(app, ["workspace", "sync", "--profile", "base", "--force-packages", "--no-plugins"])
+        assert result.exit_code == 0
+        assert "Workspace Sync Results" in result.stdout
+        mock_run.assert_called_once()
+        mock_restore.assert_called_once_with(
+            repo_dir=temp_repo,
+            profile_name="base",
+            identity_path=None,
+            interactive=False,
+            dry_run=False,
+            no_plugins=True,
+            force_packages=True,
+            manifest_path=None,
+        )
+
+    # 4b. sync empty workspaces
+    with patch("rv.services.workspace.WorkspaceService.list_workspaces", return_value=[]):
+        result = runner.invoke(app, ["workspace", "sync"])
+        assert result.exit_code == 0
+        assert "No workspaces registered" in result.stdout
+
+
+def test_cli_manifest_option(temp_repo: str) -> None:
+    """Tests that CLI commands accept --manifest option and pass it correctly."""
+    with patch("os.getcwd", return_value=temp_repo):
+        # 1. Test restore --manifest
+        with patch("rv.services.restore.RestoreService.restore") as mock_restore:
+            result = runner.invoke(app, ["restore", "base", "--manifest", "manifest-build.yaml"])
+            assert result.exit_code == 0
+            mock_restore.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base",
+                identity_path=None,
+                interactive=True,
+                dry_run=False,
+                no_plugins=False,
+                parallel=True,
+                force_packages=False,
+                manifest_path="manifest-build.yaml",
+            )
+
+        # 2. Test backup -m
+        with patch("rv.services.backup.BackupService.backup", return_value=["asset_1"]) as mock_backup:
+            result = runner.invoke(app, ["backup", "base", "-m", "manifest-restore.yaml"])
+            assert result.exit_code == 0
+            mock_backup.assert_called_once_with(
+                repo_dir=temp_repo,
+                profile_name="base",
+                identity_path=None,
+                dry_run=False,
+                manifest_path="manifest-restore.yaml",
+            )
+
+        # 3. Test status -m
+        with patch("rv.services.status.StatusService.get_status") as mock_status:
+            mock_status.return_value = {"drifted": False, "assets": {}}
+            result = runner.invoke(app, ["status", "-p", "base", "-m", "manifest-build.yaml"])
+            assert result.exit_code == 0
+            mock_status.assert_called_once_with(temp_repo, "base", None, manifest_path="manifest-build.yaml")

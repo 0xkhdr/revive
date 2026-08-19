@@ -34,6 +34,9 @@ linters:
         # Hook and provider commands are declared in the manifest, which is reviewed, committed
         # input. They are word-split at plan time and executed without a shell.
         - G204
+        # rv scaffolds and manages ordinary configuration files, which are 0644 by design.
+        # Anything holding a secret is written 0600 explicitly at its call site.
+        - G306
   exclusions:
     rules:
       - path: _test\.go$

@@ -77,12 +77,50 @@ by a test. Anything unmarked has not been started.
 | 6 | **DONE** | Asset handlers | `engine/handler.go` | symlink/copy/template/secret planning, `text/template` with built-ins + `template_vars` and `missingkey=error`, func map, secret copy at `0600`, conflict strategies (`prompt` non-interactive = error), directory fan-out, **planning is side-effect free**, hooks planned in `delete → pre → write → chmod → post` order |
 | 7 | **DONE** | Providers | `providers` | 11 providers: unavailable without binary, skip installed packages, dry-run runs nothing, 24 h cache TTL (read failure = empty cache, never error), retry 3× with 2 s/4 s backoff, node version resolution + validation, fixed install order |
 | 8 | **DONE** | Restore engine | `engine/restore.go`, `lockfile` | all 14 steps; re-run is a no-op; `--dry-run` mutates nothing and **runs no hook**; `--sequential` and `--parallel` plan identically; hooks execute shell-free with `RV_*` env and 30 s timeout; failure at step 10 or 12 rolls back; **INTEROP: read a Python lockfile without loss** |
-| 9 | | CLI surface | `cli` | every command from `docs/03` except `gui`/`watch`; exit codes 0/1/2; `--headless` kills decoration and turns prompts into errors; `-p a -p b` ≡ `-p a,b`; completion; `init` refuses over existing workspace; `workspace sync` continues past failures, exits 1 |
+| 9 | **DONE** | CLI surface | `cli` | every command from `docs/03` except `gui`/`watch`; exit codes 0/1/2; `--headless` kills decoration and turns prompts into errors; `-p a -p b` ≡ `-p a,b`; completion; `init` refuses over existing workspace; `workspace sync` continues past failures, exits 1 |
 | 10 | | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
 | 11 | | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
 | 12 | | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 9 completion notes (2026-08-19)
+
+Stage 9 is done. Coverage on `internal/` is **92.3%**. Packages added: `workspace`; `internal/cli`
+now carries the real command tree, with all rendering confined to `render.go` so no
+business-logic package imports a terminal library.
+
+Wired to real engines: `init`, `clone`, `restore`, `secret {keygen,encrypt,decrypt,rotate}`,
+`workspace {list,add,remove,sync}`, and completion for bash/zsh/fish.
+
+**Flags are declared for the commands whose engines arrive later** — `status`, `diff`, `doctor`,
+`backup`, `recover`, `prune`, `self-uninstall` — in `pending.go`, with bodies returning
+`ErrNotImplemented`. That satisfies "every command's `--help` matches the specification's flags"
+and makes profile completion work everywhere now, while leaving each body to the stage that
+builds the engine behind it. `restore --preview` is the same: it is the `status` engine, so it
+reports not-implemented until stage 10.
+
+Three decisions worth recording:
+
+1. **`--headless` implies non-interactive.** `Env.Confirm` returns a `ErrUsage` naming the prompt
+   rather than answering for the user, and `restore` does not install a confirmer under
+   `--headless`. A CI run that silently answers a conflict prompt is how unattended data loss
+   happens.
+2. **Exit codes come only from sentinels.** `ExitCode` matches with `errors.Is` against the
+   sentinels each package owns, and a test asserts that an error whose *message* reads
+   "usage error" still exits 2 — message text must never decide the code.
+3. **`workspace sync` copies the `Env` per workspace** to set `WorkDir`, so each repo's relative
+   manifest and its own `.env` resolve against the right directory, and one failure never stops
+   the rest. It exits with `ErrOperation` (code 2) when any workspace failed.
+
+`Env.Git` is injectable, which is what lets `clone` and `workspace sync` be tested end to end
+with no network — including the case where the middle workspace of three fails and the ones
+either side still restore.
+
+Deliberately **not** built: `rv gui` (deferred post-v1.0) and `rv watch` (stage 13), neither of
+which appears in `--help`.
+
+---
 
 ### Stage 8 completion notes (2026-08-19)
 

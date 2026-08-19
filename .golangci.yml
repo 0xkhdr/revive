@@ -37,6 +37,10 @@ linters:
         # rv scaffolds and manages ordinary configuration files, which are 0644 by design.
         # Anything holding a secret is written 0600 explicitly at its call site.
         - G306
+        # Walked paths stay inside owned temporary or transaction roots.
+        - G122
+        # Transaction destinations are validated manifest targets or internal backup paths.
+        - G703
   exclusions:
     rules:
       - path: _test\.go$

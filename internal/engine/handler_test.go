@@ -4,10 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/0xkhdr/revive/internal/crypto"
+	"github.com/0xkhdr/revive/internal/lockfile"
 	"github.com/0xkhdr/revive/internal/manifest"
 	"github.com/0xkhdr/revive/internal/paths"
 	"github.com/0xkhdr/revive/internal/transaction"
@@ -517,4 +519,57 @@ func TestHandlerFallsBackToTheProcessEnvironment(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	require.Len(t, plan.Targets, 1)
+}
+
+func TestOwnsTarget(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	target := f.target("conf")
+	require.NoError(t, os.WriteFile(target, []byte("content\n"), 0o644))
+
+	fi, err := os.Lstat(target)
+	require.NoError(t, err)
+	recorded := float64(fi.ModTime().UnixNano()) / float64(time.Second)
+
+	// Nothing is owned without a lockfile.
+	require.False(t, f.h.ownsTarget("conf", target))
+
+	f.h.Lockfile = lockfile.New()
+	require.False(t, f.h.ownsTarget("conf", target), "an empty lockfile owns nothing")
+
+	f.h.Lockfile.Entries["conf"] = lockfile.Entry{
+		TargetPath: manifest.Scalar(target),
+		MTime:      lockfile.ScalarFloat(recorded),
+	}
+	require.True(t, f.h.ownsTarget("conf", target))
+	require.False(t, f.h.ownsTarget("other", target), "ownership is per asset")
+	require.False(t, f.h.ownsTarget("conf", f.target("elsewhere")), "and per target")
+
+	// Any edit moves the modification time.
+	later := fi.ModTime().Add(time.Second)
+	require.NoError(t, os.Chtimes(target, later, later))
+	require.False(t, f.h.ownsTarget("conf", target))
+
+	// A recorded target that no longer exists is not owned.
+	require.NoError(t, os.Remove(target))
+	require.False(t, f.h.ownsTarget("conf", target))
+}
+
+func TestOwnershipToleratesTimestampGranularity(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	target := f.target("conf")
+	require.NoError(t, os.WriteFile(target, []byte("content\n"), 0o644))
+
+	fi, err := os.Lstat(target)
+	require.NoError(t, err)
+	recorded := float64(fi.ModTime().UnixNano())/float64(time.Second) + 0.0005
+
+	f.h.Lockfile = lockfile.New()
+	f.h.Lockfile.Entries["conf"] = lockfile.Entry{
+		TargetPath: manifest.Scalar(target),
+		MTime:      lockfile.ScalarFloat(recorded),
+	}
+	require.True(t, f.h.ownsTarget("conf", target),
+		"sub-millisecond drift is filesystem granularity, not an edit")
 }

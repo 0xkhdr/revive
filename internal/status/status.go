@@ -231,7 +231,7 @@ func (c *Checker) compareEncrypted(asset manifest.Asset, source, target string, 
 	if !ok {
 		return Modified, "no identity and no lockfile entry, so the content cannot be verified"
 	}
-	recorded, ok := recordedMTime(entry, target)
+	recorded, ok := entry.MTimeFor(target)
 	if !ok {
 		return Modified, "no identity and no recorded mtime for this target"
 	}
@@ -241,16 +241,6 @@ func (c *Checker) compareEncrypted(asset manifest.Asset, source, target string, 
 		return Modified, "modification time differs from the lockfile"
 	}
 	return InSync, ""
-}
-
-// recordedMTime finds the lockfile mtime for one target of a possibly multi-target entry.
-func recordedMTime(entry lockfile.Entry, target string) (float64, bool) {
-	for i, path := range entry.TargetPath.Values {
-		if path == target && i < len(entry.MTime.Values) {
-			return entry.MTime.Values[i], true
-		}
-	}
-	return 0, false
 }
 
 func compareHash(want, target string) (Value, string) {

@@ -231,7 +231,8 @@ func TestSecretAsAsset(t *testing.T) {
 	require.Equal(t, TypeSecret, a.Type)
 	require.True(t, a.Encrypted)
 	require.Equal(t, "0600", *a.Permissions)
-	require.Equal(t, ConflictOverwrite, a.ConflictStrategy)
+	require.Equal(t, ConflictPrompt, a.ConflictStrategy,
+		"a secret carries no strategy of its own, so it gets the same default an asset does")
 }
 
 func TestLoadMissingFile(t *testing.T) {

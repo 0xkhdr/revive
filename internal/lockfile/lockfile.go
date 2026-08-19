@@ -64,6 +64,18 @@ type Entry struct {
 	MTime          FloatOrSlice           `json:"mtime"`
 }
 
+// MTimeFor returns the modification time this entry recorded for one target, and whether it has
+// one. A multi-target entry stores index-aligned arrays, so the target has to be matched by
+// position rather than assumed.
+func (e Entry) MTimeFor(target string) (float64, bool) {
+	for i, path := range e.TargetPath.Values {
+		if path == target && i < len(e.MTime.Values) {
+			return e.MTime.Values[i], true
+		}
+	}
+	return 0, false
+}
+
 // Lockfile is the whole manifest.lock document. Its content is JSON even though the manifest is
 // YAML.
 type Lockfile struct {

@@ -179,6 +179,17 @@ func (r *Restorer) Restore(ctx context.Context, opts Options) (*Result, error) {
 	// Steps 4 and 5: validate dependencies and decrypt, both inside planning.
 	r.log().Info("steps 4-5/14: planning assets", "tx_id", tx.TxID, "sequential", opts.Sequential)
 	handler := r.newHandler(opts, identity)
+
+	// The lockfile is read before planning, not just written after it: conflict resolution uses
+	// it to tell a target rv already owns from one the user put there.
+	lockPath := lockfile.PathFor(opts.ManifestPath)
+	existing, err := lockfile.LoadOrEmpty(lockPath)
+	if err != nil {
+		r.log().Warn("existing lockfile could not be read; treating every target as unowned",
+			"path", lockPath, "error", err)
+	}
+	handler.Lockfile = existing
+
 	plans, err := r.planAll(ctx, handler, resolved, opts.Sequential)
 	if err != nil {
 		return nil, err
@@ -251,9 +262,9 @@ func (r *Restorer) Restore(ctx context.Context, opts Options) (*Result, error) {
 
 	// Step 13: record the confirmed good state.
 	r.log().Info("step 13/14: updating lockfile")
-	lockPath, err := r.updateLockfile(opts, resolved, plans, tx)
-	if err != nil {
-		return nil, r.rollbackAfter(tx, 13, err)
+	lockPath, lockErr := r.updateLockfile(opts, resolved, plans, existing, tx)
+	if lockErr != nil {
+		return nil, r.rollbackAfter(tx, 13, lockErr)
 	}
 	result.LockfilePath = lockPath
 
@@ -410,12 +421,8 @@ func (r *Restorer) installPackages(ctx context.Context, opts Options, resolved *
 
 // updateLockfile records the confirmed state. An unreadable existing lockfile is replaced with a
 // warning rather than failing the run.
-func (r *Restorer) updateLockfile(opts Options, resolved *profile.Resolved, plans []Plan, tx *transaction.Transaction) (string, error) {
+func (r *Restorer) updateLockfile(opts Options, resolved *profile.Resolved, plans []Plan, lf *lockfile.Lockfile, tx *transaction.Transaction) (string, error) {
 	path := lockfile.PathFor(opts.ManifestPath)
-	lf, err := lockfile.LoadOrEmpty(path)
-	if err != nil {
-		r.log().Warn("replacing unreadable lockfile", "path", path, "error", err)
-	}
 
 	byID := make(map[string]Plan, len(plans))
 	for _, p := range plans {

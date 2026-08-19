@@ -145,13 +145,17 @@ type Secret struct {
 func (s Secret) Asset() Asset {
 	perms := s.Permissions
 	return Asset{
-		ID:               s.ID,
-		Type:             TypeSecret,
-		Source:           s.Source,
-		Target:           s.Target,
-		Permissions:      &perms,
-		Owner:            s.Owner,
-		ConflictStrategy: ConflictOverwrite,
+		ID:          s.ID,
+		Type:        TypeSecret,
+		Source:      s.Source,
+		Target:      s.Target,
+		Permissions: &perms,
+		Owner:       s.Owner,
+		// A secret carries no conflict_strategy of its own, so it gets the same default an
+		// asset does. Silently overwriting a .env the user wrote by hand is precisely the data
+		// loss `prompt` exists to prevent; re-runs stay a no-op because conflict resolution
+		// recognizes a target rv itself last wrote.
+		ConflictStrategy: ConflictPrompt,
 		Encrypted:        true,
 	}
 }

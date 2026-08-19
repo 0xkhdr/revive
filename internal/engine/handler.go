@@ -7,12 +7,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/0xkhdr/revive/internal/crypto"
+	"github.com/0xkhdr/revive/internal/lockfile"
 	"github.com/0xkhdr/revive/internal/manifest"
 	"github.com/0xkhdr/revive/internal/paths"
 	"github.com/0xkhdr/revive/internal/transaction"
@@ -34,6 +37,10 @@ var (
 // secretMode is the mode a secret lands with when the manifest declares none.
 const secretMode = "0600"
 
+// ownershipTolerance absorbs filesystem timestamp granularity when deciding whether a target is
+// still exactly what rv last wrote.
+const ownershipTolerance = time.Millisecond
+
 // Confirm asks the user a yes/no question. It is nil in non-interactive mode, where a `prompt`
 // conflict is a hard error rather than a silent skip.
 type Confirm func(prompt string) (bool, error)
@@ -47,6 +54,9 @@ type Handler struct {
 	Identity string // "" when no identity was resolved
 	Lookup   paths.Lookup
 	Confirm  Confirm
+	// Lockfile records what rv last wrote. It is what lets conflict resolution tell a target rv
+	// owns from one the user put there. Nil means "own nothing", which is the first-run case.
+	Lockfile *lockfile.Lockfile
 
 	// Template built-ins, injected so tests do not depend on the host.
 	Hostname string
@@ -223,6 +233,15 @@ func (h *Handler) resolveConflict(asset manifest.Asset, absTarget string) (bool,
 	case manifest.ConflictAbort:
 		return false, fmt.Errorf("%w: %s for asset %q (strategy: abort)", ErrTargetConflict, absTarget, asset.ID)
 	case manifest.ConflictPrompt:
+		// A target rv itself wrote, and that nobody has touched since, is not a conflict —
+		// prompting exists to protect the user's files, not rv's own output. Without this a
+		// second `rv restore` on the default strategy is an error rather than a no-op.
+		//
+		// Only `prompt` is short-circuited. `skip` and `abort` are explicit instructions about
+		// what to do when the target exists, and rv does not get to reinterpret them.
+		if h.ownsTarget(asset.ID, absTarget) {
+			return true, nil
+		}
 		if h.Confirm == nil {
 			// Never silently skip: that is silent data loss wearing a success message.
 			return false, fmt.Errorf("%w: %s for asset %q has strategy 'prompt' but there is no "+
@@ -237,6 +256,34 @@ func (h *Handler) resolveConflict(asset manifest.Asset, absTarget string) (bool,
 	default:
 		return false, fmt.Errorf("%w: conflict strategy %q", ErrUnsupportedType, asset.ConflictStrategy)
 	}
+}
+
+// ownsTarget reports whether the lockfile says rv wrote this exact target and it has not changed
+// since.
+//
+// The recorded modification time is the test: rv updates it on every write, so a match means the
+// file on disk is still rv's own output, and any edit by the user or another program moves it.
+// Failing closed — treating an unknown or mismatched target as a conflict — is what keeps this
+// from becoming a silent overwrite.
+func (h *Handler) ownsTarget(assetID, absTarget string) bool {
+	if h.Lockfile == nil {
+		return false
+	}
+	entry, ok := h.Lockfile.Entries[assetID]
+	if !ok {
+		return false
+	}
+	recorded, ok := entry.MTimeFor(absTarget)
+	if !ok {
+		return false
+	}
+	fi, err := os.Lstat(absTarget)
+	if err != nil {
+		return false
+	}
+
+	actual := float64(fi.ModTime().UnixNano()) / float64(time.Second)
+	return math.Abs(actual-recorded) <= ownershipTolerance.Seconds()
 }
 
 // planTarget emits one target's operations in the order the spec fixes:

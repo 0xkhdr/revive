@@ -84,6 +84,43 @@ by a test. Anything unmarked has not been started.
 | 13 | **DONE** | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
 
+### Conflict resolution now consults the lockfile (2026-08-19)
+
+Resolves the tension flagged in the stage 8 notes, by decision rather than by fixture. Coverage on
+`internal/` is **92.0%**.
+
+**The rule:** a target is not a conflict when the lockfile records that rv wrote it and its
+modification time still matches what was recorded. Prompting exists to protect the *user's* files;
+making rv ask before overwriting its own output is what made idempotency unreachable on the
+default strategy.
+
+Four properties, each pinned by a test:
+
+1. **Only `prompt` is short-circuited.** `skip` and `abort` are explicit instructions about what
+   to do when the target exists, and rv does not get to reinterpret them. `overwrite` never
+   consulted anything anyway.
+2. **Ownership fails closed.** No lockfile entry, no recorded mtime for *that* target, an
+   unreadable lockfile, or an mtime that has moved — all mean "not owned", so the conflict
+   strategy applies as before. The tolerance is 1 ms, the same one `status` uses for its encrypted
+   fallback, and it covers filesystem timestamp granularity rather than an edit.
+3. **Ownership is per target, not per asset.** A multi-target asset where one file was edited by
+   hand still conflicts on that one and stays owned on the others.
+4. **A hand-edited target is still protected.** The edit survives the refusal; nothing is
+   overwritten on the strength of the asset ID alone.
+
+**One behavior change this made correct.** `Secret.Asset()` had been forcing
+`conflict_strategy: overwrite` since stage 2 — a divergence from the reference, which defaults a
+secret to `prompt` like any other asset. That was only tolerable because prompting would otherwise
+have made every second restore fail. Secrets now default to `prompt` too, so a `.env` the user
+rotated by hand is protected instead of silently overwritten, while re-runs stay a no-op.
+
+**Effect on stage 14.** Its interop gate — a Python-restored workspace showing restore as a no-op —
+now exercises the default strategy honestly, rather than needing a fixture written around the
+problem. Note the gate depends on the Python-written lockfile's recorded mtimes matching the files
+on disk, which is exactly what that lockfile is for.
+
+---
+
 ### Stage 13 completion notes (2026-08-19)
 
 Stage 13 is done. Coverage on `internal/` is **91.9%**. Package added: `watcher`; `rv watch` is

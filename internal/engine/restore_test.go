@@ -160,13 +160,11 @@ assets:
     type: symlink
     source: assets/zshrc
     target: %s
-    conflict_strategy: overwrite
   - id: gitconfig
     type: template
     source: assets/gitconfig.tmpl
     target: %s
     permissions: "0644"
-    conflict_strategy: overwrite
     template_vars:
       email: dev@example.com
 profiles:
@@ -827,16 +825,12 @@ func TestPluginFailureRollsBack(t *testing.T) {
 	require.Equal(t, "original\n", string(got))
 }
 
-// Re-running a restore over targets rv itself wrote still hits conflict resolution: the default
-// `prompt` strategy has nobody to ask in a non-interactive run, so it errors rather than
-// silently overwriting.
+// Re-running a restore on the default `prompt` strategy is a no-op, not an error: the lockfile
+// says rv wrote the target and nothing has touched it since, so there is no conflict to resolve.
 //
-// This is the specified behavior of both criteria taken together (docs/04 §5 resolves conflicts
-// from the filesystem alone, and a non-interactive `prompt` MUST error), but it does mean
-// idempotency is only reachable with an explicit strategy. Recorded rather than worked around,
-// because inventing lockfile-aware conflict resolution would be a feature the spec never asked
-// for.
-func TestRerunWithThePromptDefaultErrors(t *testing.T) {
+// Prompting exists to protect the user's files. Making rv ask before overwriting its own output
+// would make idempotency unreachable on the default strategy.
+func TestRerunWithThePromptDefaultIsANoOp(t *testing.T) {
 	t.Parallel()
 	w := newWorkspace(t)
 	w.writeRepo("assets/conf", "content\n")
@@ -844,17 +838,144 @@ func TestRerunWithThePromptDefaultErrors(t *testing.T) {
 		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s}]\nprofiles: {base: {assets: [conf]}}\n",
 		w.target("conf")))
 
+	// No confirmer is installed, so a genuine prompt would be a hard error.
+	for range 3 {
+		_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+		require.NoError(t, err)
+	}
+
+	got, err := os.ReadFile(w.target("conf"))
+	require.NoError(t, err)
+	require.Equal(t, "content\n", string(got))
+}
+
+// A target the user edited is a real conflict, and the default strategy still refuses to
+// overwrite it without asking.
+func TestUserEditedTargetIsStillAConflict(t *testing.T) {
+	t.Parallel()
+	w := newWorkspace(t)
+	w.writeRepo("assets/conf", "content\n")
+	target := w.target("conf")
+	w.manifest(fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s}]\nprofiles: {base: {assets: [conf]}}\n",
+		target))
+
 	_, err := w.restorer().Restore(context.Background(), w.opts("base"))
-	require.NoError(t, err, "the first run has no conflict to resolve")
+	require.NoError(t, err)
 
+	// An edit moves the modification time away from what the lockfile recorded.
+	require.NoError(t, os.WriteFile(target, []byte("edited by hand\n"), 0o644))
 	_, err = w.restorer().Restore(context.Background(), w.opts("base"))
-	require.ErrorIs(t, err, ErrTargetConflict)
+	require.ErrorIs(t, err, ErrTargetConflict,
+		"rv owns its own output, not a file the user changed")
 
-	// With an interactive confirmer, the same second run proceeds.
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, "edited by hand\n", string(got), "the edit must survive the refusal")
+
+	// With someone to ask, the same run proceeds.
 	r := w.restorer()
 	r.Confirm = func(string) (bool, error) { return true, nil }
 	_, err = r.Restore(context.Background(), w.opts("base"))
 	require.NoError(t, err)
+}
+
+// A target rv has never written is a conflict, even when an asset of that name is in the
+// lockfile under a different path.
+func TestUnknownTargetIsAConflict(t *testing.T) {
+	t.Parallel()
+	w := newWorkspace(t)
+	w.writeRepo("assets/conf", "content\n")
+	first := w.target("first")
+	second := w.target("second")
+	w.manifest(fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s}]\nprofiles: {base: {assets: [conf]}}\n",
+		first))
+
+	_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+	require.NoError(t, err)
+
+	// The manifest now points somewhere else, and something is already there.
+	require.NoError(t, os.WriteFile(second, []byte("someone else's file\n"), 0o644))
+	w.manifest(fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s}]\nprofiles: {base: {assets: [conf]}}\n",
+		second))
+
+	_, err = w.restorer().Restore(context.Background(), w.opts("base"))
+	require.ErrorIs(t, err, ErrTargetConflict,
+		"the lockfile records the old path, so the new one is not rv's to overwrite")
+}
+
+// Ownership short-circuits only `prompt`. `skip` and `abort` are explicit instructions about
+// what to do when the target exists, and rv does not get to reinterpret them.
+func TestOwnershipDoesNotOverrideExplicitStrategies(t *testing.T) {
+	t.Parallel()
+	for strategy, check := range map[string]func(*testing.T, error){
+		"skip":  func(t *testing.T, err error) { require.NoError(t, err) },
+		"abort": func(t *testing.T, err error) { require.ErrorIs(t, err, ErrTargetConflict) },
+	} {
+		t.Run(strategy, func(t *testing.T) {
+			t.Parallel()
+			w := newWorkspace(t)
+			w.writeRepo("assets/conf", "content\n")
+			w.manifest(fmt.Sprintf(
+				"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s, conflict_strategy: %s}]\n"+
+					"profiles: {base: {assets: [conf]}}\n", w.target("conf"), strategy))
+
+			_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+			require.NoError(t, err, "the first run has no conflict")
+
+			_, err = w.restorer().Restore(context.Background(), w.opts("base"))
+			check(t, err)
+		})
+	}
+}
+
+// A multi-target asset is owned per target: editing one does not make the others suspect, and
+// does not make the edited one safe.
+func TestOwnershipIsPerTarget(t *testing.T) {
+	t.Parallel()
+	w := newWorkspace(t)
+	w.writeRepo("assets/app/one", "one\n")
+	w.writeRepo("assets/app/two", "two\n")
+	one, two := w.target("one"), w.target("two")
+	w.manifest(fmt.Sprintf(
+		"version: 2\nassets: [{id: app, type: copy, source: assets/app, target: [%s, %s]}]\nprofiles: {base: {assets: [app]}}\n",
+		one, two))
+
+	_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+	require.NoError(t, err)
+
+	_, err = w.restorer().Restore(context.Background(), w.opts("base"))
+	require.NoError(t, err, "both targets are still rv's own output")
+
+	require.NoError(t, os.WriteFile(two, []byte("edited\n"), 0o644))
+	_, err = w.restorer().Restore(context.Background(), w.opts("base"))
+	require.ErrorIs(t, err, ErrTargetConflict)
+}
+
+// Symlink and template assets re-run cleanly too, not just plain copies.
+func TestRerunAcrossAssetTypes(t *testing.T) {
+	t.Parallel()
+	w := newWorkspace(t)
+	w.writeRepo("assets/zshrc", "export EDITOR=vim\n")
+	w.writeRepo("assets/gitconfig.tmpl", "email = {{ .email }}\n")
+	w.manifest(fmt.Sprintf(`
+version: 2
+assets:
+  - {id: zshrc, type: symlink, source: assets/zshrc, target: %s}
+  - id: gitconfig
+    type: template
+    source: assets/gitconfig.tmpl
+    target: %s
+    template_vars: {email: dev@example.com}
+profiles: {base: {assets: [zshrc, gitconfig]}}
+`, w.target(".zshrc"), w.target(".gitconfig")))
+
+	for range 3 {
+		_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+		require.NoError(t, err)
+	}
 }
 
 func TestManifestAndProfileErrorsSurface(t *testing.T) {
@@ -929,4 +1050,48 @@ func TestRollbackAfterReportsAnIncompleteRollback(t *testing.T) {
 	_, err := r.Restore(context.Background(), w.opts("base"))
 	require.ErrorIs(t, err, transaction.ErrRollbackIncomplete)
 	require.Contains(t, err.Error(), "rollback was incomplete")
+}
+
+// A secret re-runs cleanly on the default strategy, and a hand-edited secret is protected rather
+// than silently overwritten.
+func TestSecretRerunAndProtection(t *testing.T) {
+	t.Parallel()
+	w := newWorkspace(t).withIdentity()
+	w.encryptRepo("secrets/env.age", "TOKEN=from-the-repo\n")
+	target := w.target(".env")
+	w.manifest(fmt.Sprintf(
+		"version: 2\nsecrets: [{id: env, source: secrets/env.age, target: %s}]\nprofiles: {base: {secrets: [env]}}\n",
+		target))
+
+	for range 2 {
+		_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+		require.NoError(t, err, "re-running a secret restore is a no-op")
+	}
+
+	require.NoError(t, os.WriteFile(target, []byte("TOKEN=rotated-by-hand\n"), 0o600))
+	_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+	require.ErrorIs(t, err, ErrTargetConflict)
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, "TOKEN=rotated-by-hand\n", string(got),
+		"silently overwriting a secret the user rotated is the data loss prompt exists to prevent")
+}
+
+// An unreadable lockfile means rv owns nothing: every existing target becomes a conflict rather
+// than being overwritten on a bad assumption.
+func TestCorruptLockfileMakesNothingOwned(t *testing.T) {
+	t.Parallel()
+	w := newWorkspace(t)
+	w.writeRepo("assets/conf", "content\n")
+	w.manifest(fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s}]\nprofiles: {base: {assets: [conf]}}\n",
+		w.target("conf")))
+
+	_, err := w.restorer().Restore(context.Background(), w.opts("base"))
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(w.repo, "manifest.lock"), []byte("{not json"), 0o644))
+	_, err = w.restorer().Restore(context.Background(), w.opts("base"))
+	require.ErrorIs(t, err, ErrTargetConflict, "failing closed is the safe direction")
 }

@@ -398,3 +398,80 @@ func TestWipeOnAMissingFile(t *testing.T) {
 	t.Parallel()
 	require.Error(t, wipe(filepath.Join(t.TempDir(), "absent")))
 }
+
+func TestSelfUninstall(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	binary := filepath.Join(h.work, "rv")
+	require.NoError(t, os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755))
+	h.env.Executable = binary
+	require.NoError(t, os.MkdirAll(h.env.Paths.ConfigDir, 0o700))
+
+	out, err := h.run("self-uninstall", "--force")
+	require.NoError(t, err)
+	require.Contains(t, out, "removed "+binary)
+	require.NoFileExists(t, binary)
+	require.DirExists(t, h.env.Paths.ConfigDir, "the config survives without --purge-config")
+}
+
+func TestSelfUninstallConfirms(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	binary := filepath.Join(h.work, "rv")
+	require.NoError(t, os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755))
+	h.env.Executable = binary
+	h.env.In = strings.NewReader("n\n")
+
+	out, err := h.run("self-uninstall")
+	require.NoError(t, err)
+	require.Contains(t, out, "nothing was removed")
+	require.FileExists(t, binary)
+}
+
+// --purge-config deletes the age identity, so the user is told plainly before it happens.
+func TestSelfUninstallPurgeWarnsAboutTheIdentity(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	binary := filepath.Join(h.work, "rv")
+	require.NoError(t, os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755))
+	h.env.Executable = binary
+
+	pub, identity, err := crypto.GenerateKeypair()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(h.env.Paths.ConfigDir, 0o700))
+	require.NoError(t, crypto.WriteIdentityFile(h.env.Paths.IdentityFile, pub, identity))
+
+	out, err := h.run("self-uninstall", "--force", "--purge-config")
+	require.NoError(t, err)
+	require.Contains(t, out, "permanently undecryptable")
+	require.NoDirExists(t, h.env.Paths.ConfigDir)
+	require.NoFileExists(t, binary)
+}
+
+// Purging deletes the backups an unrecovered transaction needs, so that is called out too.
+func TestSelfUninstallPurgeWarnsAboutUnrecoveredJournals(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	binary := filepath.Join(h.work, "rv")
+	require.NoError(t, os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755))
+	h.env.Executable = binary
+	h.crash("crashed")
+
+	out, err := h.run("self-uninstall", "--force", "--purge-config")
+	require.NoError(t, err)
+	require.Contains(t, out, "rv recover")
+	require.Contains(t, out, "interrupted transaction")
+}
+
+func TestSelfUninstallLeavesWorkspacesAlone(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	binary := filepath.Join(h.work, "rv")
+	require.NoError(t, os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755))
+	h.env.Executable = binary
+	h.write("manifest.yaml", "version: 2\nprofiles: {base: {}}\n")
+
+	_, err := h.run("self-uninstall", "--force", "--purge-config")
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(h.work, "manifest.yaml"))
+}

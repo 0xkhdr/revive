@@ -7,11 +7,29 @@ import (
 	"github.com/0xkhdr/revive/internal/cli"
 )
 
-// version is injected at build time with -ldflags "-X main.version=...".
-var version = "dev"
+// Build metadata, injected with -ldflags at release time.
+var (
+	version = "dev"
+	commit  = ""
+	date    = ""
+)
 
 func main() {
-	if err := cli.Execute(version); err != nil {
+	if err := cli.Execute(fullVersion()); err != nil {
 		os.Exit(cli.ExitCode(err))
 	}
+}
+
+// fullVersion renders what `rv --version` prints. A bug report is much easier to act on when it
+// names the commit the binary was built from.
+func fullVersion() string {
+	out := version
+	if commit != "" {
+		out += " (" + commit
+		if date != "" {
+			out += ", " + date
+		}
+		out += ")"
+	}
+	return out
 }

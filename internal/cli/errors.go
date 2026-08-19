@@ -18,8 +18,6 @@ var (
 	ErrUsage = errors.New("usage error")
 	// ErrOperation marks a failed operation, as opposed to a bad request.
 	ErrOperation = errors.New("operation failed")
-	// ErrNotImplemented is returned by commands whose engines arrive in a later stage.
-	ErrNotImplemented = errors.New("not implemented")
 )
 
 // ExitCode maps an error to the process exit code.

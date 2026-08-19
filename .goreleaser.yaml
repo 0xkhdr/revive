@@ -1,0 +1,57 @@
+version: 2
+
+project_name: rv
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: rv
+    main: ./cmd/rv
+    binary: rv
+    # CGO off so the Linux binaries are fully static and run on any distribution.
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .CommitDate }}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: rv
+    formats: [tar.gz]
+    name_template: "rv_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - docs/MIGRATION.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  prerelease: auto
+  footer: |
+    ## Upgrading from the Python implementation
+
+    Read [docs/MIGRATION.md](https://github.com/0xkhdr/revive/blob/main/docs/MIGRATION.md)
+    first. Templates need rewriting: `rv doctor` finds every one of them and names the
+    replacement.

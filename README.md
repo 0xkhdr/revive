@@ -6,24 +6,62 @@ A git repository declares files, secrets, and packages in a `manifest.yaml`. `rv
 makes the local machine match that declaration — atomically, with a rollback journal, on a fresh
 machine or an existing one.
 
-> **Status: rebuild in progress.**
-> `rv` is being rewritten in Go. There is no Go code in this repository yet — only the
-> specification for it. The previous Python implementation is archived in
-> [`reference/`](reference/) and is no longer developed.
+## Install
+
+```console
+$ go install github.com/0xkhdr/revive/cmd/rv@latest
+```
+
+Or download a release binary for `linux/amd64`, `linux/arm64`, `darwin/amd64` or `darwin/arm64`,
+`chmod +x` it, and put it on your `PATH`. The Linux builds are fully static, so they run on any
+distribution. There are no runtime dependencies.
+
+**Upgrading from the Python `rv`?** Read [docs/MIGRATION.md](docs/MIGRATION.md). Your manifests,
+lockfiles, encrypted secrets and journals all carry over unchanged; templates need rewriting, and
+`rv doctor` finds every one of them.
+
+## Quick start
+
+```console
+$ mkdir dotfiles && cd dotfiles && git init
+$ rv init                              # scaffold the workspace
+$ rv secret keygen -o ~/.config/rv/identity.txt
+$ $EDITOR manifest.yaml                # declare your first asset
+$ rv doctor                            # check it over
+$ rv restore base --dry-run            # see what would happen
+$ rv restore base                      # apply it
+$ rv status -p base                    # what has drifted since
+```
+
+## Measured
+
+Built with `-trimpath -ldflags "-s -w"`, `CGO_ENABLED=0`:
+
+| Platform | Binary |
+|----------|--------|
+| linux/amd64 | 6.4 MB |
+| linux/arm64 | 5.9 MB |
+| darwin/amd64 | 6.5 MB |
+| darwin/arm64 | 6.0 MB |
+
+Startup, `rv --help`, median of 20 runs on the same machine: **4.7 ms**, against **665 ms** for
+the Python implementation — roughly 140× faster. Shell completion pays that cost on every
+keystroke, which is where it is most noticeable.
 
 ## Repository layout
 
 | Path | Contents |
 |------|----------|
-| [`docs/`](docs/) | The build specification for the Go rewrite. Start at [`docs/README.md`](docs/README.md). |
-| [`reference/`](reference/) | The archived Python implementation — the behavioral oracle for the rewrite, not a porting target. |
+| `cmd/rv/` | The binary. Thin: build the root command, map errors to exit codes. |
+| `internal/` | Everything else. Nothing here is a public API. |
+| [`docs/`](docs/) | The build specification. Start at [`docs/README.md`](docs/README.md). |
+| [`docs/MIGRATION.md`](docs/MIGRATION.md) | Moving from the Python implementation. |
+| [`reference/`](reference/) | The archived Python implementation — the behavioral oracle, not a porting target. |
 | [`reference/examples/`](reference/examples/) | Real-world example manifests. |
-| `.github/` | Issue and PR templates, dependabot. Go CI arrives with Phase 0. |
 
-## Building the Go version
+## The specification
 
-Everything an implementer needs is in [`docs/`](docs/), written so that no reading of the Python
-source is required:
+The Go build was written from these, so that no reading of the Python source is required:
 
 1. [Overview](docs/01-overview.md) — what `rv` is, scope, and the deliberate divergences from Python
 2. [Domain Model](docs/02-domain-model.md) — manifest schema, lockfile, journal formats
@@ -37,14 +75,33 @@ source is required:
 10. [Build Plan](docs/10-build-plan.md) — 15 phases with acceptance criteria
 11. [Testing & Quality](docs/11-testing-quality.md) — test strategy and coverage gates
 
-Work proceeds through [the build plan](docs/10-build-plan.md) in order. A phase is done when its
-acceptance criteria pass, not before.
+[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) tracks what is built and records the decisions
+taken along the way.
 
 ## Compatibility contract
 
-The Go build must be able to take over a machine that previously ran the Python `rv`: same
-`manifest.yaml` (schema v1 and v2), same `manifest.lock`, same transaction journals, same
-age-encrypted files, same `~/.config/rv` layout. Interop tests enforce this at Phases 4, 5, 8, and 14.
+The Go build takes over a machine that previously ran the Python `rv`: same `manifest.yaml`
+(schema v1 and v2), same `manifest.lock`, same transaction journals, same age-encrypted files
+under the same identity, same `~/.config/rv` layout.
+
+Four interop gates enforce it, each against fixtures produced by the Python implementation itself:
+
+| Gate | What it proves |
+|------|----------------|
+| `internal/crypto` | A Python-encrypted file decrypts here, and a Go-encrypted one decrypts there |
+| `internal/transaction` | A journal from a crashed Python restore rolls back here, to the exact pre-state |
+| `internal/lockfile` | A Python-written lockfile loads without loss and rewrites equivalently |
+| `internal/interop` | A workspace restored by Python reports in-sync, restores as a no-op, and keeps its lockfile |
+
+## Development
+
+```console
+$ go test ./...            # unit tests and interop gates
+$ go test -race ./...      # the concurrency the watcher and scrubber rely on
+$ golangci-lint run ./...
+```
+
+Coverage on `internal/` is held above 90% in CI.
 
 ## License
 

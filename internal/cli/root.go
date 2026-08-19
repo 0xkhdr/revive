@@ -36,7 +36,9 @@ type Env struct {
 	Git      func(dir string, args ...string) ([]byte, error)
 	WorkDir  string
 	Hostname string
-	Now      func() time.Time
+	// Executable overrides the path self-uninstall removes. Empty means the running binary.
+	Executable string
+	Now        func() time.Time
 
 	Platform *platform.Detector
 

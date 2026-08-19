@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"os/user"
@@ -120,7 +121,7 @@ func (h *Handler) PlanAsset(asset manifest.Asset) (Plan, error) {
 			return plan, fmt.Errorf("asset %q: %w", asset.ID, err)
 		}
 
-		proceed, err := h.resolveConflict(asset, absTarget)
+		proceed, err := h.resolveConflict(asset, targetSource, absTarget)
 		if err != nil {
 			return plan, err
 		}
@@ -218,7 +219,7 @@ func (h *Handler) resolveSource(absSource, absTarget string, encrypted bool) (st
 }
 
 // resolveConflict reports whether this target should be planned.
-func (h *Handler) resolveConflict(asset manifest.Asset, absTarget string) (bool, error) {
+func (h *Handler) resolveConflict(asset manifest.Asset, source, absTarget string) (bool, error) {
 	if _, err := os.Lstat(absTarget); err != nil {
 		//nolint:nilerr // Nothing at the target means no conflict to resolve, which is the
 		// common case, not an error.
@@ -239,7 +240,7 @@ func (h *Handler) resolveConflict(asset manifest.Asset, absTarget string) (bool,
 		//
 		// Only `prompt` is short-circuited. `skip` and `abort` are explicit instructions about
 		// what to do when the target exists, and rv does not get to reinterpret them.
-		if h.ownsTarget(asset.ID, absTarget) {
+		if h.ownsTarget(asset.ID, source, absTarget) {
 			return true, nil
 		}
 		if h.Confirm == nil {
@@ -258,14 +259,12 @@ func (h *Handler) resolveConflict(asset manifest.Asset, absTarget string) (bool,
 	}
 }
 
-// ownsTarget reports whether the lockfile says rv wrote this exact target and it has not changed
-// since.
+// ownsTarget reports whether the lockfile says rv wrote this exact target and nothing has
+// changed it since.
 //
-// The recorded modification time is the test: rv updates it on every write, so a match means the
-// file on disk is still rv's own output, and any edit by the user or another program moves it.
 // Failing closed — treating an unknown or mismatched target as a conflict — is what keeps this
 // from becoming a silent overwrite.
-func (h *Handler) ownsTarget(assetID, absTarget string) bool {
+func (h *Handler) ownsTarget(assetID, source, absTarget string) bool {
 	if h.Lockfile == nil {
 		return false
 	}
@@ -273,15 +272,34 @@ func (h *Handler) ownsTarget(assetID, absTarget string) bool {
 	if !ok {
 		return false
 	}
-	recorded, ok := entry.MTimeFor(absTarget)
-	if !ok {
+	if _, ok := entry.MTimeFor(absTarget); !ok {
+		// The lockfile knows the asset but not this target, so rv has never written here.
 		return false
 	}
+
 	fi, err := os.Lstat(absTarget)
 	if err != nil {
 		return false
 	}
 
+	// A symlink is owned when it still points where rv pointed it. Its own modification time is
+	// no use here: rv recreates the link on every restore, and the lockfile records the
+	// destination's timestamp, which moves whenever the repo source is edited — which is the
+	// normal way to work with a symlink asset.
+	if fi.Mode()&fs.ModeSymlink != 0 {
+		link, err := os.Readlink(absTarget)
+		if err != nil {
+			return false
+		}
+		if !filepath.IsAbs(link) {
+			link = filepath.Join(filepath.Dir(absTarget), link)
+		}
+		return filepath.Clean(link) == filepath.Clean(source)
+	}
+
+	// For a regular file the recorded modification time is the test: rv sets it on every write,
+	// and any edit by the user or another program moves it.
+	recorded, _ := entry.MTimeFor(absTarget)
 	actual := float64(fi.ModTime().UnixNano()) / float64(time.Second)
 	return math.Abs(actual-recorded) <= ownershipTolerance.Seconds()
 }

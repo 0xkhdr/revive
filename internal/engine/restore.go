@@ -440,7 +440,11 @@ func (r *Restorer) updateLockfile(opts Options, resolved *profile.Resolved, plan
 			mtimes  []float64
 		)
 		for _, target := range p.Targets {
-			fi, err := os.Lstat(target)
+			// os.Stat, not Lstat: the reference records the *destination's* timestamp for a
+			// symlink asset and omits a target that does not resolve at all. Recording the
+			// link's own timestamp instead would make a Go-written lockfile describe something
+			// different from a Python-written one for the same workspace.
+			fi, err := os.Stat(target)
 			if err != nil {
 				continue
 			}

@@ -82,7 +82,63 @@ by a test. Anything unmarked has not been started.
 | 11 | **DONE** | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
 | 12 | **DONE** | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | **DONE** | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
-| 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+| 14 | **DONE** | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 14 completion notes (2026-08-19)
+
+Stage 14 is done, with the fourth and last interop gate green. Coverage on `internal/` is
+**91.9%**. `rv self-uninstall` was the last stub and is now implemented, so `pending.go` is gone
+and every command in `docs/03` except the deferred `gui` has a real body.
+
+**Interop gate 14.** `internal/interop/testdata/python_workspace/` is a complete workspace
+restored by `RestoreService.restore` itself, captured immediately afterwards: the repo including
+the lockfile Python wrote, plus every target with its mode, modification time, and content or
+symlink destination. The test relocates it, then asserts `status` reports no drift, `restore` is a
+no-op **on the default `prompt` strategy**, and the lockfile keeps its entries, shapes and source
+checksums. It lives in its own package because it needs both the restore engine and the status
+engine, and `status` imports `engine`.
+
+**The gate immediately earned its keep.** Two divergences it caught, neither visible to any
+earlier test:
+
+1. **Lockfile mtimes for symlink assets were wrong.** The reference records
+   `os.stat(target).st_mtime`, which *follows* the link and stores the destination's timestamp,
+   and omits a target that does not resolve at all. The Go build used `Lstat`, recording the
+   link's own timestamp — so a Go-written and a Python-written lockfile described different things
+   for the same workspace. Fixed to `os.Stat`.
+2. **Symlink ownership cannot use mtimes at all.** With the fix above, the recorded timestamp is
+   the *repo source's*, which moves whenever the user edits through the link — the normal way to
+   work with a symlink asset. Conflict resolution now owns a symlink when it still points where rv
+   pointed it, and keeps the mtime test for regular files only.
+
+Both were caught by the criterion "restore is a no-op", which is exactly what that criterion is
+for. Without the gate, the first symptom would have been a user's `rv restore` refusing to run
+after they edited a dotfile through its symlink.
+
+**Measured, as the criteria require.** Built with `-trimpath -ldflags "-s -w"`, `CGO_ENABLED=0`;
+the Linux binaries are confirmed statically linked.
+
+| Platform | Binary |
+|----------|--------|
+| linux/amd64 | 6.4 MB |
+| linux/arm64 | 5.9 MB |
+| darwin/amd64 | 6.5 MB |
+| darwin/arm64 | 6.0 MB |
+
+Startup for `rv --help`, median of 20 runs on one machine: **4.7 ms**, against **665 ms** for the
+Python implementation driven through the same venv — roughly 140× faster. Published in the README.
+
+**The migration guide** (`docs/MIGRATION.md`) covers the Jinja2 conversion table with a worked
+example, the hook-timing change and what it asks of hook authors, the removal of `self-install`,
+built-in plugins and Windows, and the plugin stdin protocol change. The documented workflow was
+run end to end against the real binary: a Jinja2 workspace fails `rv doctor` with four critical
+`template_syntax` issues naming file, line and replacement; converting them by following the table
+makes `doctor` pass and the template render correctly.
+
+`goreleaser check` and a snapshot build both pass, and CI now cross-builds all four targets on
+every push rather than discovering a broken target at tag time.
+
+---
 
 ### Conflict resolution now consults the lockfile (2026-08-19)
 
@@ -454,10 +510,22 @@ Ideas raised while building, deliberately **not** implemented (per ground rule: 
 
 ---
 
-## 5. Definition of done for v1
+## 5. Definition of done for v1 — **met**
 
-- Stages 0–14 criteria in `docs/10-build-plan.md` all pass, each covered by a test.
-- Four interop gates green (4, 5, 8, 14).
-- `internal/` coverage >90%, `go test -race ./...` clean, lint clean, CI green.
+- Stages 0–14 criteria in `docs/10-build-plan.md` all pass, each covered by a test. ✅
+- Four interop gates green (4, 5, 8, 14), each against fixtures produced by the Python
+  implementation itself. ✅
+- `internal/` coverage 91.9%, `go test -race ./...` clean, lint clean, CI green. ✅
 - Migration guide published; a workspace with Jinja2 templates fails `rv doctor` with actionable
-  `template_syntax` issues rather than rendering `{% if %}` as literal text.
+  `template_syntax` issues rather than rendering `{% if %}` as literal text — verified end to end
+  against the release binary. ✅
+
+### Known gaps, deliberately left
+
+- `rv gui` is deferred, as specified.
+- Landlock and seccomp plugin sandboxing are deferred; docs/07 §3 states plainly what the current
+  isolation does and does not provide.
+- Provider retry is still blind (three attempts, 2 s then 4 s). docs/06 §1 flags per-provider
+  classification as the follow-up, and the code says so at the call site.
+- No release has been tagged. `goreleaser check` and a snapshot build pass; the first real run
+  happens on the first `v*` tag.

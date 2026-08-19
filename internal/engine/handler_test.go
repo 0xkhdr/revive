@@ -532,27 +532,27 @@ func TestOwnsTarget(t *testing.T) {
 	recorded := float64(fi.ModTime().UnixNano()) / float64(time.Second)
 
 	// Nothing is owned without a lockfile.
-	require.False(t, f.h.ownsTarget("conf", target))
+	require.False(t, f.h.ownsTarget("conf", "", target))
 
 	f.h.Lockfile = lockfile.New()
-	require.False(t, f.h.ownsTarget("conf", target), "an empty lockfile owns nothing")
+	require.False(t, f.h.ownsTarget("conf", "", target), "an empty lockfile owns nothing")
 
 	f.h.Lockfile.Entries["conf"] = lockfile.Entry{
 		TargetPath: manifest.Scalar(target),
 		MTime:      lockfile.ScalarFloat(recorded),
 	}
-	require.True(t, f.h.ownsTarget("conf", target))
-	require.False(t, f.h.ownsTarget("other", target), "ownership is per asset")
-	require.False(t, f.h.ownsTarget("conf", f.target("elsewhere")), "and per target")
+	require.True(t, f.h.ownsTarget("conf", "", target))
+	require.False(t, f.h.ownsTarget("other", "", target), "ownership is per asset")
+	require.False(t, f.h.ownsTarget("conf", "", f.target("elsewhere")), "and per target")
 
 	// Any edit moves the modification time.
 	later := fi.ModTime().Add(time.Second)
 	require.NoError(t, os.Chtimes(target, later, later))
-	require.False(t, f.h.ownsTarget("conf", target))
+	require.False(t, f.h.ownsTarget("conf", "", target))
 
 	// A recorded target that no longer exists is not owned.
 	require.NoError(t, os.Remove(target))
-	require.False(t, f.h.ownsTarget("conf", target))
+	require.False(t, f.h.ownsTarget("conf", "", target))
 }
 
 func TestOwnershipToleratesTimestampGranularity(t *testing.T) {
@@ -570,6 +570,60 @@ func TestOwnershipToleratesTimestampGranularity(t *testing.T) {
 		TargetPath: manifest.Scalar(target),
 		MTime:      lockfile.ScalarFloat(recorded),
 	}
-	require.True(t, f.h.ownsTarget("conf", target),
+	require.True(t, f.h.ownsTarget("conf", "", target),
 		"sub-millisecond drift is filesystem granularity, not an edit")
+}
+
+// A symlink is owned when it still points where rv pointed it. Its own modification time is no
+// use: rv recreates the link on every restore, and the lockfile records the destination's
+// timestamp, which moves whenever the repo source is edited — the normal way to work with a
+// symlink asset.
+func TestSymlinkOwnershipFollowsTheDestination(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	source := f.source("assets/zshrc", "export EDITOR=vim\n")
+	elsewhere := f.source("assets/other", "something else\n")
+	link := f.target(".zshrc")
+	require.NoError(t, os.Symlink(source, link))
+
+	f.h.Lockfile = lockfile.New()
+	f.h.Lockfile.Entries["zshrc"] = lockfile.Entry{
+		TargetPath: manifest.Scalar(link),
+		// A timestamp that matches nothing: the destination is what decides.
+		MTime: lockfile.ScalarFloat(1),
+	}
+	require.True(t, f.h.ownsTarget("zshrc", source, link))
+
+	// Editing the repo source moves the recorded timestamp but does not change ownership.
+	require.NoError(t, os.WriteFile(source, []byte("export EDITOR=nvim\n"), 0o644))
+	require.True(t, f.h.ownsTarget("zshrc", source, link),
+		"editing through a symlink asset is the normal workflow, not a conflict")
+
+	// Repointing it elsewhere is a real change.
+	require.NoError(t, os.Remove(link))
+	require.NoError(t, os.Symlink(elsewhere, link))
+	require.False(t, f.h.ownsTarget("zshrc", source, link))
+}
+
+// Re-running a symlink restore is a no-op even after the repo source is edited.
+func TestSymlinkRerunAfterEditingTheSource(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	source := f.source("assets/zshrc", "export EDITOR=vim\n")
+	link := f.target(".zshrc")
+	require.NoError(t, os.Symlink(source, link))
+
+	f.h.Lockfile = lockfile.New()
+	f.h.Lockfile.Entries["zshrc"] = lockfile.Entry{
+		TargetPath: manifest.Scalar(link), MTime: lockfile.ScalarFloat(1),
+	}
+	require.NoError(t, os.WriteFile(source, []byte("edited through the link\n"), 0o644))
+
+	plan, err := f.h.PlanAsset(asset("zshrc", func(a *manifest.Asset) {
+		a.Type, a.Source = manifest.TypeSymlink, "assets/zshrc"
+		a.Target = manifest.Scalar(link)
+		a.ConflictStrategy = manifest.ConflictPrompt
+	}))
+	require.NoError(t, err)
+	require.False(t, plan.Skipped)
 }

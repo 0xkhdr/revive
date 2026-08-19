@@ -1,0 +1,31 @@
+version: 2
+assets:
+  - id: zshrc
+    type: symlink
+    source: assets/zshrc
+    target: {{ROOT}}/home/.zshrc
+    permissions: "0644"
+    conflict_strategy: prompt
+  - id: gitconfig
+    type: copy
+    source: assets/gitconfig
+    target: {{ROOT}}/home/.gitconfig
+    permissions: "0644"
+    conflict_strategy: prompt
+  - id: appdir
+    type: copy
+    source: assets/appdir
+    target:
+      - ${APP_DIR}/one.conf
+      - ${APP_DIR}/two.conf
+    permissions: "0644"
+    conflict_strategy: prompt
+secrets:
+  - id: app_env
+    source: secrets/app_env.age
+    target: ${APP_DIR}/.env
+    permissions: "0600"
+profiles:
+  base:
+    assets: [zshrc, gitconfig, appdir]
+    secrets: [app_env]

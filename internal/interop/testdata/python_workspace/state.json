@@ -1,0 +1,39 @@
+{
+  "targets": [
+    {
+      "rel": ".gitconfig",
+      "mode": "0o644",
+      "mtime": 1787158487.400521,
+      "symlink": false,
+      "content": "[user]\n    name = Dev\n"
+    },
+    {
+      "rel": ".zshrc",
+      "mode": "0o777",
+      "mtime": 1787158487.3993967,
+      "symlink": true,
+      "link": "{{ROOT}}/repo/assets/zshrc"
+    },
+    {
+      "rel": "app/.env",
+      "mode": "0o600",
+      "mtime": 1787158487.40274,
+      "symlink": false,
+      "content": "TOKEN=sk-live-interop\n"
+    },
+    {
+      "rel": "app/one.conf",
+      "mode": "0o644",
+      "mtime": 1787158487.4013865,
+      "symlink": false,
+      "content": "one\n"
+    },
+    {
+      "rel": "app/two.conf",
+      "mode": "0o644",
+      "mtime": 1787158487.402103,
+      "symlink": false,
+      "content": "two\n"
+    }
+  ]
+}

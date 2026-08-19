@@ -184,7 +184,6 @@ func TestExitCodes(t *testing.T) {
 	}
 
 	require.Equal(t, 2, ExitCode(ErrOperation))
-	require.Equal(t, 2, ExitCode(ErrNotImplemented))
 	require.Equal(t, 2, ExitCode(errors.New("the transaction was rolled back")))
 	require.Equal(t, 2, ExitCode(errors.New("usage error")),
 		"message text must never decide the exit code")
@@ -395,17 +394,6 @@ func TestMutuallyExclusiveFlags(t *testing.T) {
 	} {
 		_, err := h.run(args...)
 		require.Error(t, err, "%v", args)
-	}
-}
-
-func TestPendingCommandsReportNotImplemented(t *testing.T) {
-	t.Parallel()
-	for _, args := range [][]string{
-		{"self-uninstall"},
-	} {
-		h := newHarness(t)
-		_, err := h.run(args...)
-		require.ErrorIs(t, err, ErrNotImplemented, "%v", args)
 	}
 }
 

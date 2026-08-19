@@ -74,8 +74,8 @@ by a test. Anything unmarked has not been started.
 | 3 | **DONE** | Profile resolution | `profile` | inheritance, child overrides parent by asset ID, cycle detected with full chain, diamond resolves, multi-profile merge, `machine/<hostname>.yaml` overrides |
 | 4 | **DONE** | Crypto + scrubbing | `crypto`, `scrub` | round-trip; **INTEROP: Python-encrypted file decrypts and vice versa**; identity comment parsing; scrubber redacts age keys/SSH/PEM and registered secrets longest-first; race-clean; secure temp files `0600`, zeroed and unlinked |
 | 5 | **DONE** | Transaction + journal | `transaction` | atomic write via same-dir temp + rename, non-blocking process lock released on every path incl. panic, snapshot/rollback of files, symlinks (`SYMLINK:<target>`) and dirs, failure leaves FS byte-identical; **INTEROP: roll back a Python-written journal**; partial rollback reports `ErrRollbackIncomplete` |
-| 6 | | Asset handlers | `engine/handler.go` | symlink/copy/template/secret planning, `text/template` with built-ins + `template_vars` and `missingkey=error`, func map, secret copy at `0600`, conflict strategies (`prompt` non-interactive = error), directory fan-out, **planning is side-effect free**, hooks planned in `delete → pre → write → chmod → post` order |
-| 7 | | Providers | `providers` | 11 providers: unavailable without binary, skip installed packages, dry-run runs nothing, 24 h cache TTL (read failure = empty cache, never error), retry 3× with 2 s/4 s backoff, node version resolution + validation, fixed install order |
+| 6 | **DONE** | Asset handlers | `engine/handler.go` | symlink/copy/template/secret planning, `text/template` with built-ins + `template_vars` and `missingkey=error`, func map, secret copy at `0600`, conflict strategies (`prompt` non-interactive = error), directory fan-out, **planning is side-effect free**, hooks planned in `delete → pre → write → chmod → post` order |
+| 7 | **DONE** | Providers | `providers` | 11 providers: unavailable without binary, skip installed packages, dry-run runs nothing, 24 h cache TTL (read failure = empty cache, never error), retry 3× with 2 s/4 s backoff, node version resolution + validation, fixed install order |
 | 8 | | Restore engine | `engine/restore.go`, `lockfile` | all 14 steps; re-run is a no-op; `--dry-run` mutates nothing and **runs no hook**; `--sequential` and `--parallel` plan identically; hooks execute shell-free with `RV_*` env and 30 s timeout; failure at step 10 or 12 rolls back; **INTEROP: read a Python lockfile without loss** |
 | 9 | | CLI surface | `cli` | every command from `docs/03` except `gui`/`watch`; exit codes 0/1/2; `--headless` kills decoration and turns prompts into errors; `-p a -p b` ≡ `-p a,b`; completion; `init` refuses over existing workspace; `workspace sync` continues past failures, exits 1 |
 | 10 | | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
@@ -83,6 +83,43 @@ by a test. Anything unmarked has not been started.
 | 12 | | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 6-7 completion notes (2026-08-19)
+
+Stages 6 and 7 are done. Coverage on `internal/` is **92.9%**. Packages added: `engine`
+(`handler.go`, `template.go`, `words.go`) and `providers`.
+
+Four design decisions worth recording:
+
+1. **`PlanAsset` returns operations rather than appending to a shared transaction.** docs/04 §5
+   requires each parallel worker to plan into its own scratch context and the caller to merge in
+   item order; returning a `Plan` value makes that structural instead of a convention stage 8 has
+   to remember.
+2. **The write operation carries the mode *and* a separate `chmod` operation is planned.** The
+   mode on the write is what stops a secret from existing world-readable for even an instant
+   (`AtomicWrite` sets it before the content lands); the `chmod` operation is what applies `owner`
+   and what makes the planned sequence the `delete → pre → write → chmod → post` the criteria fix.
+3. **Shell word splitting is written, not imported.** docs/09 §2 says anything not on the
+   dependency list is written; `splitWords` handles single quotes, double quotes with the four
+   escapes, bare backslashes, and errors on an unbalanced quote — which is the behavior the
+   "malformed quote fails at plan time" criterion actually needs.
+4. **One `base` type parameterized by binaries, an installed-check and install commands.** Adding a
+   provider is one entry in `catalogue.go` plus one line in the registry, rather than the
+   reference's four parallel if/elif chains where forgetting the fourth silently drops packages.
+
+Two notes on behavior:
+
+- **The retry is still blind**, matching the reference: three attempts, 2 s then 4 s. docs/06 §1
+  flags classification (fail fast on not-found and permission-denied) as the follow-up, and the
+  code says so at the call site.
+- **`internal/platform` is not built yet.** docs/06 §6 specifies it, but nothing in stage 7 needs
+  it — providers take a `Runner`, which is the better seam. `doctor` builds it in stage 10.
+
+Deliberately **not** built (no added features): the engine's 14-step driver and parallel planning
+(stage 8), plugin hook dispatch (stage 12), and `brew bundle` support, which the reference has but
+neither `docs/06` nor the manifest schema mentions.
+
+---
 
 ### Stage 4-5 completion notes (2026-08-19)
 

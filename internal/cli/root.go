@@ -15,6 +15,7 @@ import (
 
 	"github.com/0xkhdr/revive/internal/logging"
 	"github.com/0xkhdr/revive/internal/paths"
+	"github.com/0xkhdr/revive/internal/platform"
 	"github.com/0xkhdr/revive/internal/providers"
 	"github.com/0xkhdr/revive/internal/scrub"
 )
@@ -36,6 +37,8 @@ type Env struct {
 	WorkDir  string
 	Hostname string
 	Now      func() time.Time
+
+	Platform *platform.Detector
 
 	Verbose  bool
 	Headless bool

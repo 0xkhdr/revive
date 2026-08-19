@@ -10,6 +10,10 @@ import (
 // quote. It is caught at plan time, before anything is snapshotted.
 var ErrBadHookSyntax = errors.New("invalid hook command syntax")
 
+// SplitWords splits a hook command the way a POSIX shell would. Exported so doctor validates a
+// hook exactly as planning does.
+func SplitWords(s string) ([]string, error) { return splitWords(s) }
+
 // splitWords splits a command the way a POSIX shell would, and the result is then executed
 // WITHOUT a shell. Handing the raw string to `sh -c` instead would reintroduce every injection
 // this splitting exists to avoid.

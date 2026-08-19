@@ -32,6 +32,7 @@ func newRestoreCommand(env *Env) *cobra.Command {
 	cmd.Flags().Bool("parallel", true, "Plan assets in a worker pool")
 	cmd.Flags().Bool("sequential", false, "Plan assets one at a time, for debugging")
 	cmd.Flags().Bool("force-packages", false, "Invalidate the package cache and re-query every provider")
+	cmd.Flags().Bool("json", false, "With --preview, emit the drift report as JSON")
 	cmd.MarkFlagsMutuallyExclusive("interactive", "non-interactive")
 	cmd.MarkFlagsMutuallyExclusive("parallel", "sequential")
 	cmd.MarkFlagsMutuallyExclusive("dry-run", "preview")
@@ -44,10 +45,16 @@ func (e *Env) runRestore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%w: name at least one profile", ErrUsage)
 	}
 
+	// --preview is the status engine, not a restore: it reports the current difference rather
+	// than exercising the planner. Use --preview to decide whether to restore, --dry-run to
+	// check that a restore would succeed.
 	preview, _ := cmd.Flags().GetBool("preview")
 	if preview {
-		// --preview is the status engine, not a restore. Stage 10 builds it.
-		return fmt.Errorf("%w: --preview", ErrNotImplemented)
+		report, err := e.status(cmd, args)
+		if err != nil {
+			return err
+		}
+		return e.renderStatus(cmd, report)
 	}
 
 	identity, _ := cmd.Flags().GetString("identity")

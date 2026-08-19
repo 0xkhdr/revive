@@ -142,6 +142,43 @@ func (h *Handler) lookup() paths.Lookup {
 	return os.LookupEnv
 }
 
+// AbsSource returns an asset's source path inside the repository.
+func (h *Handler) AbsSource(asset manifest.Asset) string {
+	return filepath.Join(h.RepoDir, asset.Source)
+}
+
+// Targets interpolates and canonicalizes every target of an asset.
+//
+// Exported so the status engine resolves targets exactly the way planning does: two
+// implementations of the same rules would drift, and drift here means status disagreeing with
+// restore about which file it is talking about.
+func (h *Handler) Targets(asset manifest.Asset) ([]string, error) {
+	out := make([]string, 0, len(asset.Target.Values))
+	for _, expr := range asset.Target.Values {
+		interpolated, err := paths.Interpolate(expr, h.lookup())
+		if err != nil {
+			return nil, fmt.Errorf("asset %q: %w", asset.ID, err)
+		}
+		out = append(out, h.Paths.Canonicalize(interpolated))
+	}
+	return out, nil
+}
+
+// ResolveSource picks the file inside a directory source that matches a target's basename.
+func (h *Handler) ResolveSource(absSource, absTarget string, encrypted bool) (string, error) {
+	return h.resolveSource(absSource, absTarget, encrypted)
+}
+
+// RenderAsset renders a template asset's source with the merged context.
+func (h *Handler) RenderAsset(asset manifest.Asset, source string) ([]byte, error) {
+	return h.render(asset, source)
+}
+
+// Decrypt returns the plaintext of an encrypted source. The caller zeros it once consumed.
+func (h *Handler) Decrypt(assetID, source string) ([]byte, error) {
+	return h.decrypt(assetID, source)
+}
+
 // resolveSource picks the file inside a directory source that matches this target's basename.
 // One `secrets/app_env/` directory populates both `.env` and `.env.deploy` this way.
 func (h *Handler) resolveSource(absSource, absTarget string, encrypted bool) (string, error) {

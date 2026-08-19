@@ -8,46 +8,6 @@ import (
 // The flags are declared here so `--help` is complete and completion works; the bodies are
 // filled in by the stage that builds the engine behind them.
 
-func newStatusCommand(env *Env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:               "status",
-		Short:             "Report drift between the manifest and the machine",
-		ValidArgsFunction: env.completeProfiles,
-		RunE:              notImplemented,
-	}
-	addProfileFlag(cmd, env)
-	addIdentityFlag(cmd)
-	addManifestFlag(cmd)
-	cmd.Flags().Bool("json", false, "Emit the report as JSON for CI")
-	return cmd
-}
-
-func newDiffCommand(env *Env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:               "diff",
-		Short:             "Show content diffs for modified assets",
-		ValidArgsFunction: env.completeProfiles,
-		RunE:              notImplemented,
-	}
-	addProfileFlag(cmd, env)
-	addIdentityFlag(cmd)
-	addManifestFlag(cmd)
-	cmd.Flags().BoolP("unified", "u", false, "Unified diff instead of side-by-side")
-	return cmd
-}
-
-func newDoctorCommand(env *Env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "doctor",
-		Short: "Run health checks on the workspace and the machine",
-		RunE:  notImplemented,
-	}
-	addProfileFlag(cmd, env)
-	addManifestFlag(cmd)
-	cmd.Flags().Bool("json", false, "Emit the structured report for CI")
-	return cmd
-}
-
 func newBackupCommand(env *Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "backup <profile...>",

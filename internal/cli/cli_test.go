@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/0xkhdr/revive/internal/crypto"
+	"github.com/0xkhdr/revive/internal/doctor"
 	"github.com/0xkhdr/revive/internal/manifest"
 	"github.com/0xkhdr/revive/internal/paths"
 	"github.com/0xkhdr/revive/internal/profile"
@@ -177,6 +178,7 @@ func TestExitCodes(t *testing.T) {
 		"identity required": crypto.ErrIdentityRequired,
 		"workspace missing": workspace.ErrNotFound,
 		"duplicate name":    workspace.ErrDuplicate,
+		"unhealthy doctor":  doctor.ErrUnhealthy,
 	} {
 		require.Equal(t, 1, ExitCode(fmt.Errorf("context: %w", err)), name)
 	}
@@ -396,18 +398,9 @@ func TestMutuallyExclusiveFlags(t *testing.T) {
 	}
 }
 
-func TestPreviewIsNotYetBuilt(t *testing.T) {
-	t.Parallel()
-	h := newHarness(t)
-	h.write("manifest.yaml", "version: 2\nprofiles: {base: {}}\n")
-	_, err := h.run("restore", "base", "--preview")
-	require.ErrorIs(t, err, ErrNotImplemented)
-}
-
 func TestPendingCommandsReportNotImplemented(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"status", "-p", "base"}, {"diff", "-p", "base"}, {"doctor"},
 		{"backup", "base"}, {"recover"}, {"prune"}, {"self-uninstall"},
 	} {
 		h := newHarness(t)

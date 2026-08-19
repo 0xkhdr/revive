@@ -78,11 +78,47 @@ by a test. Anything unmarked has not been started.
 | 7 | **DONE** | Providers | `providers` | 11 providers: unavailable without binary, skip installed packages, dry-run runs nothing, 24 h cache TTL (read failure = empty cache, never error), retry 3× with 2 s/4 s backoff, node version resolution + validation, fixed install order |
 | 8 | **DONE** | Restore engine | `engine/restore.go`, `lockfile` | all 14 steps; re-run is a no-op; `--dry-run` mutates nothing and **runs no hook**; `--sequential` and `--parallel` plan identically; hooks execute shell-free with `RV_*` env and 30 s timeout; failure at step 10 or 12 rolls back; **INTEROP: read a Python lockfile without loss** |
 | 9 | **DONE** | CLI surface | `cli` | every command from `docs/03` except `gui`/`watch`; exit codes 0/1/2; `--headless` kills decoration and turns prompts into errors; `-p a -p b` ≡ `-p a,b`; completion; `init` refuses over existing workspace; `workspace sync` continues past failures, exits 1 |
-| 10 | | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
+| 10 | **DONE** | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
 | 11 | | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
 | 12 | | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 10 completion notes (2026-08-19)
+
+Stage 10 is done. Coverage on `internal/` is **92.3%**. Packages added: `platform`, `status`,
+`doctor`; `status`, `diff`, `doctor` and `restore --preview` are now wired in the CLI.
+
+**The status engine reuses the planner's own helpers rather than re-deriving them.**
+`engine.Handler` gained exported `Targets`, `ResolveSource`, `RenderAsset` and `Decrypt`, so
+target interpolation, directory fan-out and the template context merge order have exactly one
+implementation. Two copies of those rules would drift, and drift here means `status` and
+`restore` disagreeing about which file they are discussing.
+
+**`[DIVERGE]` taken as instructed: directory drift uses the content hash, not an mtime.** docs/08
+§1 says to drop the reference's mtime path now that a deterministic sorted-walk hash already
+exists for the lockfile. An edited file inside a managed directory is drift, and the test asserts
+exactly that case — the one the mtime comparison missed.
+
+**One spec correction found by a test.** docs/03 and docs/08 both require `rv doctor` to exit **1**
+when unhealthy, and `docs/09` §6 lists `doctor.ErrUnhealthy` in the exit-1 group, but stage 9's
+`ExitCode` had no case for it, so it fell through to 2. Caught while writing the CI-gate test,
+fixed, and now covered.
+
+**The diff is hand-rolled rather than imported.** `docs/09` §2 lists a diff dependency but notes
+hand-rolling as an alternative; the deciding factor was that side-by-side rendering needs the
+line-level edit script directly, so importing a unified-diff formatter would have meant a second
+mechanism to derive columns from. One LCS over lines, common prefix and suffix trimmed first,
+with a `ponytail:` capped fallback for pathologically large inputs. The test that matters asserts
+the edit script reconstructs both sides exactly.
+
+The `template_syntax` linter is the migration's load-bearing piece and is treated that way: it
+catches `{% … %}` statements, bare `{{ x }}` identifiers and Jinja2 filter pipes, reports file,
+line and the `text/template` replacement, and is critical severity — because `text/template` does
+not fail on `{% … %}`, it copies it into the user's config file. Valid piping like
+`{{ .name | upper }}` is deliberately not flagged.
+
+---
 
 ### Stage 9 completion notes (2026-08-19)
 

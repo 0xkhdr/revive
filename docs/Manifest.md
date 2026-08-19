@@ -124,7 +124,7 @@ helper = osxkeychain
 {{ end }}
 ```
 
-Run `rv doctor` after converting old Jinja2 templates. See [Migration.md](Migration.md).
+Run `rv doctor` after editing templates; it reports syntax that Go `text/template` cannot execute.
 
 ## Packages and profiles
 

@@ -9,9 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Phase 2 golden test: every fixture under testdata/accept must load, every fixture under
-// testdata/reject must fail. The Python suite's fixtures are inline dicts rather than files, so
-// the cases from reference/tests/test_models.py are ported into testdata/ here.
+// Every fixture under testdata/accept must load and every fixture under testdata/reject must fail.
+// Historical accepted shapes are committed here so the test has no external implementation.
 func TestGoldenFixtures(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

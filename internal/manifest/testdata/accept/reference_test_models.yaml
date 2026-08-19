@@ -1,4 +1,4 @@
-# Ported from reference/tests/test_models.py::test_manifest_validation.
+# Historical manifest compatibility fixture.
 version: 2
 assets:
   - id: zshrc

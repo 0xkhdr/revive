@@ -14,7 +14,7 @@ import (
 // The directory walk order is part of the compatibility contract: a workspace restored by the
 // Python implementation has to hash identically here, or every asset reports drift.
 //
-// The fixture digests were computed by reference/'s own RestoreService.calculate_sha256.
+// The fixture digests were computed by the earlier implementation.
 func TestChecksumMatchesThePythonImplementation(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile("testdata/tree_sha256.json")

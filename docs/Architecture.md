@@ -5,10 +5,6 @@ implementation is a single binary. Its supported public surfaces are the CLI, ma
 v1/v2, generated lockfiles, transaction journals, encrypted assets, and the runtime layout under
 the user's XDG directories. Packages under `internal/` are not a Go library API.
 
-The archived Python implementation under `reference/` is a compatibility oracle. Use its fixtures
-and observable behavior when checking interoperability. Do not copy its internal structure or
-assume its documentation describes the current Go implementation.
-
 ## Runtime flow
 
 `rv restore` follows one ordered transaction:
@@ -84,5 +80,3 @@ implementation.
   advisory and disabling `network` does not block raw sockets. Review plugins like any executable.
 - Package providers never add `sudo`. Run with only the privileges required by the selected
   package manager and targets.
-
-For Python-to-Go compatibility changes, see [Migration.md](Migration.md).

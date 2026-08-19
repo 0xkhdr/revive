@@ -1,2 +1,0 @@
-# Example zshrc managed by Revive
-export PATH="$HOME/.bin:$PATH"

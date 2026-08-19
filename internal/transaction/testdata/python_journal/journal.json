@@ -1,0 +1,35 @@
+{
+  "tx_id": "interop-fixture",
+  "timestamp": 1787142266.2125108,
+  "status": "executing",
+  "entries": [
+    {
+      "op": "modify",
+      "src_backup": "{{ROOT}}/backups/interop-fixture/backup_0_file.conf",
+      "target": "{{ROOT}}/targets/file.conf",
+      "checksum": "f5ffb7a20f1305cdcbf90b912c8256e16e3d09cbc3103ffb9c64f2c6e56b1ba8",
+      "permissions": "0o640"
+    },
+    {
+      "op": "modify",
+      "src_backup": "{{ROOT}}/backups/interop-fixture/backup_1_link",
+      "target": "{{ROOT}}/targets/link",
+      "checksum": null,
+      "permissions": "0o664"
+    },
+    {
+      "op": "modify",
+      "src_backup": "{{ROOT}}/backups/interop-fixture/backup_2_dir",
+      "target": "{{ROOT}}/targets/dir",
+      "checksum": null,
+      "permissions": "0o775"
+    },
+    {
+      "op": "create",
+      "src_backup": null,
+      "target": "{{ROOT}}/targets/fresh.conf",
+      "checksum": null,
+      "permissions": null
+    }
+  ]
+}

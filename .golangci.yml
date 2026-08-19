@@ -27,6 +27,13 @@ linters:
         # rv exists to read files whose paths the user chose. Traversal is guarded in
         # manifest.validateSource and profile.OverridePath, not by refusing variable paths.
         - G304
+        # rv creates ordinary configuration directories (~/.config/app, a target's parent).
+        # 0755 is the conventional mode there and the one the Python implementation used;
+        # directories holding secrets are created 0700 explicitly at their call sites.
+        - G301
+        # Hook and provider commands are declared in the manifest, which is reviewed, committed
+        # input. They are word-split at plan time and executed without a shell.
+        - G204
   exclusions:
     rules:
       - path: _test\.go$

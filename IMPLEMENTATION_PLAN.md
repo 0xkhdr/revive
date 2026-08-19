@@ -72,8 +72,8 @@ by a test. Anything unmarked has not been started.
 | 1 | **DONE** | Paths, env, interpolation | `paths` | `${VAR}` / `${VAR:-default}`, `.env` never overwrites existing env, `~` expanded without resolving symlinks, symlink cycle detected, config rootable anywhere |
 | 2 | **DONE** | Manifest schema + validation | `manifest` | v1/v2 load, `version: 3` errors, path traversal rejected, only `0NNN` permissions, secrets forced `encrypted: true`, unknown field = error, `StringOrSlice`; **golden test against `reference/tests/` fixtures** |
 | 3 | **DONE** | Profile resolution | `profile` | inheritance, child overrides parent by asset ID, cycle detected with full chain, diamond resolves, multi-profile merge, `machine/<hostname>.yaml` overrides |
-| 4 | | Crypto + scrubbing | `crypto`, `scrub` | round-trip; **INTEROP: Python-encrypted file decrypts and vice versa**; identity comment parsing; scrubber redacts age keys/SSH/PEM and registered secrets longest-first; race-clean; secure temp files `0600`, zeroed and unlinked |
-| 5 | | Transaction + journal | `transaction` | atomic write via same-dir temp + rename, non-blocking process lock released on every path incl. panic, snapshot/rollback of files, symlinks (`SYMLINK:<target>`) and dirs, failure leaves FS byte-identical; **INTEROP: roll back a Python-written journal**; partial rollback reports `ErrRollbackIncomplete` |
+| 4 | **DONE** | Crypto + scrubbing | `crypto`, `scrub` | round-trip; **INTEROP: Python-encrypted file decrypts and vice versa**; identity comment parsing; scrubber redacts age keys/SSH/PEM and registered secrets longest-first; race-clean; secure temp files `0600`, zeroed and unlinked |
+| 5 | **DONE** | Transaction + journal | `transaction` | atomic write via same-dir temp + rename, non-blocking process lock released on every path incl. panic, snapshot/rollback of files, symlinks (`SYMLINK:<target>`) and dirs, failure leaves FS byte-identical; **INTEROP: roll back a Python-written journal**; partial rollback reports `ErrRollbackIncomplete` |
 | 6 | | Asset handlers | `engine/handler.go` | symlink/copy/template/secret planning, `text/template` with built-ins + `template_vars` and `missingkey=error`, func map, secret copy at `0600`, conflict strategies (`prompt` non-interactive = error), directory fan-out, **planning is side-effect free**, hooks planned in `delete → pre → write → chmod → post` order |
 | 7 | | Providers | `providers` | 11 providers: unavailable without binary, skip installed packages, dry-run runs nothing, 24 h cache TTL (read failure = empty cache, never error), retry 3× with 2 s/4 s backoff, node version resolution + validation, fixed install order |
 | 8 | | Restore engine | `engine/restore.go`, `lockfile` | all 14 steps; re-run is a no-op; `--dry-run` mutates nothing and **runs no hook**; `--sequential` and `--parallel` plan identically; hooks execute shell-free with `RV_*` env and 30 s timeout; failure at step 10 or 12 rolls back; **INTEROP: read a Python lockfile without loss** |
@@ -83,6 +83,46 @@ by a test. Anything unmarked has not been started.
 | 12 | | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 4-5 completion notes (2026-08-19)
+
+Stages 4 and 5 are done, with both interop gates green. Coverage on `internal/` is **91.1%**.
+Packages added: `crypto`, `scrub`, `permissions`, `transaction`; `logging` now wraps every writer
+in the scrubber, so there is no unscrubbed output path.
+
+**Interop gate 4 (crypto), both directions, against the real Python implementation.**
+`internal/crypto/testdata/interop/` holds fixtures produced by `reference/`'s own `AgeEncryptor`;
+`TestInteropGoToPython` drives that same class in a subprocess to decrypt a Go-encrypted file. It
+fails rather than skips when the reference cannot be imported — a skipped gate is an unmet
+criterion wearing a green tick.
+
+**Interop gate 5 (journal).** `internal/transaction/testdata/python_journal/` is a real journal and
+backup tree written by `reference/`'s `TransactionContext`, left in the `executing` state like a
+killed run. Only the absolute path prefix was replaced with `{{ROOT}}` so the test can relocate it;
+the field names, explicit nulls, `0o640` permission spelling and `SYMLINK:<target>` backup format
+are Python's own output. Regenerating it needs `pydantic`; the committed fixture means CI does not.
+
+Three notes where the spec was applied with judgement:
+
+1. **The PEM scrubbing pattern in `docs/05` §2 is wrong and was corrected.** As written —
+   `-----BEGIN\s+(?:RSA|OPENSSH|PRIVATE)\s+KEY-----` — it cannot match `BEGIN RSA PRIVATE KEY` or
+   `BEGIN OPENSSH PRIVATE KEY`, the two commonest real headers, because it requires `KEY` to follow
+   the algorithm directly. The acceptance criterion ("the scrubber redacts a PEM block") outranks
+   the pattern listing, so the algorithm segment is optional in the Go pattern. **This is a spec
+   bug worth fixing in `docs/05`.**
+2. **Journal permissions are `0o644`, manifest permissions are `0644`.** Both spellings are part of
+   the compatibility contract — Python's `oct()` produces the former — so `permissions.Parse`
+   accepts both while `manifest` keeps rejecting `0o644` in a manifest.
+3. **`permissions` never chmods or chowns through a symlink**, using `Lstat` and `Lchown`. The
+   reference used plain `chmod`/`chown`, which change the mode of whatever the link points at
+   rather than the link rv just created.
+
+Deliberately **not** built (no added features): plugin hook dispatch (stage 12), the JSON audit
+file handler (stage 8 wires it; `logging` already scrubs the console), and `rv secret`'s command
+bodies (stage 9). Hook *execution* is in the transaction because `docs/04` §2 phase 4 places it
+there, not because stage 6 needed it early.
+
+---
 
 ### Stage 0-3 completion notes (2026-08-19)
 

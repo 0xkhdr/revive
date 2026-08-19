@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -401,4 +402,67 @@ func TestPluginPrecedenceThroughTheCLI(t *testing.T) {
 	got, err := os.ReadFile(marker)
 	require.NoError(t, err)
 	require.Equal(t, "workspace", string(got), "workspace-local wins over user-global")
+}
+
+// Phase 13: the watch daemon is wired to the restore engine and shuts down on cancellation.
+func TestWatchCommand(t *testing.T) {
+	h := newHarness(t)
+	// The target lives outside the workspace, as a real one does: rv manages files on the
+	// machine, not inside its own repository.
+	target := filepath.Join(t.TempDir(), "conf")
+	h.write("assets/conf", "initial\n")
+	h.write("manifest.yaml", fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s, conflict_strategy: overwrite}]\n"+
+			"profiles: {base: {assets: [conf]}}\n", target))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	root := NewRootCommand("1.2.3", h.env)
+	h.env.Out = &h.out
+	h.env.Err = &h.out
+	root.SetOut(&h.out)
+	root.SetErr(&h.out)
+	root.SetArgs([]string{"watch", "-p", "base", "-d", "0.2"})
+
+	done := make(chan error, 1)
+	go func() { done <- root.ExecuteContext(ctx) }()
+
+	select {
+	case err := <-done:
+		t.Fatalf("the watch daemon exited immediately: %v\noutput: %s", err, h.out.String())
+	case <-time.After(500 * time.Millisecond):
+		// Give the watch time to be established. A change written before fsnotify is watching
+		// produces no event at all.
+	}
+
+	// Each attempt writes once and then waits out the debounce window. Writing on every poll
+	// would keep resetting that window, and the restore would never fire — which would be the
+	// debounce working correctly, not a bug.
+	var restored bool
+	for range 10 {
+		h.write("assets/conf", "changed\n")
+		time.Sleep(time.Second)
+		if got, err := os.ReadFile(target); err == nil && string(got) == "changed\n" {
+			restored = true
+			break
+		}
+	}
+	require.True(t, restored, "a workspace change must trigger a restore: %s", h.out.String())
+
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err, "SIGINT-equivalent cancellation is a clean exit")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the watch daemon did not shut down")
+	}
+}
+
+func TestWatchWithoutAProfile(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.write("manifest.yaml", "version: 2\nprofiles: {base: {}}\n")
+	_, err := h.run("watch")
+	require.ErrorIs(t, err, ErrUsage)
 }

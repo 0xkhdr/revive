@@ -131,6 +131,7 @@ func NewRootCommand(version string, env *Env) *cobra.Command {
 		newStatusCommand(env),
 		newDiffCommand(env),
 		newDoctorCommand(env),
+		newWatchCommand(env),
 		newRecoverCommand(env),
 		newPruneCommand(env),
 		newSecretCommand(env),

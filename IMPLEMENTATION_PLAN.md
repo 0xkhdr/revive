@@ -81,8 +81,41 @@ by a test. Anything unmarked has not been started.
 | 10 | **DONE** | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
 | 11 | **DONE** | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
 | 12 | **DONE** | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
-| 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
+| 13 | **DONE** | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 13 completion notes (2026-08-19)
+
+Stage 13 is done. Coverage on `internal/` is **91.9%**. Package added: `watcher`; `rv watch` is
+wired and now appears in `--help`. Dependencies added: `fsnotify` (listed in docs/09 §2) and
+`go.uber.org/goleak`, test-only, for the no-goroutine-leak criterion.
+
+**The daemon is a single goroutine.** fsnotify events, the debounce timer and the restore all run
+on the one loop, so there is no shared state to guard and nothing to leak — cancelling the context
+ends the loop and returns. That is what makes the leak criterion cheap to satisfy rather than
+something to chase.
+
+**A real bug the manual run exposed, which no acceptance criterion names.** Every restore writes
+`manifest.lock` into the workspace, and an atomic write puts its temp file beside the target. Both
+land inside the watched tree, so **each restore triggered the next one, forever** — a livelock the
+moment anyone ran `rv watch`. Fixed by ignoring rv's own outputs: the lockfile path (passed in by
+the CLI, since it derives from `-m`) and the `.rv_atomic_tmp_` / `.rv_atomic_dir_tmp_` basename
+prefixes. `Cargo.lock` in a workspace still triggers a restore, because only rv's own lockfile is
+ignored. `TestOwnOutputDoesNotRetrigger` pins it.
+
+**Two smaller fixes from the same session:**
+
+- A missing watch root was silently accepted, leaving the daemon parked on an empty watch forever.
+  It is now a hard error, while a missing or unreadable *sub*directory is still skipped — that one
+  may simply have been deleted mid-walk.
+- An unwatchable subdirectory (mode `0000`) failed the whole daemon. Failing to watch the entire
+  workspace over one unreadable directory is worse than watching the rest.
+
+**On the lock check:** a trigger during a held lock is skipped rather than queued, and the test
+proves it with `flock(1)` in a real subprocess — acquiring in-process would not block, since flock
+is per open file description.
+
+---
 
 ### Stage 12 completion notes (2026-08-19)
 

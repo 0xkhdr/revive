@@ -1,0 +1,28 @@
+# Revive Backup Manifest - Bruno Collections & Environments
+# Backup system state → repo for Bruno REST client
+# Bruno stores collections and environments in ~/Documents/bruno/
+version: 2
+
+assets:
+  # Bruno collections and environments (all API request collections)
+  - id: bruno_collections
+    type: copy
+    source: /home/xkhdr/Documents/backup/bruno
+    target: assets/bruno/collections
+    permissions: "0755"
+    conflict_strategy: overwrite
+
+  # Bruno preferences and config
+  - id: bruno_config
+    type: copy
+    source: ~/.config/bruno/preferences.json
+    target: assets/bruno/preferences.json
+    permissions: "0644"
+    conflict_strategy: overwrite
+
+profiles:
+  # Simple backup profile - just bruno
+  bruno:
+    assets:
+      - bruno_collections
+      - bruno_config

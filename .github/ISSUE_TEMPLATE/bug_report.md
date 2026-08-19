@@ -33,7 +33,7 @@ Please provide:
 
 ```bash
 rv --version
-python3 --version
+go version
 uname -a
 ```
 

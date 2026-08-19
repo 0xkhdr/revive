@@ -28,26 +28,25 @@ How did you test this change? Describe the test plan:
 
 ### Code Quality
 
-- [ ] `ruff format src/rv tests` passes
-- [ ] `ruff check src/rv tests` passes
-- [ ] `mypy src/rv` passes (strict mode)
-- [ ] `bandit -r src/rv` passes
-- [ ] Tests pass: `pytest --cov=src/rv --cov-fail-under=90`
+- [ ] `gofmt -l .` reports nothing
+- [ ] `go vet ./...` passes
+- [ ] `golangci-lint run` passes
+- [ ] Tests pass: `go test -race -cover ./...` (>90% on `internal/`)
 
 ### Documentation
 
 - [ ] README.md updated (if user-facing changes)
 - [ ] CHANGELOG.md updated
 - [ ] Code comments added (only for non-obvious logic)
-- [ ] Docstrings updated
+- [ ] Doc comments updated on exported identifiers
 
 ### Security & Standards
 
-- [ ] No `shell=True` in subprocess calls
-- [ ] All secrets registered with `SecretScrubber`
+- [ ] No shell invocation in subprocess calls (argv slices only)
+- [ ] All secrets registered with the scrubber before any logging
 - [ ] No hardcoded credentials or API keys
-- [ ] Type annotations are complete (`mypy --strict`)
-- [ ] Pydantic models use strict validation
+- [ ] Decrypted plaintext kept in `[]byte` and zeroed in a `defer`
+- [ ] Errors wrapped with `%w`; no branching on error message text
 
 ### Breaking Changes
 

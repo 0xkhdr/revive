@@ -13,6 +13,15 @@ import (
 type Options struct {
 	Verbose  bool // debug level
 	Headless bool // plain stream logs, no decoration
+	// Scrubber redacts every line. Nil means the process-wide scrubber.
+	Scrubber *scrub.Scrubber
+}
+
+func (o Options) scrubber() *scrub.Scrubber {
+	if o.Scrubber != nil {
+		return o.Scrubber
+	}
+	return scrub.Default
 }
 
 // scrubbingWriter redacts secrets from a log line before it reaches the underlying writer.
@@ -45,7 +54,7 @@ func New(w io.Writer, opts Options) *slog.Logger {
 	if opts.Verbose {
 		level = slog.LevelDebug
 	}
-	h := slog.NewTextHandler(Scrubbed(w, scrub.Default), &slog.HandlerOptions{
+	h := slog.NewTextHandler(Scrubbed(w, opts.scrubber()), &slog.HandlerOptions{
 		Level: level,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if !opts.Headless && len(groups) == 0 && a.Key == slog.TimeKey {

@@ -76,13 +76,54 @@ by a test. Anything unmarked has not been started.
 | 5 | **DONE** | Transaction + journal | `transaction` | atomic write via same-dir temp + rename, non-blocking process lock released on every path incl. panic, snapshot/rollback of files, symlinks (`SYMLINK:<target>`) and dirs, failure leaves FS byte-identical; **INTEROP: roll back a Python-written journal**; partial rollback reports `ErrRollbackIncomplete` |
 | 6 | **DONE** | Asset handlers | `engine/handler.go` | symlink/copy/template/secret planning, `text/template` with built-ins + `template_vars` and `missingkey=error`, func map, secret copy at `0600`, conflict strategies (`prompt` non-interactive = error), directory fan-out, **planning is side-effect free**, hooks planned in `delete → pre → write → chmod → post` order |
 | 7 | **DONE** | Providers | `providers` | 11 providers: unavailable without binary, skip installed packages, dry-run runs nothing, 24 h cache TTL (read failure = empty cache, never error), retry 3× with 2 s/4 s backoff, node version resolution + validation, fixed install order |
-| 8 | | Restore engine | `engine/restore.go`, `lockfile` | all 14 steps; re-run is a no-op; `--dry-run` mutates nothing and **runs no hook**; `--sequential` and `--parallel` plan identically; hooks execute shell-free with `RV_*` env and 30 s timeout; failure at step 10 or 12 rolls back; **INTEROP: read a Python lockfile without loss** |
+| 8 | **DONE** | Restore engine | `engine/restore.go`, `lockfile` | all 14 steps; re-run is a no-op; `--dry-run` mutates nothing and **runs no hook**; `--sequential` and `--parallel` plan identically; hooks execute shell-free with `RV_*` env and 30 s timeout; failure at step 10 or 12 rolls back; **INTEROP: read a Python lockfile without loss** |
 | 9 | | CLI surface | `cli` | every command from `docs/03` except `gui`/`watch`; exit codes 0/1/2; `--headless` kills decoration and turns prompts into errors; `-p a -p b` ≡ `-p a,b`; completion; `init` refuses over existing workspace; `workspace sync` continues past failures, exits 1 |
 | 10 | | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
 | 11 | | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
 | 12 | | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 8 completion notes (2026-08-19)
+
+Stage 8 is done, with the third interop gate green. Coverage on `internal/` is **92.8%**.
+Packages added: `lockfile`; `engine/restore.go` drives all fourteen steps; `logging/audit.go`
+adds the JSON audit handler and a fan-out so one logger reaches console and audit file with
+neither able to skip the scrubber.
+
+**Interop gate 8 (lockfile).** `internal/lockfile/testdata/python_manifest.lock` is output from
+the reference's own `Lockfile` model. It loads here with scalar targets still scalar and list
+targets still index-aligned arrays, and re-serializes JSON-equal to the original. Key order
+differs — Go marshals maps sorted, Python preserves insertion order — which is why the criterion's
+word is *equivalently* rather than byte-identically.
+
+**A second, unlisted compatibility trap, now pinned by a test.** The lockfile's directory
+checksum walks *every file in a directory before descending*, both in name order. That is
+Python's `os.walk` with `dirs.sort()`; Go's `filepath.WalkDir` uses a single merged lexical order
+that interleaves files and subdirectories differently and produces a **different digest for the
+same tree**. Had this been missed, every directory asset in a Python-restored workspace would
+report drift under the Go build — and it would have surfaced first as a mysterious stage 14
+failure. `TestChecksumMatchesThePythonImplementation` compares against a digest computed by
+`RestoreService.calculate_sha256` itself.
+
+**A tension between two criteria, recorded rather than papered over.** Phase 8 requires "re-running
+it is a no-op", while phase 6 requires a non-interactive `conflict_strategy: prompt` to be a hard
+error. Since `prompt` is the default and conflict resolution reads the filesystem alone
+(docs/04 §5), a second `rv restore` over rv's *own* output errors unless the asset sets an
+explicit strategy. The Python implementation behaves identically. Idempotency is tested with
+explicit strategies, and `TestRerunWithThePromptDefaultErrors` pins the default behavior so it is
+visible. **Worth a spec decision before stage 14**, whose interop gate says a Python-restored
+workspace must see "restore is a no-op" — that gate will need explicit strategies in its fixture,
+or the spec needs conflict resolution to consult the lockfile. Making rv treat a target it
+already owns as non-conflicting would be a real improvement, but it is a feature the spec never
+asked for, so it is not built.
+
+Two seams added for later stages rather than features: `Restorer.Plugins` (nil until stage 12)
+and `Restorer.Prune` (nil until stage 11). Both have their call sites and orderings in place —
+`pre-restore` after the snapshot, pruning after success and non-fatal — because those orderings
+are stage 8 criteria and testing them with a fake now is cheaper than retrofitting them later.
+
+---
 
 ### Stage 6-7 completion notes (2026-08-19)
 

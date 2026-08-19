@@ -1,0 +1,28 @@
+{
+  "entries": {
+    "zshrc": {
+      "sha256_of_source": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "target_path": "{{ROOT}}/.zshrc",
+      "permissions": "0644",
+      "mtime": 1716000000.123456
+    },
+    "app_env": {
+      "sha256_of_source": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      "target_path": [
+        "{{ROOT}}/.env",
+        "{{ROOT}}/.env.deploy"
+      ],
+      "permissions": [
+        "0600",
+        "0600"
+      ],
+      "mtime": [
+        1716000001.5,
+        1716000002.5
+      ]
+    }
+  },
+  "rendered_checksums": {
+    "gitconfig": "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+  }
+}

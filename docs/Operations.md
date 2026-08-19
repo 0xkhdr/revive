@@ -3,6 +3,19 @@
 Run commands from the workspace root. `rv --help` and `rv <command> --help` are the authoritative
 flag reference.
 
+## Install
+
+```console
+$ curl -fsSL https://raw.githubusercontent.com/0xkhdr/revive/main/install.sh | sh
+```
+
+The installer verifies the release checksum and writes `rv` to `~/.local/bin`. Ensure that
+directory is on `PATH`, or choose another location:
+
+```console
+$ curl -fsSL https://raw.githubusercontent.com/0xkhdr/revive/main/install.sh | INSTALL_DIR=/usr/local/bin sh
+```
+
 ## Safe daily workflow
 
 ```console

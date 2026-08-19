@@ -25,11 +25,10 @@ builds:
 archives:
   - id: rv
     formats: [tar.gz]
-    name_template: "rv_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "rv_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
       - LICENSE
-      - docs/Migration.md
 
 checksum:
   name_template: checksums.txt
@@ -49,9 +48,3 @@ changelog:
 
 release:
   prerelease: auto
-  footer: |
-    ## Upgrading from the Python implementation
-
-    Read [docs/Migration.md](https://github.com/0xkhdr/revive/blob/main/docs/Migration.md)
-    first. Templates need rewriting: `rv doctor` finds every one of them and names the
-    replacement.

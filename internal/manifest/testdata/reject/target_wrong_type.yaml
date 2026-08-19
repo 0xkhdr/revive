@@ -1,0 +1,5 @@
+version: 2
+assets:
+  - id: a
+    source: assets/a
+    target: 42

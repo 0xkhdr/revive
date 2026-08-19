@@ -1,0 +1,50 @@
+# docs/02-domain-model.md §8, verbatim.
+version: 2
+
+assets:
+  - id: zshrc
+    type: symlink
+    source: assets/zshrc
+    target: ${USER_HOME}/.zshrc
+    permissions: "0644"
+    conflict_strategy: prompt
+
+  - id: app_compose
+    type: symlink
+    source: assets/app
+    target:
+      - ${APP_DIR}/compose
+      - ${APP_DIR}/docker-compose.yml
+    permissions: "0644"
+    conflict_strategy: prompt
+
+  - id: gitconfig
+    type: template
+    source: assets/gitconfig.tmpl
+    target: ${USER_HOME}/.gitconfig
+    permissions: "0644"
+    template_vars:
+      email: dev@example.com
+
+secrets:
+  - id: app_env
+    source: secrets/app_env
+    target:
+      - ${APP_DIR}/.env
+      - ${APP_DIR}/.env.deploy
+    permissions: "0600"
+
+packages:
+  apt: [git, zsh, ripgrep, jq, docker-ce]
+  docker: { images: [] }
+  node: { version_file: .nvmrc }
+
+profiles:
+  base:
+    assets: [zshrc, gitconfig]
+    packages: [apt]
+  work:
+    extends: [base]
+    assets: [app_compose]
+    secrets: [app_env]
+    packages: [apt, node]

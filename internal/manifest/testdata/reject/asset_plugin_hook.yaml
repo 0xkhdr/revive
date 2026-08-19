@@ -1,0 +1,8 @@
+version: 2
+assets:
+  - id: a
+    source: assets/a
+    target: /tmp/a
+    hooks:
+      post:
+        - plugin: notify

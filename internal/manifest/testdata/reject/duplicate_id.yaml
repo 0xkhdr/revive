@@ -1,0 +1,8 @@
+version: 2
+assets:
+  - id: dup
+    source: assets/a
+    target: /tmp/a
+  - id: dup
+    source: assets/b
+    target: /tmp/b

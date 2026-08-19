@@ -1,0 +1,24 @@
+# Ported from reference/tests/test_models.py::test_manifest_validation.
+version: 2
+assets:
+  - id: zshrc
+    type: symlink
+    source: assets/zshrc
+    target: "~/.zshrc"
+    permissions: "0644"
+    conflict_strategy: overwrite
+secrets:
+  - id: db_pass
+    type: secret
+    source: secrets/db_pass.age
+    target: "~/.db_pass"
+    permissions: "0600"
+packages:
+  brew: [git, ripgrep]
+  apt: [curl]
+  node: { version_file: .nvmrc }
+profiles:
+  base:
+    assets: [zshrc]
+    secrets: [db_pass]
+    packages: [brew]

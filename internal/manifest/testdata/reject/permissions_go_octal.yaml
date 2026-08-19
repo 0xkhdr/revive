@@ -1,0 +1,6 @@
+version: 2
+assets:
+  - id: bad
+    source: assets/a
+    target: /tmp/a
+    permissions: "0o644"

@@ -1,0 +1,5 @@
+version: 2
+assets:
+  - id: traversal
+    source: ../../etc/passwd
+    target: /tmp/x

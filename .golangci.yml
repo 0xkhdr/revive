@@ -1,0 +1,38 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - revive
+    - unconvert
+  settings:
+    errorlint:
+      # Errors must be compared with errors.Is/As, never by message text.
+      errorf: true
+    revive:
+      rules:
+        - name: exported
+    gosec:
+      excludes:
+        # rv exists to read files whose paths the user chose. Traversal is guarded in
+        # manifest.validateSource and profile.OverridePath, not by refusing variable paths.
+        - G304
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters: [gosec]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

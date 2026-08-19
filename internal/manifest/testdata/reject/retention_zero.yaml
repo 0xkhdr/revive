@@ -1,0 +1,3 @@
+version: 2
+backup_retention:
+  max_count: 0

@@ -1,0 +1,5 @@
+version: 2
+assets:
+  - id: absolute
+    source: /etc/passwd
+    target: /tmp/x

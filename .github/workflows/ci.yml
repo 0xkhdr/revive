@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  build:
+    name: build, vet, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify formatting
+        run: test -z "$(gofmt -l cmd internal)" || { gofmt -d cmd internal; exit 1; }
+
+      - name: Build
+        run: go build -trimpath -ldflags "-s -w -X main.version=$(git describe --tags --always)" ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out ./...
+
+      - name: Coverage floor (>90% on internal/)
+        run: |
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          echo "internal/ coverage: ${pct}%"
+          awk -v p="$pct" 'BEGIN { exit (p > 90) ? 0 : 1 }' || {
+            echo "::error::coverage ${pct}% is below the 90% floor"; exit 1; }
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest

@@ -1,0 +1,29 @@
+version: 2
+assets:
+  - id: app
+    type: copy
+    source: assets/app
+    target: /tmp/app
+    owner: root
+    hooks:
+      pre:
+        - command: "mkdir -p /opt/app/conf"
+      post:
+        - command: "systemctl --user restart app"
+profiles:
+  base:
+    assets:
+      - app
+      - id: inline_asset
+        source: assets/inline
+        target: /tmp/inline
+    secrets:
+      - id: inline_secret
+        source: secrets/inline.age
+        target: /tmp/inline.env
+backup_retention:
+  max_count: 3
+  max_age_days: 7
+machine_overrides:
+  enabled: false
+  path: "hosts/{hostname}.yaml"

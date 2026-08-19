@@ -79,10 +79,46 @@ by a test. Anything unmarked has not been started.
 | 8 | **DONE** | Restore engine | `engine/restore.go`, `lockfile` | all 14 steps; re-run is a no-op; `--dry-run` mutates nothing and **runs no hook**; `--sequential` and `--parallel` plan identically; hooks execute shell-free with `RV_*` env and 30 s timeout; failure at step 10 or 12 rolls back; **INTEROP: read a Python lockfile without loss** |
 | 9 | **DONE** | CLI surface | `cli` | every command from `docs/03` except `gui`/`watch`; exit codes 0/1/2; `--headless` kills decoration and turns prompts into errors; `-p a -p b` ≡ `-p a,b`; completion; `init` refuses over existing workspace; `workspace sync` continues past failures, exits 1 |
 | 10 | **DONE** | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
-| 11 | | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
+| 11 | **DONE** | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
 | 12 | | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 11 completion notes (2026-08-19)
+
+Stage 11 is done. Coverage on `internal/` is **91.9%**. Packages added: `recovery`;
+`engine/backup.go` adds the reverse sync. `recover`, `prune` and `backup` are now real commands,
+and only `self-uninstall` remains a stub in the CLI.
+
+**Both `[DIVERGE]` items in docs/08 were taken as instructed:**
+
+1. **Restore refuses to start with an unrecovered journal.** `Restorer.RequireClean` runs right
+   after the process lock, before the manifest is even loaded. The reasoning in docs/08 §3 is the
+   whole point: restoring on top of a partial transaction makes the new snapshot capture the
+   *broken* state as the pre-state, permanently destroying the way back to the original. The test
+   asserts the target is never created, then that recovering unblocks the restore.
+2. **Backup writes through the atomic-write helper**, so an interrupted backup cannot leave a
+   truncated file in the repository. The reference wrote directly.
+
+**One bug caught by a test rather than by review.** The backup destination appended `.age`
+unconditionally, producing `secrets/env.age.age` for a single-target secret. docs/08 §5 only
+appends the suffix in the per-basename branch — directory sources and list targets — because a
+single source path already carries its own name. Fixed, with both shapes now covered.
+
+Two behaviors worth stating, both driven by the criteria:
+
+- **Pruning's active-transaction guard excludes those snapshots from the `max_count` arithmetic
+  too**, not just from deletion. Otherwise a crashed transaction's snapshot could push a healthy
+  one over the limit and get it deleted instead — the guard would hold while still losing data.
+- **A partial rollback still clears its journal.** Leaving it behind would block every future
+  restore through `RequireClean`, turning one unrecoverable file into a wedged machine. The
+  entries that failed are named in the returned error.
+
+`rv recover` without `--auto` prompts per journal, which under `--headless` is an error rather
+than a guess; `--auto` is the CI and boot-script path. Executed hooks are reported on every
+rollback, read back out of the journal so the record survives into a fresh process days later.
+
+---
 
 ### Stage 10 completion notes (2026-08-19)
 

@@ -82,9 +82,14 @@ type Restorer struct {
 	Confirm  Confirm
 	Scrubber *scrub.Scrubber
 
-	// Plugins and Prune are nil until stages 12 and 11 supply them.
+	// Plugins is nil until stage 12 supplies one; nil means no plugins.
 	Plugins PluginRunner
-	Prune   Pruner
+	// Prune deletes old backup snapshots after a successful restore.
+	Prune Pruner
+	// RequireClean refuses to start when an interrupted transaction has not been recovered.
+	// Restoring on top of one would snapshot the broken state as the pre-state, destroying the
+	// ability to get back to the original. [DIVERGE]
+	RequireClean func() error
 }
 
 func (r *Restorer) log() *slog.Logger {
@@ -122,6 +127,12 @@ func (r *Restorer) Restore(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 	defer func() { _ = lock.Release() }()
+
+	if r.RequireClean != nil {
+		if err := r.RequireClean(); err != nil {
+			return nil, err
+		}
+	}
 
 	// Step 1: load and validate the manifest.
 	r.log().Info("step 1/14: loading manifest", "path", opts.ManifestPath)

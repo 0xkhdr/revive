@@ -401,7 +401,7 @@ func TestMutuallyExclusiveFlags(t *testing.T) {
 func TestPendingCommandsReportNotImplemented(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
-		{"backup", "base"}, {"recover"}, {"prune"}, {"self-uninstall"},
+		{"self-uninstall"},
 	} {
 		h := newHarness(t)
 		_, err := h.run(args...)

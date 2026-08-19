@@ -8,43 +8,6 @@ import (
 // The flags are declared here so `--help` is complete and completion works; the bodies are
 // filled in by the stage that builds the engine behind them.
 
-func newBackupCommand(env *Env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:               "backup <profile...>",
-		Short:             "Copy machine state back into the repository",
-		ValidArgsFunction: env.completeProfiles,
-		RunE:              notImplemented,
-	}
-	addProfileFlag(cmd, env)
-	addIdentityFlag(cmd)
-	addManifestFlag(cmd)
-	cmd.Flags().Bool("dry-run", false, "Report what would be backed up; write nothing")
-	return cmd
-}
-
-func newRecoverCommand(_ *Env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "recover",
-		Short: "Roll back or discard interrupted transactions",
-		RunE:  notImplemented,
-	}
-	cmd.Flags().Bool("auto", false, "Roll back the newest incomplete journal and exit")
-	return cmd
-}
-
-func newPruneCommand(_ *Env) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "prune",
-		Short: "Delete old transaction backup snapshots",
-		RunE:  notImplemented,
-	}
-	cmd.Flags().Int("max-count", 10, "Keep at most N snapshots")
-	cmd.Flags().Int("max-age-days", 30, "Delete snapshots older than N days")
-	cmd.Flags().Bool("dry-run", false, "List candidates; delete nothing")
-	cmd.Flags().BoolP("yes", "y", false, "Do not ask for confirmation")
-	return cmd
-}
-
 func newSelfUninstallCommand(_ *Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "self-uninstall",

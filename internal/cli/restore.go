@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/0xkhdr/revive/internal/engine"
+	"github.com/0xkhdr/revive/internal/manifest"
+	"github.com/0xkhdr/revive/internal/recovery"
 )
 
 func newRestoreCommand(env *Env) *cobra.Command {
@@ -39,6 +42,30 @@ func newRestoreCommand(env *Env) *cobra.Command {
 	return cmd
 }
 
+// restorer builds the engine with every seam wired: recovery refuses to start on top of an
+// unrecovered transaction, and pruning runs after a successful restore.
+func (e *Env) restorer() *engine.Restorer {
+	return &engine.Restorer{
+		Paths:        e.Paths,
+		Log:          e.logger(),
+		Now:          e.now,
+		Runner:       e.Runner,
+		Hostname:     e.Hostname,
+		Scrubber:     e.scrubber(),
+		RequireClean: e.recovery().EnsureClean,
+	}
+}
+
+// retentionFor reads the retention policy from a manifest, falling back to the documented
+// defaults when it cannot be read.
+func (e *Env) retentionFor(manifestPath string) recovery.Retention {
+	policy := recovery.Retention{MaxCount: 10, MaxAgeDays: 30}
+	if m, err := manifest.Load(manifestPath); err == nil {
+		policy.MaxCount, policy.MaxAgeDays = m.Retention()
+	}
+	return policy
+}
+
 func (e *Env) runRestore(cmd *cobra.Command, args []string) error {
 	names := profiles(cmd, args)
 	if len(names) == 0 {
@@ -65,13 +92,12 @@ func (e *Env) runRestore(cmd *cobra.Command, args []string) error {
 	prune, _ := cmd.Flags().GetBool("prune")
 	nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
 
-	r := &engine.Restorer{
-		Paths:    e.Paths,
-		Log:      e.logger(),
-		Now:      e.now,
-		Runner:   e.Runner,
-		Hostname: e.Hostname,
-		Scrubber: e.scrubber(),
+	manifestPath := e.manifestPath(cmd)
+	r := e.restorer()
+	// Pruning is automatic after every successful restore, per backup_retention.
+	r.Prune = func(context.Context) error {
+		_, err := e.recovery().Prune(e.retentionFor(manifestPath), false)
+		return err
 	}
 	// --headless implies non-interactive: there is nobody at the terminal to answer.
 	if !nonInteractive && !e.Headless {
@@ -80,7 +106,7 @@ func (e *Env) runRestore(cmd *cobra.Command, args []string) error {
 
 	res, err := r.Restore(cmd.Context(), engine.Options{
 		RepoDir:       e.WorkDir,
-		ManifestPath:  e.manifestPath(cmd),
+		ManifestPath:  manifestPath,
 		Profiles:      names,
 		Identity:      identity,
 		DryRun:        dryRun,

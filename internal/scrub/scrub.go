@@ -24,8 +24,8 @@ var staticPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(?:ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256)\s+[a-zA-Z0-9+/=]+`),
 	// PEM private key blocks.
 	//
-	// docs/05 §2 lists `-----BEGIN\s+(?:RSA|OPENSSH|PRIVATE)\s+KEY-----…` verbatim, copied from
-	// the Python implementation. That pattern cannot match the two commonest real headers,
+	// The Python implementation used `-----BEGIN\s+(?:RSA|OPENSSH|PRIVATE)\s+KEY-----…`. That
+	// pattern cannot match the two commonest real headers,
 	// `BEGIN RSA PRIVATE KEY` and `BEGIN OPENSSH PRIVATE KEY`, because it requires KEY to follow
 	// the algorithm directly. The acceptance criterion — "the scrubber redacts a PEM block" —
 	// outranks the pattern listing, so the algorithm segment is optional here instead.

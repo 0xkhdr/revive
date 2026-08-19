@@ -32,7 +32,7 @@ func NewAudit(path string, s *scrub.Scrubber) (*slog.Logger, io.Closer, error) {
 			if len(groups) > 0 {
 				return a
 			}
-			// Match the field names docs/05 §2 documents.
+			// Match the documented audit field names.
 			switch a.Key {
 			case slog.TimeKey:
 				a.Key = "timestamp"

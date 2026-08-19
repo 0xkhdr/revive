@@ -142,7 +142,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	require.Equal(t, "dots", back.DefaultWorkspace)
 }
 
-// The on-disk shape is the one docs/02 §6 documents and the Python implementation reads.
+// The on-disk shape is the one the Python implementation reads.
 func TestOnDiskFormat(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "workspaces.yaml")

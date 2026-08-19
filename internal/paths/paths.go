@@ -19,7 +19,7 @@ var ErrSymlinkLoop = errors.New("symlink loop detected")
 const maxSymlinkDepth = 64
 
 // Config carries every path rv reads or writes at runtime. The layout is part of the
-// compatibility contract with the Python implementation (docs/02 §7).
+// compatibility contract with the Python implementation.
 type Config struct {
 	Home      string // user home directory
 	ConfigDir string // ~/.config/rv
@@ -74,8 +74,7 @@ func xdgDir(envVar, home string, fallback ...string) string {
 	return filepath.Join(append([]string{home}, fallback...)...)
 }
 
-// IdentityCandidates lists the identity file locations probed in order (docs/03 identity
-// resolution steps 2-4).
+// IdentityCandidates lists the identity file locations probed in order.
 func (c Config) IdentityCandidates() []string {
 	return []string{
 		c.IdentityFile,

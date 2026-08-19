@@ -36,7 +36,7 @@ func TestGoldenFixtures(t *testing.T) {
 	}
 }
 
-// Phase 2: the docs/02 §8 worked example loads and validates.
+// The full worked example loads and validates.
 func TestWorkedExampleLoads(t *testing.T) {
 	t.Parallel()
 	m, err := Load("testdata/accept/worked_example.yaml")

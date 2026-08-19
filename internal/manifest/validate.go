@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Validate applies every domain rule from docs/02 §1 and fills in the derived fields. It mutates
+// Validate applies every domain rule and fills in the derived fields. It mutates
 // the manifest: defaults are applied, and `type: secret` forces `encrypted: true`.
 //
 // All violations are reported together; each one wraps ErrValidation.

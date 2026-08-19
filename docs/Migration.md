@@ -1,4 +1,4 @@
-# Migrating from the Python `rv` to the Go build
+# Migration from Python to Go
 
 The Go build is **drop-in compatible with your data**: the same `manifest.yaml`, the same
 `manifest.lock`, the same `.age` files under the same identity, the same journals in

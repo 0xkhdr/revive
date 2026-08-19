@@ -6,7 +6,7 @@ import (
 )
 
 // The catalogue. Each provider is the base type plus its binaries, its installed-check and its
-// install commands — see docs/06 §3 for the contract these implement.
+// install commands — each implements the Provider contract.
 
 // NewApt builds the Debian/Ubuntu provider. It probes dpkg as well as apt-get: the install runs
 // through one and the check through the other, so either being absent means unavailable.

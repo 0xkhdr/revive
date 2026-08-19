@@ -99,7 +99,7 @@ type fakeRunner struct{}
 func (fakeRunner) Run(context.Context, []string) ([]byte, error) { return nil, nil }
 func (fakeRunner) LookPath(string) (string, bool)                { return "", false }
 
-// Phase 9: every command from docs/03 is present, except the deferred gui and watch.
+// Every documented command is present, except the deferred gui and watch.
 func TestCommandSurface(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -116,7 +116,7 @@ func TestCommandSurface(t *testing.T) {
 	require.NotContains(t, out, "Auto-restore on workspace changes", "watch is a later phase")
 }
 
-// Phase 9: every command's --help carries the flags docs/03 specifies.
+// Every command's --help carries its documented flags.
 func TestHelpFlagsMatchTheSpecification(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

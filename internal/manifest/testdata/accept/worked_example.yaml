@@ -1,4 +1,4 @@
-# docs/02-domain-model.md §8, verbatim.
+# Full worked example: every asset type, secret, profile and package provider.
 version: 2
 
 assets:

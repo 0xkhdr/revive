@@ -107,7 +107,7 @@ func (b *base) Install(ctx context.Context, pkgs []string, opts InstallOptions) 
 
 // ExecuteWithRetry runs a command with exponential backoff, and wraps the last failure.
 //
-// The retry is currently blind, matching the reference. docs/06 §1 flags classification — fail
+// The retry is currently blind, matching the reference. Classification — fail
 // fast on "not found" and "permission denied", retry on network and lock contention — as a
 // follow-up, since burning six seconds on an error that can never succeed is pure latency.
 func (b *base) ExecuteWithRetry(ctx context.Context, cmd []string) ([]byte, error) {

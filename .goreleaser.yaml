@@ -29,7 +29,7 @@ archives:
     files:
       - README.md
       - LICENSE
-      - docs/MIGRATION.md
+      - docs/Migration.md
 
 checksum:
   name_template: checksums.txt
@@ -52,6 +52,6 @@ release:
   footer: |
     ## Upgrading from the Python implementation
 
-    Read [docs/MIGRATION.md](https://github.com/0xkhdr/revive/blob/main/docs/MIGRATION.md)
+    Read [docs/Migration.md](https://github.com/0xkhdr/revive/blob/main/docs/Migration.md)
     first. Templates need rewriting: `rv doctor` finds every one of them and names the
     replacement.

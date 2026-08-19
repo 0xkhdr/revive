@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// catalogue drives one table across every provider, so the per-provider criteria in docs/10
-// phase 7 are covered uniformly rather than nine times by hand.
+// catalogue drives one table across every provider, so the per-provider criteria are covered
+// uniformly rather than nine times by hand.
 type providerCase struct {
 	build      func(Deps) Provider
 	binaries   []string // must all be present for availability

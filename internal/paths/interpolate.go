@@ -11,7 +11,7 @@ import (
 // Expanding to "" would write files to /, so this is a hard error by design.
 var ErrUnsetVariable = errors.New("environment variable is required but not set")
 
-// interpolationPattern matches ${VAR} and ${VAR:-default}. Verbatim from docs/02 §2.
+// interpolationPattern matches ${VAR} and ${VAR:-default}.
 var interpolationPattern = regexp.MustCompile(`\$\{([a-zA-Z_][a-zA-Z0-9_]*)(?::-([^}]+))?\}`)
 
 // Lookup resolves a variable name, reporting whether it is set. os.LookupEnv satisfies it.

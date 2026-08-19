@@ -1,6 +1,6 @@
 // Package plugins discovers and runs user-supplied plugins around a restore.
 //
-// A plugin is trusted code with a seatbelt, not an untrusted-code sandbox. See docs/07 §3 for
+// A plugin is trusted code with a seatbelt, not an untrusted-code sandbox. See Sandbox for
 // exactly what the isolation does and does not provide.
 package plugins
 

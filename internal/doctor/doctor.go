@@ -53,7 +53,7 @@ type Issue struct {
 	Message  string   `json:"message"`
 }
 
-// Report is the whole diagnosis, in the shape docs/08 §2 documents.
+// Report is the whole diagnosis.
 type Report struct {
 	Healthy   bool    `json:"healthy"`
 	ChecksRun int     `json:"checks_run"`

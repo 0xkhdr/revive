@@ -80,9 +80,45 @@ by a test. Anything unmarked has not been started.
 | 9 | **DONE** | CLI surface | `cli` | every command from `docs/03` except `gui`/`watch`; exit codes 0/1/2; `--headless` kills decoration and turns prompts into errors; `-p a -p b` ≡ `-p a,b`; completion; `init` refuses over existing workspace; `workspace sync` continues past failures, exits 1 |
 | 10 | **DONE** | Status, diff, doctor | `status`, `doctor` | six status values, `type_mismatch` vs `modified`, permissions checked first, template + encrypted drift, diff scrubbed and skips binaries/symlinks, `doctor --json`, doctor mutates nothing, **Jinja2 `template_syntax` detection incl. `{% … %}`** |
 | 11 | **DONE** | Recovery, prune, backup | `recovery`, `engine/backup.go` | simulated crash recovers to exact pre-state, `recover --auto`, discard, pruning never touches incomplete-journal backups, `max_count` + `max_age_days`, `rv backup` re-encrypts secrets and warns on templates; restore refuses to start with an unrecovered journal **[DIVERGE]** |
-| 12 | | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
+| 12 | **DONE** | Plugins | `plugins` | discovery precedence (first name wins), malformed manifest skipped, JSON result on stdout, timeout clamped `[1,300]` and kills, non-zero exit rolls back, `--no-plugins` / `--dry-run` invoke nothing, `pre-restore` runs **after** snapshot |
 | 13 | | Watch daemon | `watcher` | debounced restore, rapid changes collapse to one, `.git` ignored, trigger during held lock is skipped not queued, clean SIGINT/SIGTERM with no goroutine leak |
 | 14 | | Release | goreleaser, docs | static binaries for linux/darwin × amd64/arm64, size + startup measured and published, **INTEROP: Python-restored workspace managed by Go `rv` — status in-sync, restore no-op, lockfile preserved**, migration guide (Jinja2 → `text/template`, hook-timing change, removed `self-install`/built-in plugins/Windows) |
+
+### Stage 12 completion notes (2026-08-19)
+
+Stage 12 is done. Coverage on `internal/` is **92.1%**. Package added: `plugins`. The engine's
+`Restorer.Plugins` seam, in place since stage 8, is now filled by a real runner — the orderings it
+already enforced (`pre-restore` after the snapshot, `post-restore` at step 11, nothing under
+`--dry-run` or `--no-plugins`) needed no change.
+
+**Three `[DIVERGE]` items taken as recommended:**
+
+1. **Built-in plugins dropped.** The reference loaded Python scripts from its package directory; a
+   Go binary has no interpreter to offer them, and shipping one would undermine the single-binary
+   goal. Plugins are strictly user-supplied.
+2. **The context goes in as JSON on stdin**, not as base64 argv elements. No length limit, no
+   encoding step, and a plugin reads it with one `json.Decode`. There are no existing Go-build user
+   plugins to stay compatible with, so the argv form was not kept.
+3. **A malformed `plugin.yaml` is logged at warning level with its path**, then skipped. Silent was
+   too quiet.
+
+**A real bug the timeout test caught.** `exec.CommandContext` kills the direct child, but `Run`
+then blocks waiting for the stdout pipe — which a descendant that inherited it keeps open. A
+plugin whose script ran `sleep 30` defeated its own one-second timeout completely, taking the full
+thirty. Fixed by putting the plugin in its own process group, killing the whole group on
+cancellation, and setting `WaitDelay`. Without this the "timeout is enforced by killing the
+process" criterion would have passed review and failed in practice.
+
+**One guard added that no criterion names:** a plugin's `entrypoint` is resolved inside its own
+directory and rejected if it escapes. A `plugin.yaml` pointing at `../../../bin/sh` should not be
+able to make rv execute an arbitrary binary.
+
+The sandbox is documented honestly, per docs/07 §3: process isolation, a killed-on-expiry timeout,
+proxy variables that stop a well-behaved HTTP client, and a permission set the plugin is expected
+to honor. It is not untrusted-code-safe, and the code says so where it matters. Landlock and
+seccomp stay deferred.
+
+---
 
 ### Stage 11 completion notes (2026-08-19)
 

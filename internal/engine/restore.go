@@ -38,9 +38,19 @@ const (
 	PostRestore PluginStage = "post-restore"
 )
 
-// PluginRunner dispatches profile-level plugin hooks. It is nil until stage 12 supplies one,
-// and nil means no plugins — which is also what --no-plugins produces.
-type PluginRunner func(ctx context.Context, stage PluginStage, txID string) error
+// PluginHook is what a plugin runner is told about the run. Nil PluginRunner means no plugins,
+// which is also what --no-plugins and --dry-run produce.
+type PluginHook struct {
+	Stage    PluginStage
+	TxID     string
+	RepoDir  string
+	Profiles []string
+	// Targets is every absolute path the transaction plans to mutate.
+	Targets []string
+}
+
+// PluginRunner dispatches profile-level plugin hooks.
+type PluginRunner func(ctx context.Context, hook PluginHook) error
 
 // Pruner deletes old backup snapshots. It is nil until stage 11 supplies one.
 type Pruner func(ctx context.Context) error
@@ -488,10 +498,32 @@ func (r *Restorer) runPlugins(ctx context.Context, opts Options, stage PluginSta
 	if r.Plugins == nil || opts.NoPlugins || opts.DryRun {
 		return nil
 	}
-	if err := r.Plugins(ctx, stage, tx.TxID); err != nil {
+	hook := PluginHook{
+		Stage:    stage,
+		TxID:     tx.TxID,
+		RepoDir:  opts.RepoDir,
+		Profiles: opts.Profiles,
+		Targets:  plannedTargets(tx),
+	}
+	if err := r.Plugins(ctx, hook); err != nil {
 		return r.rollbackAfter(tx, 11, fmt.Errorf("%s plugin hook: %w", stage, err))
 	}
 	return nil
+}
+
+// plannedTargets lists every absolute path the transaction will mutate, deduplicated and in plan
+// order. Hook operations share their asset's target, so they contribute nothing new.
+func plannedTargets(tx *transaction.Transaction) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, op := range tx.Planned {
+		if op.Type == transaction.OpTypeHook || seen[op.Target] {
+			continue
+		}
+		seen[op.Target] = true
+		out = append(out, op.Target)
+	}
+	return out
 }
 
 // prune runs after a successful restore. Its failure is logged, never escalated: the restore

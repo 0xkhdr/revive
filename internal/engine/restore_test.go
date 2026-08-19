@@ -752,14 +752,16 @@ func TestPluginHookOrdering(t *testing.T) {
 	var stages []PluginStage
 	r := w.restorer()
 	var snapshotSeen bool
-	r.Plugins = func(_ context.Context, stage PluginStage, txID string) error {
-		if stage == PreRestore {
+	var seenTargets []string
+	r.Plugins = func(_ context.Context, hook PluginHook) error {
+		if hook.Stage == PreRestore {
 			// The journal exists only after the snapshot, which is what makes a pre-restore
 			// failure roll back cleanly.
-			_, err := os.Stat(w.cfg.JournalPath(txID))
+			_, err := os.Stat(w.cfg.JournalPath(hook.TxID))
 			snapshotSeen = err == nil
+			seenTargets = hook.Targets
 		}
-		stages = append(stages, stage)
+		stages = append(stages, hook.Stage)
 		return nil
 	}
 
@@ -767,6 +769,8 @@ func TestPluginHookOrdering(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []PluginStage{PreRestore, PostRestore}, stages)
 	require.True(t, snapshotSeen, "pre-restore must run after the snapshot")
+	require.Equal(t, []string{w.target("conf")}, seenTargets,
+		"a plugin is told every path the transaction plans to mutate")
 }
 
 func TestNoPluginsSkipsThem(t *testing.T) {
@@ -779,7 +783,7 @@ func TestNoPluginsSkipsThem(t *testing.T) {
 
 	called := false
 	r := w.restorer()
-	r.Plugins = func(context.Context, PluginStage, string) error { called = true; return nil }
+	r.Plugins = func(context.Context, PluginHook) error { called = true; return nil }
 
 	opts := w.opts("base")
 	opts.NoPlugins = true
@@ -807,8 +811,8 @@ func TestPluginFailureRollsBack(t *testing.T) {
 		w.target("conf")))
 
 	r := w.restorer()
-	r.Plugins = func(_ context.Context, stage PluginStage, _ string) error {
-		if stage == PostRestore {
+	r.Plugins = func(_ context.Context, hook PluginHook) error {
+		if hook.Stage == PostRestore {
 			return errors.New("plugin exited 1")
 		}
 		return nil
@@ -910,12 +914,12 @@ func TestRollbackAfterReportsAnIncompleteRollback(t *testing.T) {
 		w.target("conf")))
 
 	r := w.restorer()
-	r.Plugins = func(_ context.Context, stage PluginStage, txID string) error {
-		if stage == PostRestore {
+	r.Plugins = func(_ context.Context, hook PluginHook) error {
+		if hook.Stage == PostRestore {
 			// Losing the backup is what an incomplete rollback looks like from the inside.
-			backups, _ := os.ReadDir(w.cfg.BackupPathFor(txID))
+			backups, _ := os.ReadDir(w.cfg.BackupPathFor(hook.TxID))
 			for _, b := range backups {
-				_ = os.Remove(filepath.Join(w.cfg.BackupPathFor(txID), b.Name()))
+				_ = os.Remove(filepath.Join(w.cfg.BackupPathFor(hook.TxID), b.Name()))
 			}
 			return errors.New("plugin exited 1")
 		}

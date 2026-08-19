@@ -3,12 +3,14 @@ package cli
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/0xkhdr/revive/internal/engine"
 	"github.com/0xkhdr/revive/internal/manifest"
+	"github.com/0xkhdr/revive/internal/plugins"
 	"github.com/0xkhdr/revive/internal/recovery"
 )
 
@@ -53,6 +55,31 @@ func (e *Env) restorer() *engine.Restorer {
 		Hostname:     e.Hostname,
 		Scrubber:     e.scrubber(),
 		RequireClean: e.recovery().EnsureClean,
+		Plugins:      e.pluginRunner(),
+	}
+}
+
+// pluginRunner dispatches profile-level plugin hooks. The engine skips it entirely under
+// --no-plugins and --dry-run, so this only has to translate the hook into a plugin context.
+func (e *Env) pluginRunner() engine.PluginRunner {
+	runner := &plugins.Runner{
+		Loader: &plugins.Loader{
+			// Precedence: workspace-local before user-global, first name wins.
+			Dirs: []string{filepath.Join(e.WorkDir, "plugins"), e.Paths.PluginsDir},
+			Log:  e.logger(),
+		},
+		Log: e.logger(),
+	}
+	return func(ctx context.Context, hook engine.PluginHook) error {
+		_, err := runner.Run(ctx, plugins.Context{
+			RepoDir:     hook.RepoDir,
+			ProfileName: strings.Join(hook.Profiles, ","),
+			// v1.0 never invokes a plugin on a dry run; the field exists for protocol stability.
+			DryRun:   false,
+			Targets:  hook.Targets,
+			HookType: plugins.Stage(hook.Stage),
+		})
+		return err
 	}
 }
 

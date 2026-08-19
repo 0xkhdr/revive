@@ -308,3 +308,97 @@ func TestFormatSize(t *testing.T) {
 		require.Equal(t, want, formatSize(bytes), bytes)
 	}
 }
+
+// Phase 12: a plugin runs during a real restore, and --no-plugins skips it.
+func TestRestoreRunsPlugins(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	target := filepath.Join(h.work, "conf")
+	marker := filepath.Join(h.work, "plugin-ran")
+	h.write("assets/conf", "content\n")
+	h.write("manifest.yaml", fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s}]\nprofiles: {base: {assets: [conf]}}\n",
+		target))
+
+	h.write("plugins/notify/plugin.yaml",
+		"name: notify\nversion: \"1.0.0\"\nentrypoint: run.sh\nhooks: [post-restore]\n")
+	script := filepath.Join(h.work, "plugins", "notify", "run.sh")
+	require.NoError(t, os.WriteFile(script,
+		[]byte("#!/bin/sh\ncat > "+marker+"\necho '{\"status\":\"success\",\"message\":\"done\"}'\n"), 0o755))
+
+	_, err := h.run("restore", "base")
+	require.NoError(t, err)
+	require.FileExists(t, marker)
+
+	// The context the plugin received names the profile and the planned target.
+	raw, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"profile_name":"base"`)
+	require.Contains(t, string(raw), target)
+
+	require.NoError(t, os.Remove(marker))
+	require.NoError(t, os.Remove(target))
+	_, err = h.run("restore", "base", "--no-plugins")
+	require.NoError(t, err)
+	require.NoFileExists(t, marker)
+
+	require.NoError(t, os.Remove(target))
+	_, err = h.run("restore", "base", "--dry-run")
+	require.NoError(t, err)
+	require.NoFileExists(t, marker, "--dry-run invokes no plugin at any stage")
+}
+
+// Phase 12: a failing plugin fails the restore and rolls it back.
+func TestFailingPluginRollsBackTheRestore(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	target := filepath.Join(h.work, "conf")
+	require.NoError(t, os.WriteFile(target, []byte("original\n"), 0o644))
+	h.write("assets/conf", "new content\n")
+	h.write("manifest.yaml", fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s, conflict_strategy: overwrite}]\n"+
+			"profiles: {base: {assets: [conf]}}\n", target))
+
+	h.write("plugins/gate/plugin.yaml",
+		"name: gate\nversion: \"1.0.0\"\nentrypoint: run.sh\nhooks: [post-restore]\n")
+	require.NoError(t, os.WriteFile(filepath.Join(h.work, "plugins", "gate", "run.sh"),
+		[]byte("#!/bin/sh\necho 'the gate said no' >&2\nexit 1\n"), 0o755))
+
+	_, err := h.run("restore", "base")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "rolled back")
+
+	got, err := os.ReadFile(target)
+	require.NoError(t, err)
+	require.Equal(t, "original\n", string(got))
+}
+
+// A workspace plugin shadows a user-global one of the same name.
+func TestPluginPrecedenceThroughTheCLI(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	target := filepath.Join(h.work, "conf")
+	marker := filepath.Join(h.work, "which-ran")
+	h.write("assets/conf", "content\n")
+	h.write("manifest.yaml", fmt.Sprintf(
+		"version: 2\nassets: [{id: conf, type: copy, source: assets/conf, target: %s}]\nprofiles: {base: {assets: [conf]}}\n",
+		target))
+
+	for dir, label := range map[string]string{
+		filepath.Join(h.work, "plugins", "notify"):      "workspace",
+		filepath.Join(h.env.Paths.PluginsDir, "notify"): "user-global",
+	} {
+		require.NoError(t, os.MkdirAll(dir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.yaml"),
+			[]byte("name: notify\nversion: \"1.0.0\"\nentrypoint: run.sh\nhooks: [post-restore]\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "run.sh"),
+			[]byte("#!/bin/sh\nprintf %s "+label+" > "+marker+"\n"), 0o755))
+	}
+
+	_, err := h.run("restore", "base")
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	require.Equal(t, "workspace", string(got), "workspace-local wins over user-global")
+}

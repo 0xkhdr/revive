@@ -1,0 +1,38 @@
+{
+  "entries": {
+    "zshrc": {
+      "sha256_of_source": "d7999a8eef2ec74e7353e285e05ccbb4d7a509305b7e752eb8a7556b8e6af2f2",
+      "target_path": "{{ROOT}}/home/.zshrc",
+      "permissions": "0644",
+      "mtime": 1787158486.9745796
+    },
+    "gitconfig": {
+      "sha256_of_source": "dd6ec44544ea36f0939a7226ccbd773979e88320e0c72cb9eada30bd41c83cff",
+      "target_path": "{{ROOT}}/home/.gitconfig",
+      "permissions": "0644",
+      "mtime": 1787158487.400521
+    },
+    "appdir": {
+      "sha256_of_source": "e2f53a0ebb4a2df95a33bf79cf00d4a7d4d4af71861b691348c071404ea1a72e",
+      "target_path": [
+        "{{ROOT}}/home/app/one.conf",
+        "{{ROOT}}/home/app/two.conf"
+      ],
+      "permissions": [
+        "0644",
+        "0644"
+      ],
+      "mtime": [
+        1787158487.4013865,
+        1787158487.402103
+      ]
+    },
+    "app_env": {
+      "sha256_of_source": "61a3a50d314f8cb6317069af81c4b1bcdc5f4f39a13976fa5a0a9ba84160212c",
+      "target_path": "{{ROOT}}/home/app/.env",
+      "permissions": "0600",
+      "mtime": 1787158487.40274
+    }
+  },
+  "rendered_checksums": {}
+}

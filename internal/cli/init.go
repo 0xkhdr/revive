@@ -62,18 +62,64 @@ backup_retention:
 // skillTemplate documents rv for an AI agent working in the repository.
 const skillTemplate = `---
 name: rv
-description: Manage this machine's configuration with rv.
+description: Manage files, encrypted secrets, packages, profiles, and machine drift in a Revive workspace containing manifest.yaml.
 ---
 
-This repository is a Revive workspace. ` + "`manifest.yaml`" + ` declares the files, secrets and
-packages that make up the machine's configuration.
+# Revive workspace
 
-- ` + "`rv status -p base`" + ` reports drift between the manifest and the machine.
-- ` + "`rv restore base`" + ` applies the repository to the machine, transactionally.
-- ` + "`rv doctor`" + ` checks the workspace for problems.
+Treat ` + "`manifest.yaml`" + ` and its repository-relative sources as desired state. Run ` + "`rv`" + ` from the
+workspace root. Read the manifest to select the relevant profile; do not assume ` + "`base`" + ` exists.
+Use ` + "`-m <manifest>`" + ` when the workspace uses a non-default manifest.
 
-Never commit a plaintext secret. Encrypt it with ` + "`rv secret encrypt`" + ` and declare it
-under ` + "`secrets:`" + `.
+## Direction matters
+
+- ` + "`rv restore <profile>`" + ` copies repository state to the machine.
+- ` + "`rv backup <profile>`" + ` copies current machine state into the repository. Templates are skipped.
+
+For a requested configuration change, edit the source declared in ` + "`manifest.yaml`" + `, not its target.
+Use ` + "`backup`" + ` only when the user wants to import an existing target-side change. Inspect its dry run
+first and review the resulting repository diff.
+
+## Inspect and validate
+
+Prefer non-interactive diagnostics that cannot prompt:
+
+` + "```sh" + `
+rv --headless doctor -p <profile> --json
+rv --headless status -p <profile> --json
+rv --headless diff -p <profile> --unified
+` + "```" + `
+
+After editing the manifest, an asset, template, or encrypted secret, run ` + "`doctor`" + ` and then:
+
+` + "```sh" + `
+rv --headless restore <profile> --dry-run --non-interactive
+` + "```" + `
+
+A dry run does not change targets, create snapshots, run hooks, or write the lockfile. A real
+restore changes the machine and can run package managers, hooks, and plugins; run it only when the
+user explicitly asks to apply the change. Do not use ` + "`--no-plugins`" + ` or ` + "`--force-packages`" + ` unless
+diagnosing the corresponding subsystem. Treat a non-interactive prompt conflict as a finding; do
+not weaken its conflict strategy merely to make validation pass.
+
+If Revive reports an incomplete transaction, stop normal operations and ask before running
+` + "`rv recover`" + `; do not delete journals or backups manually. Recovery changes machine state, and
+rollback cannot reverse hook, plugin, package-manager, service, or network side effects.
+
+## Manifest and secrets
+
+- Keep asset sources inside the repository and targets in ` + "`manifest.yaml`" + `; use machine overrides
+  only for genuine host differences.
+- Preserve strict schema types, quoted permission modes such as ` + "`\"0644\"`" + `, profile inheritance, and
+  ` + "`${VAR}`" + ` / ` + "`${VAR:-default}`" + ` target syntax.
+- Never print, commit, or stage plaintext secrets or age identities. Commit only encrypted ` + "`.age`" + `
+  files and declare them under ` + "`secrets:`" + ` with restrictive permissions.
+- Prefer normal restore/backup flows for secrets. If explicit encryption is required, use
+  ` + "`rv secret encrypt <plaintext> -o <destination>.age -r <recipient>`" + ` and remove the plaintext
+  safely after verifying the ciphertext; never decrypt to stdout or into the repository.
+
+Before handoff, review ` + "`git diff`" + ` and ` + "`git status`" + ` for unexpected generated state, identities,
+plaintext secrets, ` + "`.env`" + ` files, or ` + "`manifest*.lock`" + ` files.
 `
 
 // manifestNames are the files whose presence means "this is already a workspace".

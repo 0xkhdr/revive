@@ -26,7 +26,9 @@ func TestInitScaffolds(t *testing.T) {
 	for _, dir := range []string{"assets", "secrets", "machine", ".agents/skills/rv"} {
 		require.DirExists(t, filepath.Join(h.work, dir), dir)
 	}
-	require.FileExists(t, filepath.Join(h.work, ".agents", "skills", "rv", "SKILL.md"))
+	skill, err := os.ReadFile(filepath.Join(h.work, ".agents", "skills", "rv", "SKILL.md"))
+	require.NoError(t, err)
+	require.Equal(t, skillTemplate, string(skill))
 
 	// The scaffolded manifest must actually load and validate.
 	m, err := manifest.Load(filepath.Join(h.work, "manifest.yaml"))

@@ -26,3 +26,5 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          XDG_CONFIG_HOME: ""
+          XDG_DATA_HOME: ""

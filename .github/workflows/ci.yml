@@ -32,7 +32,10 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test -p 1 -parallel 1 -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out ./...
+        run: go test -race -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out ./...
+        env:
+          XDG_CONFIG_HOME: ""
+          XDG_DATA_HOME: ""
 
       - name: Coverage floor (>90% on internal/)
         run: |
